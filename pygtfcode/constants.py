@@ -17,3 +17,8 @@ class Constants:
 
     # Conversion of seconds to gigayears
     sec_to_Gyr = 3.16881e-17
+
+    # Cosmological parameters
+    xhubble = 0.7  # Hubble constant in units of 100 km/s/Mpc
+    Omega_m = 0.3  # Matter density parameter
+    Delta_vir: 97.0  # Virial overdensity
