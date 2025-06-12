@@ -12,7 +12,7 @@ class GridParams:
         Number of radial grid points (must be > 1).
     """
 
-    def __init__(self, rmin: float, rmax: float, Ngrid: int):
+    def __init__(self, rmin: float = 1e-3, rmax: float = 1e2, Ngrid: int = 300):
         self._rmin = None
         self._rmax = None
         self._Ngrid = None
@@ -29,7 +29,7 @@ class GridParams:
     def rmin(self, value):
         if value <= 0 or (self._rmax is not None and value >= self._rmax):
             raise ValueError("Require 0 < rmin < rmax")
-        self._rmin = value
+        self._rmin = float(value)
 
     @property
     def rmax(self):
@@ -39,7 +39,7 @@ class GridParams:
     def rmax(self, value):
         if value <= 0 or (self._rmin is not None and value <= self._rmin):
             raise ValueError("Require 0 < rmin < rmax")
-        self._rmax = value
+        self._rmax = float(value)
 
     @property
     def Ngrid(self):
@@ -47,9 +47,10 @@ class GridParams:
 
     @Ngrid.setter
     def Ngrid(self, value):
-        if value <= 1:
-            raise ValueError("Ngrid must be greater than 1")
-        self._Ngrid = int(value)
+        if not isinstance(value, int) or value <= 1:
+            raise ValueError("Ngrid must be an integer greater than 1")
+        self._Ngrid = value
 
     def __repr__(self):
         return f"GridParams(rmin={self.rmin}, rmax={self.rmax}, Ngrid={self.Ngrid})"
+

@@ -31,12 +31,15 @@ class IOParams:
 
     @model_no.setter
     def model_no(self, value):
+        if not isinstance(value, int):
+            raise TypeError("model_no must be an integer")
         if not (0 <= value < 1000):
             raise ValueError("model_no must be between 0 and 999 (inclusive)")
-        self._model_no = int(value)
+        self._model_no = value
 
     @property
     def model_dir(self):
+        """Returns the subdirectory name as 'ModelXXX' (with leading zeros)."""
         return f"Model{self.model_no:03d}"
 
     @property
@@ -46,7 +49,7 @@ class IOParams:
     @base_dir.setter
     def base_dir(self, value):
         if not isinstance(value, str):
-            raise TypeError("base_dir must be a string path")
+            raise TypeError("base_dir must be a string")
         self._base_dir = value
 
     @property

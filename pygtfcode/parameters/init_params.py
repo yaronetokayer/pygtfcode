@@ -8,6 +8,8 @@ class InitParams:
         Virial mass in units of Msun/h.
     cvir : float
         Concentration parameter.
+    z : float
+        Redshift (must be non-negative).
     profile : str or None
         String identifier for the profile type ('nfw', 'truncated_nfw', 'abg').
     """
@@ -15,8 +17,8 @@ class InitParams:
     def __init__(self, Mvir: float = 3.0e9, cvir: float = 20.0, z: float = 0.0):
         self._Mvir = None
         self._cvir = None
-        self.z = None
-        self.profile = None  # will be set in subclass
+        self._z = None
+        self.profile = None  # To be set by subclass
 
         self.Mvir = Mvir
         self.cvir = cvir
@@ -45,7 +47,7 @@ class InitParams:
     @property
     def z(self):
         return self._z
-    
+
     @z.setter
     def z(self, value):
         if value < 0:
@@ -53,14 +55,16 @@ class InitParams:
         self._z = float(value)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(Mvir={self.Mvir}, cvir={self.cvir})"
+        return f"{self.__class__.__name__}(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z})"
+
 
 class NFWParams(InitParams):
     """Standard NFW profile."""
 
-    def __init__(self, Mvir: float = 3.0e9, cvir: float = 20.0):
-        super().__init__(Mvir, cvir)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.profile = 'nfw'
+
 
 class TruncatedNFWParams(InitParams):
     """
@@ -69,13 +73,13 @@ class TruncatedNFWParams(InitParams):
     Attributes
     ----------
     Zt : float
-        Truncation parameter.
+        Cutoff value for the potential; maximum binding energy for particles retained in the truncated halo.
     deltaP : float
-        Pressure smoothing parameter.
+        "step size in P" - WHAT IS THAT?
     """
 
-    def __init__(self, Mvir=3.0e9, cvir=20.0, Zt=0.05938, deltaP=1.0e-5):
-        super().__init__(Mvir, cvir)
+    def __init__(self, Zt=0.05938, deltaP=1.0e-5, **kwargs):
+        super().__init__(**kwargs)
         self.profile = 'truncated_nfw'
 
         self._Zt = None
@@ -104,12 +108,13 @@ class TruncatedNFWParams(InitParams):
         self._deltaP = float(value)
 
     def __repr__(self):
-        return (f"TruncatedNFWParams(Mvir={self.Mvir}, cvir={self.cvir}, "
+        return (f"TruncatedNFWParams(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z}, "
                 f"Zt={self.Zt}, deltaP={self.deltaP})")
+
 
 class ABGParams(InitParams):
     """
-    Alpha-beta-gamma profile.
+    Alpha-beta-gamma profile as defined in Zhao (1996) (10.1093/mnras/278.2.488)
 
     Attributes
     ----------
@@ -118,14 +123,13 @@ class ABGParams(InitParams):
     gamma : float
     """
 
-    def __init__(self, Mvir=3.0e9, cvir=20.0, alpha=4.0, beta=4.0, gamma=0.1):
-        super().__init__(Mvir, cvir)
+    def __init__(self, alpha=4.0, beta=4.0, gamma=0.1, **kwargs):
+        super().__init__(**kwargs)
         self.profile = 'abg'
 
         self._alpha = None
         self._beta = None
         self._gamma = None
-
         self.alpha = alpha
         self.beta = beta
         self.gamma = gamma
@@ -155,8 +159,9 @@ class ABGParams(InitParams):
         self._gamma = float(value)
 
     def __repr__(self):
-        return (f"ABGParams(Mvir={self.Mvir}, cvir={self.cvir}, "
+        return (f"ABGParams(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z}, "
                 f"alpha={self.alpha}, beta={self.beta}, gamma={self.gamma})")
+
 
 def make_init_params(profile, **kwargs):
     """
