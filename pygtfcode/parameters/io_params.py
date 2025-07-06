@@ -16,7 +16,7 @@ class IOParams:
         Whether to overwrite existing output files.
     """
 
-    def __init__(self, model_no: int = 1, base_dir: str = None, overwrite: bool = False):
+    def __init__(self, model_no: int = 0, base_dir: str = None, overwrite: bool = True):
         self._model_no = None
         self._base_dir = None
         self._overwrite = None

@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.integrate import solve_ivp, quad
-from pygtfcode.profiles.truncated_nfw import potential, rho_from_df_truncated
-from pygtfcode.profiles.menc import menc
+# from pygtfcode.profiles.truncated_nfw import potential, rho_from_df_truncated
 from pygtfcode.parameters.constants import Constants
 
 # Potential
@@ -102,6 +101,8 @@ def integrate_potential(config):
     Mtot : float
         Total enclosed mass at rcut.
     """
+    from pygtfcode.profiles.menc import menc
+
     epsilon = 1.0e-2
     deltaP = config.prec.eps_dt  # Or use config.init.deltaP if stored there
     cvir = config.init.cvir

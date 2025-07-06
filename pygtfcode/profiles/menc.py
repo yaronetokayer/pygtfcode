@@ -1,8 +1,7 @@
 from pygtfcode.profiles.nfw import fNFW
-from pygtfcode.profiles.truncated_nfw import toint4
-from pygtfcode.profiles.abg import toint4b
+# from pygtfcode.profiles.truncated_nfw import toint4
+# from pygtfcode.profiles.abg import toint4b
 from scipy.integrate import quad
-
 
 def menc(r, config):
     """

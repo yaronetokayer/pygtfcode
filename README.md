@@ -1,12 +1,48 @@
 # pygtfcode
 
-**pygtfcode** is a Python implementation of the gravothermal fluid code used to study the thermodynamic evolution of self-gravitating dark matter halos. It is a modular, NumPy-based reworking of a legacy Fortran code originally developed by Frank van den Bosch.
+**pygtfcode** is a Python implementation of a 1D gravothermal fluid code, adapted from a Fortran code originally designed to study the dynamical evolution of dark matter halos under the influence of heat transport, self-interactions, and baryonic potentials.
+
+The goal is to create a clean, modern, modular codebase that is easy to configure, extend, and use within scientific workflows.
 
 ---
 
 ## Project Status
 
-This project is currently in **active development**. The framework for configuring, initializing, and setting up static profiles is complete. The next milestone is testing the initial profile routines and integrating the simulator loop.
+Core configuration and initialization functionality is complete:
+
+* Modular configuration with defaults
+* Support for multiple initial profiles (NFW, truncated NFW, ABG)
+* Derived characteristic parameters from input mass and concentration
+* Grid setup and profile initialization routines (in progress)
+* Runtime integration and simulation loop (next)
+* Output, diagnostics, and visualization tools
+
+---
+
+## Core Concepts
+
+The simulation is structured around **two main user-facing classes**:
+
+### 1. `Config`
+
+Holds all static input parameters for a simulation run. This includes:
+
+* `io`: Output paths and model numbering
+* `grid`: Radial domain and resolution
+* `init`: Initial profile (NFW, truncated NFW, or ABG)
+* `sim`: Simulation options (e.g. interaction cross section)
+* `prec`: Precision settings (iteration limits, step sizes)
+
+### 2. `State`
+
+Holds the dynamically evolving quantities:
+
+* Grid arrays: `r`, `m`, `rho`, `P`, `u`, `v2`
+* Diagnostic quantities
+* Time tracking
+* Characteristic scales (computed from config)
+
+The `State` object is initialized with a `Config` and handles the setup of the simulation state (via `set_param`, `setup_grid`, and `initialize_grid`).
 
 ---
 
@@ -14,96 +50,85 @@ This project is currently in **active development**. The framework for configuri
 
 ```
 pygtfcode/
-├── config.py               # Central class for organizing simulation parameters
-├── parameters/             # All user-defined static parameter classes
-│   ├── io_params.py        # I/O configuration (base directory, model #)
-│   ├── grid_params.py      # Grid resolution and radial range
-│   ├── init_params.py      # Initial profile (NFW, truncated NFW, ABG)
-│   ├── prec_params.py      # Precision tuning parameters
-│   ├── sim_params.py       # Simulation control flags (to be implemented)
-│   ├── constants.py        # Physical constants (modifiable if needed)
-│   └── __init__.py
-├── profiles/               # Profile-specific logic (rho, Menc, sigma2, etc.)
-│   ├── nfw.py              # Analytic NFW profile formulas
-│   ├── truncated_nfw.py    # DF-based truncated profile setup
-│   ├── abg.py              # Placeholder for ABG profile logic
-│   ├── menc.py             # Profile-aware dispatch for M(<r)
-│   ├── v2.py               # (planned) Velocity dispersion dispatch
-│   └── __init__.py
-├── runtime/                # Runtime simulation logic
-│   ├── initialize.py       # setup_grid() and initialize_grid()
-│   ├── runtime_state.py    # Class for dynamic state variables (rho, u, P, etc.)
-│   ├── simulator.py        # (planned) Main time integration loop
-│   └── __init__.py
-├── io/                     # File I/O routines (write_output, etc.)
-│   ├── write.py
-│   └── __init__.py
-└── utils/                  # Placeholder for helper routines
-    └── __init__.py
+├── config.py                 # Main Config class
+├── state.py                  # Main State class
+│
+├── parameters/               # Configuration parameter classes
+│   ├── char_params.py        # Derived characteristic scales
+│   ├── constants.py          # Physical and cosmological constants
+│   ├── grid_params.py
+│   ├── init_params.py        # NFW / ABG / truncated NFW
+│   ├── io_params.py
+│   ├── prec_params.py
+│   └── sim_params.py
+│
+├── profiles/                 # Profile-specific helper functions
+│   ├── abg.py
+│   ├── menc.py               # Enclosed mass for any profile
+│   ├── nfw.py
+│   └── truncated_nfw.py
+│
+├── io/                       # File output routines
+│   └── write.py
+│
+├── runtime_backup.py         # Archived legacy runtime logic
+└── __init__.py
 ```
 
 ---
 
-## Core Concepts
+## Example: Config usage
 
-### `Config`
+```python
+from pygtfcode import Config
 
-A single container class that manages:
+# Use all defaults (NFW profile, 300 grid points, etc.)
+config = Config()
 
-* Static parameter classes (IO, grid, profile, simulation, precision)
-* Global constants
-* Flexible override of any defaults
+# Customize initial profile
+config.init = "abg"                             # Use ABG with default params
+config.init = ("abg", {"alpha": 3.5, "beta": 4.5})  # Custom ABG
 
-### `InitParams`
+# Customize grid and output directory
+config.grid.Ngrid = 500
+config.io.model_no = 42
+config.io.base_dir = "/tmp/sims"
 
-Supports:
-
-* `NFWParams`
-* `TruncatedNFWParams`
-* `ABGParams`
-  Each subclass defines what parameters it needs (e.g., `Zt`, `deltaP` for truncated NFW).
-
-### `setup_grid()` and `initialize_grid()`
-
-* Constructs the radial grid in log-space.
-* Initializes `M(r)`, `rho(r)`, `P(r)`, `u(r)`, and `v²(r)` based on the selected profile.
-
-### `integrate_potential()`
-
-For truncated NFW only, solves Poisson’s equation from the center outward using the DF to determine $\rho(\Phi)$.
+# Switch to a truncated NFW
+config.init = ("truncated_nfw", {"Zt": 0.05, "deltaP": 1e-4})
+```
 
 ---
 
 ## What's Next
 
-* Test profile routines for correctness (`setup_grid`, `menc`, etc.)
-* Begin writing a demonstration Jupyter notebook
-* Implement `RuntimeState` and build the main simulator loop
+* Implement `State._initialize_grid()` and related setup routines
+* Integrate time-step evolution with a `Simulator` class
+* Add output and diagnostic plotting tools
+* Write example notebooks
 
 ---
 
 ## Installation
 
-This package is designed for local development using `pyenv` and a virtual environment.
+Clone the repo and install in editable mode:
 
 ```bash
+git clone https://github.com/yourname/pygtfcode.git
+cd pygtfcode
 pip install -e .
 ```
 
-You’ll also want:
-
-```bash
-pip install numpy scipy
-```
+Requires Python 3.8+, `numpy`, `scipy`, and optionally `matplotlib` for plotting.
 
 ---
 
 ## Contributors
 
-* **Yarone Tokayer** — project lead and primary developer
+* Yarone Tokayer
 
 ---
 
 ## License
 
-MIT License
+MIT License. See [LICENSE](./LICENSE) for details.
