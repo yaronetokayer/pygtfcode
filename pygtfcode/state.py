@@ -3,6 +3,8 @@ from pygtfcode.parameters.char_params import CharParams
 from pygtfcode.parameters.constants import Constants as const
 from pygtfcode.profiles.nfw import fNFW
 from pygtfcode.profiles.abg import chi
+from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
+from pygtfcode.profiles.profile_routines import menc, sigr
 import pprint
 
 def _xH(z, const):
@@ -40,6 +42,9 @@ class State:
     def __init__(self, config):
         self.config = config
         self.char = self._set_param()
+        if self.config.init.profile == 'truncated_nfw':
+            self.rho_interp = generate_rho_lookup(config)
+            self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
         self.r = self._setup_grid()
         self._initialize_grid()
 
@@ -49,7 +54,7 @@ class State:
         """
         Compute and set characteristic physical quantities based on InitParams.
         """
-        
+        print("Computing characteristic parameters for simulation...")
         init = self.config.init # Access the InitParams object from config
         sim = self.config.sim # Access the SimParams object from config
 
@@ -80,6 +85,7 @@ class State:
         v0_cgs = char.v0 * 1e5
         rho_s_cgs = char.rho_s * const.Msun_to_gram / const.Mpc_to_cm**3
         char.t0 = 1.0 / (sim.a * sim.sigma_m * v0_cgs * rho_s_cgs)
+        char.sigma_m_char = sim.sigma_m / char.sigma0 # sigma_m in dimensionless form
 
         return char  # Store the CharParams object in config
     
@@ -94,34 +100,81 @@ class State:
 
         Returns
         -------
-        r : ndarray of shape (Ngrid + 1,)
+        r : ndarray of shape (ngrid + 1,)
             Radial Lagrangian grid points, with r[0] = 0 and the rest spaced
             logarithmically between rmin and rmax.
         """
+        print("Setting up radial grid...")
         rmin = self.config.grid.rmin
         rmax = self.config.grid.rmax
-        Ngrid = self.config.grid.Ngrid
+        ngrid = self.config.grid.ngrid
 
         xlgrmin = np.log10(rmin)
         xlgrmax = np.log10(rmax)
 
-        r = np.empty(Ngrid + 1)
+        r = np.empty(ngrid + 1)
         r[0] = 0.0
-        r[1:] = 10**np.linspace(xlgrmin, xlgrmax, Ngrid)
+        r[1:] = 10**np.linspace(xlgrmin, xlgrmax, ngrid)
 
         return r
     
     def _initialize_grid(self):
         """
-        Computes initial physical quantities on the radial grid.
+        Computes initial physical quantities on the radial grid using the
+        initial profile defined in config.
 
-        Returns
-        -------
-        dict of ndarray
-            Keys: 'M', 'rho', 'P', 'u', 'v2'
+        Sets the following attributes:
+            - m: Enclosed mass at r[i+1]
+            - rho: Density in each shell (size ngrid)
+            - p: Pressure in each shell
+            - u: Internal energy in each shell
+            - v2: Velocity dispersion squared in each shell
+            - kn: Knudsen number in each shell
+            - maxvel: maximum velocity dispersion
+            - minkn: minimum Knudsen number
         """
-        pass
+        print("Initializing profiles...")
+        sigma_m = self.char.sigma_m_char
 
+        r = self.r
+        r_mid = 0.5 * (r[1:] + r[:-1])          # Midpoint of each shell
+        dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
+        # ABG smoothing to avoid rmed < r[1]
+        if self.config.init.profile == "abg" and self.config.init.gamma < 1.0:
+            r_mid = np.maximum(r_mid, r[1])
+    
+        m_outer = menc(r[1:], self)      # m[i] at shell edges
+        m_inner = np.concatenate(([0.0], m_outer[:-1]))
+        dm = m_outer - m_inner
+
+        v2 = sigr(r_mid, self)
+        rho = 3.0 * dm / dr3
+        p = rho * v2
+        u = 1.5 * v2
+        kn = 1.0 / (sigma_m * np.sqrt(p))
+
+        # Apply central smoothing if using regular NFW profile (imode = 1)
+        # This helps reduce artificial gradients in innermost cell
+        if self.config.init.profile == "nfw":
+            r1 = r[1]
+            rho_c_ideal = 1.0 / (r1 * (1.0 + r1)**2)
+            rho[0] = 2.0 * rho_c_ideal - rho[1]
+
+            dr_ratio = (r[2] - r[0]) / (r[3] - r[1])
+            p[0] = p[1] - dr_ratio * (p[2] - p[1])
+
+            v2[0] = p[0] / rho[0]
+            u[0] = 1.5 * v2[0]
+
+        self.m = m_outer
+        self.rmid = r_mid
+        self.rho = rho
+        self.p = p
+        self.u = u
+        self.v2 = v2
+        self.kn = kn
+        self.maxvel = np.sqrt(np.max(self.v2))
+        self.minkn = np.min(self.kn)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key

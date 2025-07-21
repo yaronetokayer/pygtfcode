@@ -8,18 +8,18 @@ class GridParams:
         Minimum radius of the grid, in units of the scale radius (r / r_s).
     rmax : float
         Maximum radius of the grid, in units of the scale radius (r / r_s).
-    Ngrid : int
+    ngrid : int
         Number of radial grid points (must be > 1).
     """
 
-    def __init__(self, rmin: float = 1e-3, rmax: float = 1e2, Ngrid: int = 300):
+    def __init__(self, rmin: float = 1e-3, rmax: float = 1e2, ngrid: int = 300):
         self._rmin = None
         self._rmax = None
-        self._Ngrid = None
+        self._ngrid = None
 
         self.rmin = rmin
         self.rmax = rmax
-        self.Ngrid = Ngrid
+        self.ngrid = ngrid
 
     @property
     def rmin(self):
@@ -42,15 +42,15 @@ class GridParams:
         self._rmax = float(value)
 
     @property
-    def Ngrid(self):
-        return self._Ngrid
+    def ngrid(self):
+        return self._ngrid
 
-    @Ngrid.setter
-    def Ngrid(self, value):
+    @ngrid.setter
+    def ngrid(self, value):
         if not isinstance(value, int) or value <= 1:
-            raise ValueError("Ngrid must be an integer greater than 1")
-        self._Ngrid = value
+            raise ValueError("ngrid must be an integer greater than 1")
+        self._ngrid = value
 
     def __repr__(self):
-        return f"GridParams(rmin={self.rmin}, rmax={self.rmax}, Ngrid={self.Ngrid})"
+        return f"GridParams(rmin={self.rmin}, rmax={self.rmax}, ngrid={self.ngrid})"
 

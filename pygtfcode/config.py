@@ -3,8 +3,6 @@ from pygtfcode.parameters.grid_params import GridParams
 from pygtfcode.parameters.init_params import (
     InitParams,
     NFWParams,
-    TruncatedNFWParams,
-    ABGParams,
     make_init_params,
 )
 from pygtfcode.parameters.prec_params import PrecisionParams
