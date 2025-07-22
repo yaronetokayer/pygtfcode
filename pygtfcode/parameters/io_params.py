@@ -12,18 +12,37 @@ class IOParams:
         Path to the main directory where output files are written.
     model_dir : str
         Subdirectory named 'ModelXXX', where XXX is zero-padded model number.
+    tlog : int
+        Timesteps between logging output.
+    drho_prof : float
+        Change in log of central density to trigger writing profiles to disk.
     overwrite : bool
         Whether to overwrite existing output files.
+    chatter : bool
+        Whether to print status messages during execution.
     """
 
-    def __init__(self, model_no: int = 0, base_dir: str = None, overwrite: bool = True):
+    def __init__(self, 
+                 model_no: int = 0, 
+                 base_dir: str = None, 
+                 tlog: int = 100000,
+                 drho_prof : float = 0.1,
+                 overwrite: bool = True,
+                 chatter: bool = True,
+                 ):
         self._model_no = None
         self._base_dir = None
+        self._tlog = tlog
+        self._drho_prof = drho_prof
         self._overwrite = None
+        self._chatter = None
 
         self.model_no = model_no
         self.base_dir = base_dir or os.getcwd()
+        self.tlog = tlog
+        self.drho_prof = drho_prof
         self.overwrite = overwrite
+        self.chatter = chatter
 
     @property
     def model_no(self):
@@ -53,6 +72,28 @@ class IOParams:
         self._base_dir = value
 
     @property
+    def tlog(self):
+        return self._tlog
+
+    @tlog.setter
+    def tlog(self, value):
+        if not isinstance(value, int):
+            raise TypeError("tlog must be an integer")
+        self._tlog = value
+
+    @property
+    def drho_prof(self):
+        return self._drho_prof
+    
+    @drho_prof.setter
+    def drho_prof(self, value):
+        if not isinstance(value, (int, float)):
+            raise TypeError("drho_prof must be a number")
+        if value <= 0:
+            raise ValueError("drho_prof must be positive")
+        self._drho_prof = float(value)
+
+    @property
     def overwrite(self):
         return self._overwrite
 
@@ -62,10 +103,23 @@ class IOParams:
             raise TypeError("overwrite must be a boolean")
         self._overwrite = value
 
+    @property
+    def chatter(self):
+        return self._chatter
+
+    @chatter.setter
+    def chatter(self, value):
+        if not isinstance(value, bool):
+            raise TypeError("chatter must be a boolean")
+        self._chatter = value
+
     def __repr__(self):
-        return (
-            f"IOParams(model_no={self.model_no}, "
-            f"base_dir='{self.base_dir}', "
-            f"model_dir='{self.model_dir}', "
-            f"overwrite={self.overwrite})"
-        )
+        attrs = [
+            attr for attr in dir(self)
+            if not attr.startswith('_') and not callable(getattr(self, attr))
+        ]
+        attr_strs = []
+        for attr in attrs:
+            value = getattr(self, attr)
+            attr_strs.append(f"{attr}={repr(value)}")
+        return f"{self.__class__.__name__}({', '.join(attr_strs)})"

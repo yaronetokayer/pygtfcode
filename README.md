@@ -1,6 +1,6 @@
 # pygtfcode
 
-**pygtfcode** is a Python implementation of a 1D gravothermal fluid code, adapted from a Fortran code originally designed to study the dynamical evolution of dark matter halos under the influence of heat transport, self-interactions, and baryonic potentials.
+**pygtfcode** is a Python implementation of a 1D gravothermal fluid code, adapted from a Fortran code by Frank van den Bosch originally designed to study the dynamical evolution of dark matter halos under the influence of heat transport, self-interactions, and baryonic potentials.
 
 The goal is to create a clean, modern, modular codebase that is easy to configure, extend, and use within scientific workflows.
 
@@ -12,10 +12,11 @@ Core configuration and initialization functionality is complete:
 
 * Modular configuration with defaults
 * Support for multiple initial profiles (NFW, truncated NFW, ABG)
-* Derived characteristic parameters from input mass and concentration
-* Grid setup and profile initialization routines (in progress)
-* Runtime integration and simulation loop (next)
-* Output, diagnostics, and visualization tools
+* Automatic computation of characteristic physical scales
+* Grid setup and profile initialization
+* Velocity dispersion and potential generation using phase-space integrals
+* Runtime integration and simulation loop (in progress)
+* Output, diagnostics, and visualization tools (in progress)
 
 ---
 
@@ -27,22 +28,23 @@ The simulation is structured around **two main user-facing classes**:
 
 Holds all static input parameters for a simulation run. This includes:
 
-* `io`: Output paths and model numbering
+* `io`: Output paths and model metadata
 * `grid`: Radial domain and resolution
-* `init`: Initial profile (NFW, truncated NFW, or ABG)
+* `init`: Initial profile (NFW, truncated NFW, or $\alpha$-$\beta$-$\gamma$)
 * `sim`: Simulation options (e.g. interaction cross section)
-* `prec`: Precision settings (iteration limits, step sizes)
+* `prec`: Precision settings (e.g., step tolerances)
 
 ### 2. `State`
 
 Holds the dynamically evolving quantities:
 
-* Grid arrays: `r`, `m`, `rho`, `P`, `u`, `v2`
-* Diagnostic quantities
-* Time tracking
-* Characteristic scales (computed from config)
+* Radial grid and shell midpoints: `r`, `rmid`
+* Physical variables: `m`, `rho`, `P`, `u`, `v2`, `kn`
+* Time tracking: `t`, `dt`, `step_count`, `snapshot_index`, etc.
+* Characteristic scales (computed from `Config`)
+* Profile interpolation functions (e.g., `rho_interp`, `pot_interp`)
 
-The `State` object is initialized with a `Config` and handles the setup of the simulation state (via `set_param`, `setup_grid`, and `initialize_grid`).
+The `State` object is initialized with a `Config` and handles setup internally via methods like `_set_param()`, `_setup_grid()`, and `_initialize_grid()`.
 
 ---
 
@@ -64,15 +66,15 @@ pygtfcode/
 │
 ├── profiles/                 # Profile-specific helper functions
 │   ├── abg.py
-│   ├── menc.py               # Enclosed mass for any profile
 │   ├── nfw.py
-│   └── truncated_nfw.py
+│   ├── truncated_nfw.py
+│   └── profile_routines.py   # Shared utilities (menc, sigr, etc.)
 │
 ├── io/                       # File output routines
 │   └── write.py
 │
-├── runtime_backup.py         # Archived legacy runtime logic
-└── __init__.py
+├── evolve/                   # Time integration and evolution routines
+    └── integrator.py
 ```
 
 ---
@@ -86,11 +88,11 @@ from pygtfcode import Config
 config = Config()
 
 # Customize initial profile
-config.init = "abg"                             # Use ABG with default params
+config.init = "abg"                                 # Use ABG with default params
 config.init = ("abg", {"alpha": 3.5, "beta": 4.5})  # Custom ABG
 
 # Customize grid and output directory
-config.grid.Ngrid = 500
+config.grid.ngrid = 200
 config.io.model_no = 42
 config.io.base_dir = "/tmp/sims"
 
@@ -102,10 +104,10 @@ config.init = ("truncated_nfw", {"Zt": 0.05, "deltaP": 1e-4})
 
 ## What's Next
 
-* Implement `State._initialize_grid()` and related setup routines
-* Integrate time-step evolution with a `Simulator` class
-* Add output and diagnostic plotting tools
-* Write example notebooks
+* Implement output routines for logging and snapshot writing
+* Complete `step()` and `run()` time integration interface
+* Add visualization tools and Jupyter notebooks
+* Build test coverage and CI integration
 
 ---
 
@@ -114,18 +116,12 @@ config.init = ("truncated_nfw", {"Zt": 0.05, "deltaP": 1e-4})
 Clone the repo and install in editable mode:
 
 ```bash
-git clone https://github.com/yourname/pygtfcode.git
+git clone https://github.com/yaronetokayer/pygtfcode.git
 cd pygtfcode
 pip install -e .
 ```
 
-Requires Python 3.8+, `numpy`, `scipy`, and optionally `matplotlib` for plotting.
-
----
-
-## Contributors
-
-* Yarone Tokayer
+Requires Python 3.8+, `numpy`, `scipy`, `numba`, and optionally `matplotlib` for plotting.
 
 ---
 

@@ -7,11 +7,12 @@ setup(
     description='A Python implementation of the gravothermal fluid code',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/yaronetokayer/pygtfcode',  # Update this when publishing
+    url='https://github.com/yaronetokayer/pygtfcode',
     packages=find_packages(),
     install_requires=[
         'numpy>=2.3',
         'scipy>=1.15',
+        'numba>=0.61'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

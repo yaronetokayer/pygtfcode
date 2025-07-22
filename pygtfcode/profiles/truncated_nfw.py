@@ -85,7 +85,8 @@ def generate_rho_lookup(config, n_points=10000, phi_min=1e-7):
     rho_interp : interp1d
         Interpolated function for rho(phi).
     """
-    print("Generating lookup for rho(phi)...")
+    if config.io.chatter:
+        print("Generating lookup for rho(phi)...")
 
     phi_max = 1.0 - config.init.Zt - 1e-4
 
@@ -160,7 +161,8 @@ def integrate_potential(config, rho_interp):
     pot_vals : ndarray
         Corresponding potential values at those radial points.
     """
-    print("Computing potential profile for truncated NFW halo...")
+    if config.io.chatter:
+        print("Computing potential profile for truncated NFW halo...")
     r_min = config.grid.rmin / 2
     eps = 1e-6  # A small number used for finite differences
     Zt = config.init.Zt
@@ -186,8 +188,8 @@ def integrate_potential(config, rho_interp):
 
     # Step 3: Integrate until potential crosses zero
     while y[0] > 0.0:
-        # Print current radius, overwriting previous output
-        print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
+        if config.io.chatter:
+            print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
         step_size = (r2 - r1) / Nstep
 
         def dphi_dr(r, y):
@@ -218,7 +220,8 @@ def integrate_potential(config, rho_interp):
         dr = min(dr, 0.01)
         r2 = r1 + dr
 
-    print("") # Finalize output line
+    if config.io.chatter:
+        print("") # Finalize output line
 
     # Step 4: truncate and return values
     rcut = r1
@@ -270,6 +273,9 @@ def menc_trunc(r, state, chatter=True):
     M_enc : float or ndarray
         Enclosed mass in units of Mvir.
     """
+    if not state.config.io.chatter:
+        chatter = False
+    
     r = np.atleast_1d(r)
     epsabs = state.config.prec.epsabs
     epsrel = state.config.prec.epsrel
@@ -310,7 +316,8 @@ def generate_sigr_integrand_lookup(state, n_points=1000):
     sigr_interp : interp1d
         Interpolated function for velocity dispersion squared.
     """
-    print("Generating lookup for v2 integrand...")
+    if state.config.io.chatter:
+        print("Generating lookup for v2 integrand...")
     
     rgrid = np.geomspace(state.config.grid.rmin / 2 - 1e-4, state.rcut, n_points)
     
@@ -375,9 +382,9 @@ def sigr_trunc(r, state):
             )
 
             result[i] = integral / density
-
-        print(f"\rComputing v2: r = {ri:.3f}, v2 = {result[i]:.3f}", end='', flush=True)
-
-    print("")  # Finalize output line
+        if state.config.io.chatter:
+            print(f"\rComputing v2: r = {ri:.3f}, v2 = {result[i]:.3f}", end='', flush=True)
+    if state.config.io.chatter:
+        print("")  # Finalize output line
 
     return result if result.ndim > 0 and result.shape[0] > 1 else result[0]

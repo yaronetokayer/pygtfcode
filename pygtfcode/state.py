@@ -1,10 +1,5 @@
 import numpy as np
-from pygtfcode.parameters.char_params import CharParams
 from pygtfcode.parameters.constants import Constants as const
-from pygtfcode.profiles.nfw import fNFW
-from pygtfcode.profiles.abg import chi
-from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
-from pygtfcode.profiles.profile_routines import menc, sigr
 import pprint
 
 def _xH(z, const):
@@ -43,18 +38,32 @@ class State:
         self.config = config
         self.char = self._set_param()
         if self.config.init.profile == 'truncated_nfw':
+            from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
             self.rho_interp = generate_rho_lookup(config)
             self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
         self.r = self._setup_grid()
         self._initialize_grid()
 
-        self.t = 0.0  # Current time in simulation units
+        self.t = 0.0                        # Current time in simulation units
+        self.step_count = 0                 # global integration step counter (never reset)
+        self.snapshot_index = 0             # Counts profile output snapshots
+        self.dt = 1e-6                      # initial time step (will be updated adaptively)
+        self.du_max = config.prec.eps_du    # upper limit on relative change in u
+        self.dr_max = config.prec.eps_dr    # upper limit on relative change in radius
+
+        if config.io.chatter:
+            print("State initialized.")
 
     def _set_param(self):
         """
         Compute and set characteristic physical quantities based on InitParams.
         """
-        print("Computing characteristic parameters for simulation...")
+        from pygtfcode.parameters.char_params import CharParams
+        from pygtfcode.profiles.nfw import fNFW
+        from pygtfcode.profiles.abg import chi
+
+        if self.config.io.chatter:
+            print("Computing characteristic parameters for simulation...")
         init = self.config.init # Access the InitParams object from config
         sim = self.config.sim # Access the SimParams object from config
 
@@ -104,7 +113,8 @@ class State:
             Radial Lagrangian grid points, with r[0] = 0 and the rest spaced
             logarithmically between rmin and rmax.
         """
-        print("Setting up radial grid...")
+        if self.config.io.chatter:
+            print("Setting up radial grid...")
         rmin = self.config.grid.rmin
         rmax = self.config.grid.rmax
         ngrid = self.config.grid.ngrid
@@ -133,17 +143,18 @@ class State:
             - maxvel: maximum velocity dispersion
             - minkn: minimum Knudsen number
         """
-        print("Initializing profiles...")
+        from pygtfcode.profiles.profile_routines import menc, sigr
+
+        if self.config.io.chatter:
+            print("Initializing profiles...")
+
         sigma_m = self.char.sigma_m_char
 
         r = self.r
         r_mid = 0.5 * (r[1:] + r[:-1])          # Midpoint of each shell
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
-        # ABG smoothing to avoid rmed < r[1]
-        if self.config.init.profile == "abg" and self.config.init.gamma < 1.0:
-            r_mid = np.maximum(r_mid, r[1])
     
-        m_outer = menc(r[1:], self)      # m[i] at shell edges
+        m_outer = menc(r[1:], self)             # m[i] at shell edges
         m_inner = np.concatenate(([0.0], m_outer[:-1]))
         dm = m_outer - m_inner
 
@@ -175,6 +186,16 @@ class State:
         self.kn = kn
         self.maxvel = np.sqrt(np.max(self.v2))
         self.minkn = np.min(self.kn)
+
+    def step_one(self):
+        """Advance the simulation by one time step."""
+        from pygtfcode.evolve.integrator import step_forward
+        step_forward(self)
+
+    def run(self):
+        """Run the simulation until the halting criterion is met."""
+        from pygtfcode.evolve.integrator import run_until_stop
+        run_until_stop(self)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key
