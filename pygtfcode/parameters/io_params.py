@@ -60,6 +60,11 @@ class IOParams:
     def model_dir(self):
         """Returns the subdirectory name as 'ModelXXX' (with leading zeros)."""
         return f"Model{self.model_no:03d}"
+    
+    @property
+    def logpath(self):
+        """Returns the full path to the log file."""
+        return os.path.join(self.base_dir, self.model_dir, "logfile")
 
     @property
     def base_dir(self):

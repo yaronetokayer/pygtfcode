@@ -35,6 +35,8 @@ class State:
     """
 
     def __init__(self, config):
+        from pygtfcode.io.write import make_dir
+
         self.config = config
         self.char = self._set_param()
         if self.config.init.profile == 'truncated_nfw':
@@ -45,14 +47,20 @@ class State:
         self._initialize_grid()
 
         self.t = 0.0                        # Current time in simulation units
-        self.step_count = 0                 # global integration step counter (never reset)
+        self.step_count = 0                 # Global integration step counter (never reset)
         self.snapshot_index = 0             # Counts profile output snapshots
-        self.dt = 1e-6                      # initial time step (will be updated adaptively)
-        self.du_max = config.prec.eps_du    # upper limit on relative change in u
-        self.dr_max = config.prec.eps_dr    # upper limit on relative change in radius
+        self.dt = 1e-6                      # Initial time step (will be updated adaptively)
+        self.du_max = config.prec.eps_du    # Initialize the max du to upper limit
+        self.dr_max = config.prec.eps_dr    # Initialize the max dr to upper limit
+
+        self.maxvel = np.sqrt(np.max(self.v2))
+        self.minkn = np.min(self.kn)
+        self.mintrelax = np.min(self.trelax)
 
         if config.io.chatter:
             print("State initialized.")
+
+        make_dir(self)                      # Create the model directory if it doesn't exist
 
     def _set_param(self):
         """
@@ -155,14 +163,15 @@ class State:
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
     
         m_outer = menc(r[1:], self)             # m[i] at shell edges
-        m_inner = np.concatenate(([0.0], m_outer[:-1]))
-        dm = m_outer - m_inner
+        m = np.concatenate(([0.0], m_outer))
+        dm = m_outer - m[:-1]
 
         v2 = sigr(r_mid, self)
         rho = 3.0 * dm / dr3
         p = rho * v2
         u = 1.5 * v2
         kn = 1.0 / (sigma_m * np.sqrt(p))
+        trelax = 1.0 / (np.sqrt(v2) * rho)
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
         # This helps reduce artificial gradients in innermost cell
@@ -177,24 +186,30 @@ class State:
             v2[0] = p[0] / rho[0]
             u[0] = 1.5 * v2[0]
 
-        self.m = m_outer
+        self.m = m
         self.rmid = r_mid
         self.rho = rho
         self.p = p
         self.u = u
         self.v2 = v2
         self.kn = kn
-        self.maxvel = np.sqrt(np.max(self.v2))
-        self.minkn = np.min(self.kn)
+        self.trelax = trelax
 
     def step_one(self):
         """Advance the simulation by one time step."""
-        from pygtfcode.evolve.integrator import step_forward
-        step_forward(self)
+        from pygtfcode.evolve.integrator import integrate_time_step
+        integrate_time_step(self)
 
     def run(self):
         """Run the simulation until the halting criterion is met."""
         from pygtfcode.evolve.integrator import run_until_stop
+        from pygtfcode.io.write import write_log_entry, write_profile_snapshot
+
+        # Write initial profiles and log entry
+        write_log_entry(self)
+        write_profile_snapshot(self)
+
+        # Integrate forward in time until a halting criterion is met
         run_until_stop(self)
 
     def __repr__(self):
