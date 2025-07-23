@@ -43,6 +43,10 @@ def run_until_stop(state):
             write_profile_snapshot(state)
             state.snapshot_index += 1
 
+        # if step_count % 1000 == 0:
+        #     write_profile_snapshot(state)
+        #     state.snapshot_index += 1
+
         if step_count % io.tlog == 0:
             write_log_entry(state)
 
@@ -111,6 +115,7 @@ def integrate_time_step(state, dt_prop, step_count):
 
     # Compute current luminosity array
     lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
+    print(lum)
 
     iter_du = 0
     iter_v2 = 0

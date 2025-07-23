@@ -196,8 +196,13 @@ class State:
     def step_one(self):
         """Advance the simulation by one time step."""
         from pygtfcode.evolve.integrator import compute_time_step, integrate_time_step
+
         dt_prop = compute_time_step(self)
-        integrate_time_step(self, dt_prop)
+        self.step_count += 1
+        integrate_time_step(self, dt_prop, self.step_count)
+
+        if self.config.io.chatter:
+            print(f"State advanced by one time step to t = {self.t}. dt = {self.dt}. step_count = {self.step_count}")
 
     def run(self):
         """Run the simulation until the halting criterion is met."""

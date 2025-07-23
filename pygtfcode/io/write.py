@@ -108,8 +108,8 @@ def write_profile_snapshot(state):
         for i in range(len(state.r) - 1):
             f.write(
                 f"{i:6d}  "
-                f"{np.log(state.r[i+1]):12.6e}  "
-                f"{np.log(state.rmid[i]):12.6e}  "
+                f"{np.log10(state.r[i+1]):12.6e}  "
+                f"{np.log10(state.rmid[i]):12.6e}  "
                 f"{state.m[i+1]:12.6e}  "
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
