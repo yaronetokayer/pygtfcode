@@ -20,11 +20,11 @@ def _xH(z, const):
     H_z : float
         Hubble parameter at redshift z [km/s/Mpc].
     """
-    
-    omega_lambda = 1 - const.Omega_m
+    Omega_m = const.Omega_m
+    omega_lambda = 1 - Omega_m
     xH_0 = 100 * const.xhubble  # H_0 in km/s/Mpc
 
-    fac = omega_lambda + (1.0 - omega_lambda - const.Omega_m) * (1.0 + z)**2 + const.Omega_m * (1.0 + z)**3
+    fac = omega_lambda + (1.0 - omega_lambda - Omega_m) * (1.0 + z)**2 + Omega_m * (1.0 + z)**3
 
     return xH_0 * np.sqrt(fac)
 
@@ -78,13 +78,13 @@ class State:
         char = CharParams() # Instantiate CharParams object
 
         rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
-        rvir *= (const.Delta_vir / 178.0)**(1/3)
+        rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
         rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2/3)
         rvir /= const.xhubble
 
         Mvir = init.Mvir / const.xhubble
 
-        # vvir = np.sqrt(const.gee * Mvir / rvir)
+        print(np.sqrt(const.gee * Mvir / rvir))
 
         if init.profile != 'abg':
             char.fc = fNFW(init.cvir)
@@ -97,7 +97,8 @@ class State:
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
         char.v0 = np.sqrt(const.gee * char.m_s / char.r_s)
-        char.sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s
+        sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun^2
+        char.sigma0 = sigma0 * const.Mpc_to_cm**2 / const.Msun_to_gram # In cm^2 / g
 
         v0_cgs = char.v0 * 1e5
         rho_s_cgs = char.rho_s * const.Msun_to_gram / const.Mpc_to_cm**3
@@ -210,6 +211,7 @@ class State:
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot
 
         # Write initial profiles and log entry
+        print(self.step_count)
         write_profile_snapshot(self)
         if self.config.io.chatter:
             print("Initial profiles written to disk.")
@@ -223,6 +225,33 @@ class State:
         if self.config.io.chatter:
             print("Final state:")
         write_log_entry(self)
+
+    def get_phys(self):
+        """
+        Method to print characteristic quantities in physical units
+        """
+        from pygtfcode.profiles.profile_routines import menc
+        char = self.char
+        init = self.config.init
+
+        Mtot = menc(self.config.grid.rmax, self) * char.m_s
+        rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
+        rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
+        rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2/3)
+        rvir /= const.xhubble
+        vvir = np.sqrt(const.gee * init.Mvir / const.xhubble / rvir)
+
+        params_dict = {
+            'log[Mvir/Msun]'            : np.log10(init.Mvir / const.xhubble),
+            'log[Mtot/Msun]'            : np.log10(Mtot),
+            'Vvir [km/s]'               : vvir,
+            'v_0 [km/s]'                : char.v0,
+            'log[rho_s/(Msun/kpc^3)]'   : np.log10(char.rho_s * 1.0e-9),
+            'r_s [kpc]'                 : char.r_s * 1.0e3,
+            't_0 [Gyr]'                 : char.t0 * const.sec_to_Gyr
+        }
+
+        return params_dict
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key

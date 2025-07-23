@@ -24,69 +24,47 @@ def make_dir(state):
         if state.config.io.chatter:
             print(f"Directory already exists: {full_path}")
 
-def initialize_log(state):
-    """
-    Initialize the log file with a header row.
-
-    Arguments
-    ---------
-    state : State
-        The current simulation state.
-    """
-
-    filepath = state.config.io.logpath
-
-    header = (
-        f"{'step':>6}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  "
-        f"{'v_max':>12}  {'Kn_min':>12}\n"
-    )
-
-    with open(filepath, "w") as f:
-        f.write(header)
-
-    if state.config.io.chatter:
-        print("Log file initialized:")
-        print(header.strip())
-
 def write_log_entry(state):
     """ 
     Append a line to the simulation log file.
-    Overwrites any lineswith step_count greater than or equal to the current step_count.
+    Overwrites any lines with step_count >= current step_count.
 
     Arguments
     ---------
     state : State
         The current simulation state.
     """
-
     filepath = state.config.io.logpath
+    chatter = state.config.io.chatter
+    step = state.step_count
 
-    new_line = (
-        f"{state.step_count:6d}  "
-        f"{state.t:12.6e}  "
-        f"{state.dt:12.6e}  "
-        f"{state.rho[0]:12.6e}  "
-        f"{state.maxvel:12.6e}  "
-        f"{state.minkn:12.6e}\n"
-    )
+    header = f"{'step':>10}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}\n"
+    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}\n"
+
+    lines = []
 
     if os.path.exists(filepath):
         with open(filepath, "r") as f:
             lines = f.readlines()
-            header = lines[0]
-            data_lines = [line for line in lines[1:] if int(line.split()[0]) < state.step_count]
 
-        with open(filepath, "w") as f:
-            f.write(header)
-            f.writelines(data_lines)
-            f.write(new_line)
+        if lines and lines[0].strip() == header.strip():
+            lines = [lines[0]] + [line for line in lines[1:] if int(line.split()[0]) < step]
+        else:
+            lines = [header]
     else:
-        initialize_log(state)
-        with open(filepath, "a") as f:
-            f.write(new_line)
+        lines = [header]
 
-    if state.config.io.chatter:
-        print(new_line.strip())
+    lines.append(new_line)
+
+    with open(filepath, "w") as f:
+        f.writelines(lines)
+
+    if chatter:
+        if step == 0:
+            print("Log file initialized:")
+            print(header[:-1])
+        print(new_line[:-1])
+
 
 def write_profile_snapshot(state):
     """ 

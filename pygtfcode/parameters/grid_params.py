@@ -12,7 +12,12 @@ class GridParams:
         Number of radial grid points (must be > 1).
     """
 
-    def __init__(self, rmin: float = 1e-3, rmax: float = 1e2, ngrid: int = 300):
+    def __init__(
+            self, 
+            rmin: float = 1e-2,
+            rmax: float = 1e2,
+            ngrid: int = 200
+            ):
         self._rmin = None
         self._rmax = None
         self._ngrid = None

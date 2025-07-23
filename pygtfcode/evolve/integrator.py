@@ -115,7 +115,6 @@ def integrate_time_step(state, dt_prop, step_count):
 
     # Compute current luminosity array
     lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
-    print(lum)
 
     iter_du = 0
     iter_v2 = 0
