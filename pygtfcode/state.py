@@ -84,8 +84,6 @@ class State:
 
         Mvir = init.Mvir / const.xhubble
 
-        print(np.sqrt(const.gee * Mvir / rvir))
-
         if init.profile != 'abg':
             char.fc = fNFW(init.cvir)
             char.m_s = Mvir / char.fc
@@ -211,7 +209,6 @@ class State:
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot
 
         # Write initial profiles and log entry
-        print(self.step_count)
         write_profile_snapshot(self)
         if self.config.io.chatter:
             print("Initial profiles written to disk.")

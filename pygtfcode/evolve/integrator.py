@@ -10,7 +10,8 @@ def run_until_stop(state):
     chatter = state.config.io.chatter
     sim = state.config.sim
     t_halt = sim.t_halt
-    rho0_last = state.rho[0]
+    rho0_last_prof = state.rho[0]
+    rho0_last_tevol = state.rho[0]
 
     while state.t < t_halt:
 
@@ -36,17 +37,21 @@ def run_until_stop(state):
                 print("Simulation halted: central density is nan")
             pass
 
-        # Check logging criteria
-        drho = np.abs(rho0 - rho0_last) / rho0_last
-        if drho > io.drho_prof:
-            rho0_last = rho0
+        # Check I/O criteria
+        # Write profile to disk
+        drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
+        if drho_for_prof > io.drho_prof:
+            rho0_last_prof = rho0
             write_profile_snapshot(state)
             state.snapshot_index += 1
 
-        # if step_count % 1000 == 0:
-        #     write_profile_snapshot(state)
-        #     state.snapshot_index += 1
+        # Track time evolution
+        drho_for_tevol = np.abs(rho0 - rho0_last_tevol) / rho0_last_tevol
+        if drho_for_tevol > io.drho_tevol:
+            rho0_last_tevol = rho0
+            write_time_evolution(state)
 
+        # Log
         if step_count % io.tlog == 0:
             write_log_entry(state)
 

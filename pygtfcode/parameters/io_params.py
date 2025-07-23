@@ -16,6 +16,8 @@ class IOParams:
         Timesteps between logging output.
     drho_prof : float
         Change in log of central density to trigger writing profiles to disk.
+    drho_tevol : float
+        Change in log of central density to trigger writing time evolution data to disk.
     overwrite : bool
         Whether to overwrite existing output files.
     chatter : bool
@@ -27,6 +29,7 @@ class IOParams:
                  base_dir: str = None, 
                  tlog: int = 100000,
                  drho_prof : float = 0.1,
+                 drho_tevol : float = 0.01,
                  overwrite: bool = True,
                  chatter: bool = True,
                  ):
@@ -34,6 +37,7 @@ class IOParams:
         self._base_dir = None
         self._tlog = tlog
         self._drho_prof = drho_prof
+        self._drho_tevol = drho_tevol
         self._overwrite = None
         self._chatter = None
 
@@ -41,6 +45,7 @@ class IOParams:
         self.base_dir = base_dir or os.getcwd()
         self.tlog = tlog
         self.drho_prof = drho_prof
+        self.drho_tevol = drho_tevol
         self.overwrite = overwrite
         self.chatter = chatter
 
@@ -97,6 +102,18 @@ class IOParams:
         if value <= 0:
             raise ValueError("drho_prof must be positive")
         self._drho_prof = float(value)
+
+    @property
+    def drho_tevol(self):
+        return self._drho_tevol
+    
+    @drho_tevol.setter
+    def drho_tevol(self, value):
+        if not isinstance(value, (int, float)):
+            raise TypeError("drho_tevol must be a number")
+        if value <= 0:
+            raise ValueError("drho_tevol must be positive")
+        self._drho_tevol = float(value)
 
     @property
     def overwrite(self):
