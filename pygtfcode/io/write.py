@@ -1,12 +1,13 @@
 import numpy as np
+from pygtfcode.parameters.constants import Constants as const
 import os
 
 def make_dir(state):
     """
     Create the model directory if it doesn't exist.
 
-    Parameters
-    ----------
+    Arguments
+    ---------
     state : State
         The current simulation state.
     """
@@ -27,10 +28,10 @@ def initialize_log(state):
     """
     Initialize the log file with a header row.
 
-    Parameters
-    ----------
-    filepath : str
-        Path to the log file.
+    Arguments
+    ---------
+    state : State
+        The current simulation state.
     """
 
     filepath = state.config.io.logpath
@@ -52,8 +53,8 @@ def write_log_entry(state):
     Append a line to the simulation log file.
     Overwrites any lineswith step_count greater than or equal to the current step_count.
 
-    Parameters
-    ----------
+    Arguments
+    ---------
     state : State
         The current simulation state.
     """
@@ -91,8 +92,8 @@ def write_profile_snapshot(state):
     """ 
     Write full radial profiles to disk.
 
-    Parameters
-    ----------
+    Arguments
+    ---------
     state : State
         The current simulation state.
     """
@@ -115,5 +116,54 @@ def write_profile_snapshot(state):
                 f"{state.trelax[i]:12.6e}  "
                 f"{state.kn[i]:12.6e}\n"
             )
-
     
+    append_snapshot_conversion(state)
+
+def initialize_snapshot_conversion(filepath):
+    """
+    Initialize the timestep_conversion file with a header row.
+
+    Arguments
+    ---------
+    filepath : str
+        Path to timestep conversion file.
+    """
+
+    header = (
+        f"{'index':>6}  {'time':>12}  {'time_Gyr':>12}\n"
+    )
+
+    with open(filepath, "w") as f:
+        f.write(header)
+
+def append_snapshot_conversion(state):
+    """
+    Append conversion between snapshot_index and time
+
+    Arguments
+    ---------
+    state : State
+        The current simulation state.
+    """
+    filepath = os.path.join(state.config.io.base_dir, state.config.io.model_dir, f"snapshot_conversion.txt")
+
+    new_line = (
+        f"{state.snapshot_index:6d}  "
+        f"{state.t:12.6e}  "
+        f"{state.t * state.char.t0 * const.sec_to_Gyr:12.6e}\n"
+    )
+
+    if os.path.exists(filepath):
+        with open(filepath, "r") as f:
+            lines = f.readlines()
+            header = lines[0]
+            data_lines = [line for line in lines[1:] if int(line.split()[0]) < state.snapshot_index]
+
+        with open(filepath, "w") as f:
+            f.write(header)
+            f.writelines(data_lines)
+            f.write(new_line)
+    else:
+        initialize_snapshot_conversion(filepath)
+        with open(filepath, "a") as f:
+            f.write(new_line)

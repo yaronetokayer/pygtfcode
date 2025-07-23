@@ -12,7 +12,7 @@ class PrecisionParams:
         Epsilon factor for adjusting time step size.
     max_iter_du : int
         Maximum iterations allowed for conduction step convergence.
-    max_iter_revir : int
+    max_iter_dr : int
         Maximum iterations allowed for re-virialization step convergence.
     epsabs : float
         Absolute tolerance for numerical integration routines.
@@ -22,19 +22,21 @@ class PrecisionParams:
 
     def __init__(
         self,
-        eps_du: float = 1e-2,
-        eps_dr: float = 1e-2,
-        eps_dt: float = 1e-2,
-        max_iter_du: int = 10,
-        max_iter_revir: int = 50,
-        epsabs: float = 1e-6,
-        epsrel: float = 1e-6
+        eps_du : float = 1e-2,
+        eps_dr : float = 1e-2,
+        eps_dt : float = 1e-2,
+        max_iter_du : int = 10,
+        max_iter_v2 : int = 10,
+        max_iter_dr : int = 20000,
+        epsabs : float = 1e-6,
+        epsrel : float = 1e-6
     ):
         self._eps_du = None
         self._eps_dr = None
         self._eps_dt = None
         self._max_iter_du = None
-        self._max_iter_revir = None
+        self._max_iter_v2 = None
+        self._max_iter_dr = None
         self._epsabs = None
         self._epsrel = None
 
@@ -42,7 +44,8 @@ class PrecisionParams:
         self.eps_dr = eps_dr
         self.eps_dt = eps_dt
         self.max_iter_du = max_iter_du
-        self.max_iter_revir = max_iter_revir
+        self.max_iter_v2 = max_iter_v2
+        self.max_iter_dr = max_iter_dr
         self.epsabs = epsabs
         self.epsrel = epsrel
 
@@ -83,13 +86,22 @@ class PrecisionParams:
         self._max_iter_du = int(value)
 
     @property
-    def max_iter_revir(self):
-        return self._max_iter_revir
+    def max_iter_v2(self):
+        return self._max_iter_v2
 
-    @max_iter_revir.setter
-    def max_iter_revir(self, value):
-        self._validate_nonnegative_int(value, "max_iter_revir")
-        self._max_iter_revir = int(value)
+    @max_iter_v2.setter
+    def max_iter_v2(self, value):
+        self._validate_nonnegative_int(value, "max_iter_v2")
+        self._max_iter_v2 = int(value)
+
+    @property
+    def max_iter_dr(self):
+        return self._max_iter_dr
+
+    @max_iter_dr.setter
+    def max_iter_dr(self, value):
+        self._validate_nonnegative_int(value, "max_iter_dr")
+        self._max_iter_dr = int(value)
 
     @property
     def epsabs(self):
@@ -118,9 +130,9 @@ class PrecisionParams:
             raise ValueError(f"{name} must be a non-negative integer.")
 
     def __repr__(self):
-        return (
-            f"PrecisionParams(eps_du={self.eps_du}, eps_dr={self.eps_dr}, "
-            f"eps_dt={self.eps_dt}, max_iter_du={self.max_iter_du}, "
-            f"max_iter_revir={self.max_iter_revir}, "
-            f"epsabs={self.epsabs}, epsrel={self.epsrel})"
-        )
+        attrs = [
+            attr for attr in dir(self)
+            if not attr.startswith("_") and not callable(getattr(self, attr))
+        ]
+        attr_strs = [f"{attr}={getattr(self, attr)!r}" for attr in attrs]
+        return f"{self.__class__.__name__}({', '.join(attr_strs)})"

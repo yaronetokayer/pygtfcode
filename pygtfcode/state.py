@@ -35,7 +35,7 @@ class State:
     """
 
     def __init__(self, config):
-        from pygtfcode.io.write import make_dir
+        from pygtfcode.io.write import make_dir, write_profile_snapshot, write_log_entry
 
         self.config = config
         self.char = self._set_param()
@@ -156,8 +156,6 @@ class State:
         if self.config.io.chatter:
             print("Initializing profiles...")
 
-        sigma_m = self.char.sigma_m_char
-
         r = self.r
         r_mid = 0.5 * (r[1:] + r[:-1])          # Midpoint of each shell
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
@@ -170,7 +168,7 @@ class State:
         rho = 3.0 * dm / dr3
         p = rho * v2
         u = 1.5 * v2
-        kn = 1.0 / (sigma_m * np.sqrt(p))
+        kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p))
         trelax = 1.0 / (np.sqrt(v2) * rho)
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
@@ -197,8 +195,9 @@ class State:
 
     def step_one(self):
         """Advance the simulation by one time step."""
-        from pygtfcode.evolve.integrator import integrate_time_step
-        integrate_time_step(self)
+        from pygtfcode.evolve.integrator import compute_time_step, integrate_time_step
+        dt_prop = compute_time_step(self)
+        integrate_time_step(self, dt_prop)
 
     def run(self):
         """Run the simulation until the halting criterion is met."""
@@ -206,11 +205,19 @@ class State:
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot
 
         # Write initial profiles and log entry
-        write_log_entry(self)
         write_profile_snapshot(self)
+        if self.config.io.chatter:
+            print("Initial profiles written to disk.")
+        write_log_entry(self)
 
         # Integrate forward in time until a halting criterion is met
         run_until_stop(self)
+
+        # Write final state to disk
+        write_profile_snapshot(self)
+        if self.config.io.chatter:
+            print("Final state:")
+        write_log_entry(self)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key

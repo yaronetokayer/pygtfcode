@@ -1,39 +1,50 @@
 import numpy as np
+from numba import njit
 
-def compute_luminosities(state):
+@njit
+def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
     e.g, Eq. (2) in Nishikawa et al. 2020.
 
-    Parameters
+    Arguments
     ----------
-    state : State
-        The current simulation state.
+    a : float
+        Constant 'a' in the conductivity formula.
+    b : float
+        Constant 'b' in the conductivity formula.
+    c : float
+        Constant 'c' in the conductivity formula.
+    sigma_m : float
+        Interaction cross section in dimensionless units.
+    r : ndarray
+        Radial grid points, including cell edges (length = ngrid + 1).
+    v2 : ndarray
+        Velocity dispersion squared for each cell (length = ngrid).
+    p : ndarray
+        Pressure for each cell (length = ngrid).
+    cored : bool
+        Whether the system has a central core (i.e., ABG with gamma < 1.0).
 
     Returns
     -------
-    lum : np.ndarray
-        Array of luminosities evaluated at each radial grid point (same length as state.r).
+    lum : ndarray
+        Luminosities at each shell boundary (same length as r).
     """
-    lum = np.empty_like(state.r)
-
-    a = state.config.sim.a
-    b = state.config.sim.b
-    c = state.config.sim.c
-    sigma_m_sq = state.char.sigma_m_char**2
+    lum = np.empty_like(r)
 
     # Compute temperature gradient and midpoints using cell-centered values
-    dTdr = ( state.v2[1:] - state.v2[:-1] ) / ( state.r[2:] - state.r[:-2] )
+    dTdr = ( v2[1:] - v2[:-1] ) / ( r[2:] - r[:-2] )
 
     # One sided difference for cored profiles (i.e., ABG with gamma < 1)
-    if state.config.init.profile == 'abg' and state.config.init.gamma < 1.0:
-        dTdr[0] = (state.v2[1] - state.v2[0]) / (state.r[2] - state.r[1])
+    if cored:
+        dTdr[0] = (v2[1] - v2[0]) / (r[2] - r[1])
 
-    vmed = np.sqrt(0.5 * state.v2[1:] + state.v2[:-1] )
-    pmed = 0.5 * ( state.p[1:] + state.p[:-1] )
+    vmed = np.sqrt(0.5 * v2[1:] + v2[:-1] )
+    pmed = 0.5 * ( p[1:] + p[:-1] )
 
-    fac1 = -3.0 * vmed * state.r[1:-1]**2
-    fac2 = (a / b) * sigma_m_sq + (1.0 / c) / pmed
+    fac1 = -3.0 * vmed * r[1:-1]**2
+    fac2 = (a / b) * sigma_m**2 + (1.0 / c) / pmed
 
     lum[1:-1] = (fac1 / fac2) * dTdr
 
@@ -43,18 +54,25 @@ def compute_luminosities(state):
 
     return lum
 
-def conduct_heat(state, lum):
+@njit
+def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
     Updates internal energy and recomputes pressure.
 
-    Parameters
-    ----------
-    state : State
-        The current simulation state.
+    Arguments
+    ---------
+    m : np.ndarray
+        Enclosed mass array
+    u : np.ndarray
+        Internal energy array
+    rho : np.ndarray
+        Density array
     lum : np.ndarray
         Array of luminosities from compute_luminosities (length = len(state.r))
+    dt : float
+        Current timestep duration
 
     Returns
     -------
@@ -62,13 +80,15 @@ def conduct_heat(state, lum):
         Updated internal energy array.
     p : np.ndarray
         Updated pressure array.
+    dumax : float
+        Max relative change in u
     """
 
-    dudt = -( lum[1:] - lum[:-1] ) / (state.m[1:] - state.m[: -1])
-    du = dudt * state.dt
+    dudt = -( lum[1:] - lum[:-1] ) / (m[1:] - m[: -1])
+    du = dudt * dt
 
-    u = state.u + du
-    p = ( 2 / 3 ) * state.rho * u
+    u = u + du
+    p = ( 2 / 3 ) * rho * u
 
     # Track max relative change in u for timestep control
     dumax = np.max(np.abs(du / u))
