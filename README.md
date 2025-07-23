@@ -56,6 +56,14 @@ state = State(config)
 state.run()
 ```
 
+We can also advance the system by a single time step:
+
+```python
+state.step_one()
+```
+
+Note that outputs will not generate automatically when running one step at a time.
+
 To customize:
 
 ```python
