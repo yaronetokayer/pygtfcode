@@ -30,7 +30,7 @@ Holds the dynamically evolving quantities:
 * Characteristic scales (derived from `Config`)
 * A `run()` method to evolve the system until collapse or a stopping condition is reached
 
-The `State` object is initialized with a `Config` object.
+The `State` object is initialized with a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
 
 ---
 
@@ -56,7 +56,7 @@ state = State(config)
 state.run()
 ```
 
-To customize the model:
+To customize:
 
 ```python
 # Customize initial profile
@@ -71,6 +71,9 @@ config.sim.sigma_m = 1.0
 
 # Switch to a truncated NFW
 config.init = ("truncated_nfw", {"Zt": 0.05, "deltaP": 1e-4})
+
+# Turn off chatter
+config.io.chatter = False
 ```
 ## Output files
 
