@@ -1,17 +1,29 @@
 import numpy as np
 
-def run_until_stop(state):
+def run_until_stop(state, **kwargs):
     """
     Repeatedly step forward until t >= t_halt or halting criterion met.
     """
     from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 
+    # User halting criteria
+    steps = kwargs.get('steps', None)
+    time_limit = kwargs.get('time', None)
+    rho_c_limit = kwargs.get('rho_c', None)
+    step_i = state.step_count if steps is not None else None
+    time_i = state.t if time_limit is not None else None
+
+    # Store attributes faster access in loop
     io = state.config.io
     chatter = state.config.io.chatter
     sim = state.config.sim
     t_halt = sim.t_halt
     rho0_last_prof = state.rho[0]
     rho0_last_tevol = state.rho[0]
+    rho_c_halt = sim.rho_c_halt
+    drho_prof = io.drho_prof
+    drho_tevol = io.drho_tevol
+    nlog = io.nlog
 
     while state.t < t_halt:
 
@@ -28,31 +40,41 @@ def run_until_stop(state):
         rho0 = state.rho[0]
 
         # Check halting criteria
-        if rho0 > sim.rho_c_halt:
+        if rho0 > rho_c_halt:
             if chatter:
                 print("Simulation halted: central density exceeds halting value")
             break
         if np.isnan(rho0):
             if chatter:
                 print("Simulation halted: central density is nan")
-            pass
+            break
+
+        # User halting criteria
+        if (
+            (steps is not None and step_count - step_i > steps)
+            or (time_limit is not None and state.t - time_i > time_limit)
+            or (rho_c_limit is not None and rho0 > rho_c_limit)
+        ):
+            if chatter:
+                print("Simulation halted: user stopping condition reached")
+            break
 
         # Check I/O criteria
         # Write profile to disk
         drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
-        if drho_for_prof > io.drho_prof:
+        if drho_for_prof > drho_prof:
             rho0_last_prof = rho0
             write_profile_snapshot(state)
             state.snapshot_index += 1
 
         # Track time evolution 
         drho_for_tevol = np.abs(rho0 - rho0_last_tevol) / rho0_last_tevol
-        if drho_for_tevol > io.drho_tevol:
+        if drho_for_tevol > drho_tevol:
             rho0_last_tevol = rho0
             write_time_evolution(state)
 
         # Log
-        if step_count % io.nlog == 0:
+        if step_count % nlog == 0:
             write_log_entry(state)
 
     if state.t >= t_halt:

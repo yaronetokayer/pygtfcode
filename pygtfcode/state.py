@@ -204,10 +204,37 @@ class State:
         if self.config.io.chatter:
             print(f"State advanced by one time step to t = {self.t}. dt = {self.dt}. step_count = {self.step_count}")
 
-    def run(self):
-        """Run the simulation until the halting criterion is met."""
+    def run(self, steps=None, time=None, rho_c=None):
+        """
+        Run the simulation until a halting criterion is met.
+        User can set halting criteria to run for a specified duration.
+        These are overridden by the halting criteria in self.config.
+
+        Arguments
+        ---------
+        steps : int, optional
+            Number of steps to advance the simulation
+        time : float, optional
+            Amount of time by which to advance the simulation
+        rho_c: float, optional
+            Max central denisty value to advance until
+        """
         from pygtfcode.evolve.integrator import run_until_stop
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot, write_time_evolution
+
+        # Prepare kwargs for run_until_stop if any halting criteria are provided
+        kwargs = {}
+        if steps is not None:
+            kwargs['steps'] = steps
+        if time is not None:
+            kwargs['time'] = time
+        if rho_c is not None:
+            kwargs['rho_c'] = rho_c
+
+        # Write initial state to disk
+        write_profile_snapshot(self)
+        write_time_evolution(self)
+        write_log_entry(self)
 
         # Write initial state to disk
         write_profile_snapshot(self)
@@ -215,7 +242,7 @@ class State:
         write_log_entry(self)
 
         # Integrate forward in time until a halting criterion is met
-        run_until_stop(self)
+        run_until_stop(self, **kwargs)
 
         # Write final state to disk
         write_profile_snapshot(self)
