@@ -206,12 +206,11 @@ class State:
     def run(self):
         """Run the simulation until the halting criterion is met."""
         from pygtfcode.evolve.integrator import run_until_stop
-        from pygtfcode.io.write import write_log_entry, write_profile_snapshot
+        from pygtfcode.io.write import write_log_entry, write_profile_snapshot, write_time_evolution
 
-        # Write initial profiles and log entry
+        # Write initial state to disk
         write_profile_snapshot(self)
-        if self.config.io.chatter:
-            print("Initial profiles written to disk.")
+        write_time_evolution(self)
         write_log_entry(self)
 
         # Integrate forward in time until a halting criterion is met
@@ -219,8 +218,7 @@ class State:
 
         # Write final state to disk
         write_profile_snapshot(self)
-        if self.config.io.chatter:
-            print("Final state:")
+        write_time_evolution(self)
         write_log_entry(self)
 
     def get_phys(self):

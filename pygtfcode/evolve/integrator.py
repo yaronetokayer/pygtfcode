@@ -4,7 +4,7 @@ def run_until_stop(state):
     """
     Repeatedly step forward until t >= t_halt or halting criterion met.
     """
-    from pygtfcode.io.write import write_profile_snapshot, write_log_entry
+    from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 
     io = state.config.io
     chatter = state.config.io.chatter
@@ -45,14 +45,14 @@ def run_until_stop(state):
             write_profile_snapshot(state)
             state.snapshot_index += 1
 
-        # Track time evolution
+        # Track time evolution 
         drho_for_tevol = np.abs(rho0 - rho0_last_tevol) / rho0_last_tevol
         if drho_for_tevol > io.drho_tevol:
             rho0_last_tevol = rho0
             write_time_evolution(state)
 
         # Log
-        if step_count % io.tlog == 0:
+        if step_count % io.nlog == 0:
             write_log_entry(state)
 
     if state.t >= t_halt:

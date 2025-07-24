@@ -89,17 +89,21 @@ All outputs are written to the directory specified by `config.io.base_dir` and `
 
 ### 1. `logfile.txt`
 
-A table recording simulation-wide quantities at regular intervals (every `tlog` steps), including time, central density, and velocity scales. Updated incrementally during the run.
+Logs relevant quantities every `nlog` steps (set in `config.io`).  If `chatter` is set to `True`, then these are also output to the console.
 
 ### 2. `profile_x.dat`
 
-Radial profiles of all fluid variables, written each time the central density changes by a fractional amount `drho_prof` (set in `config.io`). The suffix `x` is the snapshot index.
+Radial profiles of all fluid variables, written each time the central density changes by a fractional amount `drho_prof` (set in `config.io`). The suffix `x` is the snapshot index.  `snapshot_conversion.txt` stores the conversion between the snapshot index and simulation time.
 
 Each row contains:
 
 ```
 i   log(r_i)   log(rmid_i)   m_i   rho_i   v2_i   trelax_i   kn_i
 ```
+
+### 3. `time_evolution.txt`
+
+Records the time evolution of relevant quantites, written each time the central density changes by a fractional amount `drho_tevol` (set in `config.io`).
 
 ### 3. `snapshot_conversion.txt`
 

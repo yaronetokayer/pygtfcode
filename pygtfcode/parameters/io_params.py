@@ -12,7 +12,7 @@ class IOParams:
         Path to the main directory where output files are written.
     model_dir : str
         Subdirectory named 'ModelXXX', where XXX is zero-padded model number.
-    tlog : int
+    nlog : int
         Timesteps between logging output.
     drho_prof : float
         Change in log of central density to trigger writing profiles to disk.
@@ -27,7 +27,7 @@ class IOParams:
     def __init__(self, 
                  model_no: int = 0, 
                  base_dir: str = None, 
-                 tlog: int = 100000,
+                 nlog: int = 100000,
                  drho_prof : float = 0.1,
                  drho_tevol : float = 0.01,
                  overwrite: bool = True,
@@ -35,7 +35,7 @@ class IOParams:
                  ):
         self._model_no = None
         self._base_dir = None
-        self._tlog = tlog
+        self._nlog = nlog
         self._drho_prof = drho_prof
         self._drho_tevol = drho_tevol
         self._overwrite = None
@@ -43,7 +43,7 @@ class IOParams:
 
         self.model_no = model_no
         self.base_dir = base_dir or os.getcwd()
-        self.tlog = tlog
+        self.nlog = nlog
         self.drho_prof = drho_prof
         self.drho_tevol = drho_tevol
         self.overwrite = overwrite
@@ -82,14 +82,14 @@ class IOParams:
         self._base_dir = value
 
     @property
-    def tlog(self):
-        return self._tlog
+    def nlog(self):
+        return self._nlog
 
-    @tlog.setter
-    def tlog(self, value):
+    @nlog.setter
+    def nlog(self, value):
         if not isinstance(value, int):
-            raise TypeError("tlog must be an integer")
-        self._tlog = value
+            raise TypeError("nlog must be an integer")
+        self._nlog = value
 
     @property
     def drho_prof(self):
