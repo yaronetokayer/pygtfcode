@@ -62,9 +62,9 @@ We can also advance the system by a single time step:
 state.step_one()
 ```
 
-Note that outputs will not generate automatically when running one step at a time.
+Note that outputs to disk will not generate automatically when running one step at a time.
 
-To customize:
+To customize defaults:
 
 ```python
 # Customize initial profile
