@@ -24,6 +24,38 @@ def make_dir(state):
         if state.config.io.chatter:
             print(f"Directory already exists: {full_path}")
 
+def write_metadata(state):
+    """
+    Write model metadata to disk for reference.
+
+    Arguments
+    ---------
+    state : State
+        The current simulation state.
+    """
+    io = state.config.io
+    filename = os.path.join(io.base_dir, io.model_dir, f"model_metadata.txt")
+
+    def dump_attrs(obj, indent=0):
+        lines = []
+        for key in sorted(vars(obj)):
+            val = getattr(obj, key)
+            if hasattr(val, '__dict__'):  # it's a nested config object
+                lines.append(" " * indent + f"{key}:")
+                lines.extend(dump_attrs(val, indent + 4))
+            else:
+                lines.append(" " * indent + f"{key}: {val}")
+        return lines
+
+    with open(filename, "w") as f:
+        f.write(f"Model {io.model_no:03d} Metadata\n")
+        f.write("=" * 40 + "\n\n")
+        lines = dump_attrs(state.config)
+        f.write("\n".join(lines) + "\n")
+
+    if state.config.io.chatter:
+        print(f"Model information written to model_metadata.txt")
+
 def write_log_entry(state):
     """ 
     Append a line to the simulation log file.
@@ -34,32 +66,15 @@ def write_log_entry(state):
     state : State
         The current simulation state.
     """
-    filepath = state.config.io.logpath
-    chatter = state.config.io.chatter
+    io = state.config.io
+    filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
+    chatter = io.chatter
     step = state.step_count
 
     header = f"{'step':>10}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}\n"
     new_line = f"{step:10d}  {state.t:12.6e}  {state.dt:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}\n"
 
     _update_file(filepath, header, new_line, step)
-
-    # lines = []
-
-    # if os.path.exists(filepath):
-    #     with open(filepath, "r") as f:
-    #         lines = f.readlines()
-
-    #     if lines and lines[0].strip() == header.strip():
-    #         lines = [lines[0]] + [line for line in lines[1:] if int(line.split()[0]) < step]
-    #     else:
-    #         lines = [header]
-    # else:
-    #     lines = [header]
-
-    # lines.append(new_line)
-
-    # with open(filepath, "w") as f:
-    #     f.writelines(lines)
 
     if chatter:
         if step == 0:
@@ -128,24 +143,6 @@ def append_snapshot_conversion(state):
 
     _update_file(filepath, header, new_line, index)
 
-    # if os.path.exists(filepath):
-    #     with open(filepath, "r") as f:
-    #         lines = f.readlines()
-    #         header = lines[0]
-    #         data_lines = [line for line in lines[1:] if int(line.split()[0]) < state.snapshot_index]
-
-    #     with open(filepath, "w") as f:
-    #         f.write(header)
-    #         f.writelines(data_lines)
-    #         f.write(new_line)
-    # else:
-    #     header = (
-    #         f"{'index':>6}  {'time':>12}  {'time_Gyr':>12}\n"
-    #     )
-    #     with open(filepath, "w") as f:
-    #         f.write(header)
-    #         f.write(new_line)
-
 def write_time_evolution(state):
     """
     Append time evolution data to time_evolution.dat
@@ -196,24 +193,6 @@ def write_time_evolution(state):
     if state.config.io.chatter:
         if step == 0:
             print("Time evolution file initialized.")
-
-    # lines = []
-
-    # if os.path.exists(filepath):
-    #     with open(filepath, "r") as f:
-    #         lines = f.readlines()
-
-    #     if lines and lines[0].strip() == header.strip():
-    #         lines = [lines[0]] + [line for line in lines[1:] if int(line.split()[0]) < step]
-    #     else:
-    #         lines = [header]
-    # else:
-    #     lines = [header]
-
-    # lines.append(new_line)
-
-    # with open(filepath, "w") as f:
-    #     f.writelines(lines)
 
 def _update_file(filepath, header, new_line, index):
     """

@@ -87,13 +87,17 @@ config.io.chatter = False
 
 All outputs are written to the directory specified by `config.io.base_dir` and `model_no`.
 
-### 1. `logfile.txt`
+### 2. `model_metadata.txt`
+
+Stores all information about the simulation model for reference.  Unpacks all attributes of the `Config` object that instantiated the `State`.
+
+### 2. `logfile.txt`
 
 Logs relevant quantities every `nlog` steps (set in `config.io`).  If `chatter` is set to `True`, then these are also output to the console.
 
-### 2. `profile_x.dat`
+### 3. `profile_x.dat`
 
-Radial profiles of all fluid variables, written each time the central density changes by a fractional amount `drho_prof` (set in `config.io`). The suffix `x` is the snapshot index.  `snapshot_conversion.txt` stores the conversion between the snapshot index and simulation time.
+Radial profiles of all fluid variables, written each time the central density changes by a fractional amount `drho_prof` (set in `config.io`). The suffix `x` is the snapshot index.  `snapshot_conversion.txt` stores the conversion between the snapshot index `x` and simulation time.
 
 Each row contains:
 
@@ -101,16 +105,9 @@ Each row contains:
 i   log(r_i)   log(rmid_i)   m_i   rho_i   v2_i   trelax_i   kn_i
 ```
 
-### 3. `time_evolution.txt`
+### 4. `time_evolution.txt`
 
 Records the time evolution of relevant quantites, written each time the central density changes by a fractional amount `drho_tevol` (set in `config.io`).
-
-### 3. `snapshot_conversion.txt`
-
-A lookup table mapping snapshot index `x` to:
-
-* Simulation time in code units
-* Time in Gyr (based on physical unit conversion)
 
 ---
 

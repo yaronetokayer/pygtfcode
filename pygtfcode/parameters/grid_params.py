@@ -15,7 +15,7 @@ class GridParams:
     def __init__(
             self, 
             rmin: float = 1e-2,
-            rmax: float = 1e2,
+            rmax: float = 2e2,
             ngrid: int = 200
             ):
         self._rmin = None

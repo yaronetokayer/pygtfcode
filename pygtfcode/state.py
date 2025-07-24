@@ -35,7 +35,7 @@ class State:
     """
 
     def __init__(self, config):
-        from pygtfcode.io.write import make_dir, write_profile_snapshot, write_log_entry
+        from pygtfcode.io.write import make_dir, write_metadata
 
         self.config = config
         self.char = self._set_param()
@@ -61,6 +61,7 @@ class State:
             print("State initialized.")
 
         make_dir(self)                      # Create the model directory if it doesn't exist
+        write_metadata(self)                # Write model metadata to disk
 
     def _set_param(self):
         """
