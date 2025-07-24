@@ -56,13 +56,14 @@ state = State(config)
 state.run()
 ```
 
-We can also advance the system by a single time step:
-
+We can also run for a specified duration:
 ```python
-state.step_one()
+state.run(steps=100) # Run for 100 simulation steps
+state.run(time=55.0) # Run for a duration of 55.0 simulation time units
+state.run(rho_c=500.0) # Run until the central density exceeds 500.0
 ```
 
-Note that outputs to disk will not generate automatically when running one step at a time.
+Halting criteria in `config` override these.
 
 To customize defaults:
 
