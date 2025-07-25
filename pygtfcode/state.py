@@ -193,17 +193,6 @@ class State:
         self.kn = kn
         self.trelax = trelax
 
-    def step_one(self):
-        """Advance the simulation by one time step."""
-        from pygtfcode.evolve.integrator import compute_time_step, integrate_time_step
-
-        dt_prop = compute_time_step(self)
-        self.step_count += 1
-        integrate_time_step(self, dt_prop, self.step_count)
-
-        if self.config.io.chatter:
-            print(f"State advanced by one time step to t = {self.t}. dt = {self.dt}. step_count = {self.step_count}")
-
     def run(self, steps=None, time=None, rho_c=None):
         """
         Run the simulation until a halting criterion is met.
@@ -230,11 +219,6 @@ class State:
             kwargs['time'] = time
         if rho_c is not None:
             kwargs['rho_c'] = rho_c
-
-        # Write initial state to disk
-        write_profile_snapshot(self)
-        write_time_evolution(self)
-        write_log_entry(self)
 
         # Write initial state to disk
         write_profile_snapshot(self)
