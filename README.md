@@ -92,7 +92,7 @@ config.io.chatter = False
 
 All outputs are written to the directory specified by `config.io.base_dir` and `model_no`.
 
-### 2. `model_metadata.txt`
+### 1. `model_metadata.txt`
 
 Stores all information about the simulation model for reference.  Unpacks all attributes of the `Config` object that instantiated the `State`.
 
