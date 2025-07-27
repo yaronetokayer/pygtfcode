@@ -32,7 +32,15 @@ Holds the dynamically evolving quantities:
 
 The `State` object is initialized with a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
 
-In addition to these two classes, there are a number of plotting functions that are automatically imported.
+In addition to these two classes, there are two plotting functions that are automatically imported:
+
+### 1. `plot_time_evolution()`
+
+Plot the time evolution of any one of a number of system-wide quantities.  Multiple simulations can be passed to compare their evolutions on the same plot.
+
+### 2. `plot_snapshot()`
+
+Plot up to three profiles of a simulation or multiple simulations at specified points in time.
 
 ---
 
@@ -95,7 +103,6 @@ If you don’t explicitly assign `config.io.model_no`, it is automatically set t
 
 There are two plotting functions that are imported with the `pygtfcode` package:
 
-#### 1.
 The `plot_time_evolution()` function plots the evolution of system-wide parameters over time.  It can plot any of the columns in the `time_evolution.txt` output.
 
 ```python
@@ -107,7 +114,10 @@ gtf.plot_time_evolution(state1, state2, quantity="rho_c")
 # Alternatively, the simulations can be called by their Config objects or by their model numbers
 # v_max_phys returns the max velocity in physical units (km/s)
 gtf.plot_time_evolution(config1, config2, quantity="v_max_phys", ylabel=r"Custom ylabel")
-gtf.plot_time_evolution(5, 6, quantity="Kn_min")
+
+# base_dir needs to be specified if simulations are called by model number:
+gtf.plot_time_evolution(5, 6, quantity="Kn_min", base_dir='./') # This is useful for simulations run in a different session
+
 
 # The plot can be saved to a file
 gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png')
@@ -115,7 +125,6 @@ gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png')
 
 The default plot is `rho_c` is no quantity is specified.
 
-#### 2.
 `plot_snapshot()`
 TO BE FILLED IN LATER
 
