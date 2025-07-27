@@ -32,6 +32,8 @@ Holds the dynamically evolving quantities:
 
 The `State` object is initialized with a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
 
+In addition to these two classes, there are a number of plotting functions that are automatically imported.
+
 ---
 
 ## Getting started
@@ -117,6 +119,18 @@ Records the time evolution of relevant quantites, written each time the central 
 
 ---
 
+## Plotting
+
+There are two plotting functions that are imported with the `pygtfcode` package:
+
+### 1. `plot_time_evolution()`
+TO BE FILLED IN
+
+### 2. `plot_snapshot()`
+TO BE FILLED IN
+
+---
+
 ## Package Layout
 
 ```
@@ -133,7 +147,7 @@ pygtfcode/
 │   ├── prec_params.py
 │   └── sim_params.py
 │
-├── profiles/               # Profile and phase-space tools
+├── profiles/               # Profile and phase-space tools to set initial conditions
 │   ├── abg.py
 │   ├── nfw.py
 │   ├── truncated_nfw.py
@@ -146,6 +160,10 @@ pygtfcode/
 │
 ├── io/                     # Output routines
 │   └── write.py
+│
+├── plot/
+│   ├── time_evolution.py   # Plotting routines
+│   └── snapshot.py
 ```
 
 ---
