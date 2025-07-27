@@ -39,26 +39,27 @@ class State:
 
         self.config = config
         self.char = self._set_param()
-        if self.config.init.profile == 'truncated_nfw':
+        if self.config.init.profile == 'truncated_nfw': # Numerical integrations for non-analytic truncated NFW profile
             from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
             self.rho_interp = generate_rho_lookup(config)
             self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
-        self.r = self._setup_grid()
-        self._initialize_grid()
+        self.reset() # Initialize all state variables
+        # self.r = self._setup_grid()
+        # self._initialize_grid()
 
-        self.t = 0.0                        # Current time in simulation units
-        self.step_count = 0                 # Global integration step counter (never reset)
-        self.snapshot_index = 0             # Counts profile output snapshots
-        self.dt = 1e-6                      # Initial time step (will be updated adaptively)
-        self.du_max = config.prec.eps_du    # Initialize the max du to upper limit
-        self.dr_max = config.prec.eps_dr    # Initialize the max dr to upper limit
+        # self.t = 0.0                        # Current time in simulation units
+        # self.step_count = 0                 # Global integration step counter (never reset)
+        # self.snapshot_index = 0             # Counts profile output snapshots
+        # self.dt = 1e-6                      # Initial time step (will be updated adaptively)
+        # self.du_max = config.prec.eps_du    # Initialize the max du to upper limit
+        # self.dr_max = config.prec.eps_dr    # Initialize the max dr to upper limit
 
-        self.maxvel = np.sqrt(np.max(self.v2))
-        self.minkn = np.min(self.kn)
-        self.mintrelax = np.min(self.trelax)
+        # self.maxvel = np.sqrt(np.max(self.v2))
+        # self.minkn = np.min(self.kn)
+        # self.mintrelax = np.min(self.trelax)
 
-        if config.io.chatter:
-            print("State initialized.")
+        # if config.io.chatter:
+        #     print("State initialized.") 
 
         make_dir(self)                      # Create the model directory if it doesn't exist
         write_metadata(self)                # Write model metadata to disk
@@ -192,6 +193,30 @@ class State:
         self.v2 = v2
         self.kn = kn
         self.trelax = trelax
+
+    def reset(self):
+        """
+        Resets initial state
+        """
+        config = self.config
+        prec = config.prec
+
+        self.r = self._setup_grid()
+        self._initialize_grid()
+
+        self.t = 0.0                        # Current time in simulation units
+        self.step_count = 0                 # Global integration step counter (never reset)
+        self.snapshot_index = 0             # Counts profile output snapshots
+        self.dt = 1e-6                      # Initial time step (will be updated adaptively)
+        self.du_max = prec.eps_du    # Initialize the max du to upper limit
+        self.dr_max = prec.eps_dr    # Initialize the max dr to upper limit
+
+        self.maxvel = np.sqrt(np.max(self.v2))
+        self.minkn = np.min(self.kn)
+        self.mintrelax = np.min(self.trelax)
+
+        if config.io.chatter:
+            print("State initialized.")
 
     def run(self, steps=None, time=None, rho_c=None):
         """

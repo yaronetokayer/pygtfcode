@@ -63,7 +63,11 @@ state.run(time=55.0) # Run for a duration of 55.0 simulation time units
 state.run(rho_c=500.0) # Run until the central density exceeds 500.0
 ```
 
-Halting criteria in `config` override these.
+Halting criteria in `config` override these conditions.  multiple `run()` commands can be executed in succession, and each will continue from the current state.  To reset the state to its initial condition and reset the set counter:
+
+```python
+state.reset()
+```
 
 To customize defaults:
 
@@ -75,7 +79,7 @@ config.init = ("abg", {"alpha": 3.5, "beta": 4.5})  # Custom ABG
 # Customize other configuration parameters
 config.grid.ngrid = 200
 config.io.model_no = 42
-config.io.base_dir = "/tmp/sims"
+config.io.base_dir = "/tmp/sims"                    # Default is the current working directory
 config.sim.sigma_m = 1.0
 
 # Switch to a truncated NFW
