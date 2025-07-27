@@ -91,6 +91,36 @@ config.io.chatter = False
 
 If you don’t explicitly assign `config.io.model_no`, it is automatically set to the next available model number in `config.io.base_dir` (e.g., if `Model000`, `Model001`, and `Model002` directories exist, it will assign `model_no = 3`) **when a `State` is instantiated**. You can explicity assign a `model_no` with `config = gtf.Config(model_no=5)` or with `config.io.model_no = 5` once config is instantiated.  Note that in that case, outputs from a previous simulations with the same `model_no` will be overridden.
 
+### Plotting
+
+There are two plotting functions that are imported with the `pygtfcode` package:
+
+#### 1.
+The `plot_time_evolution()` function plots the evolution of system-wide parameters over time.  It can plot any of the columns in the `time_evolution.txt` output.
+
+```python
+import pygtfcode as gtf
+
+# Compare the central density evolution of two different simulations
+gtf.plot_time_evolution(state1, state2, quantity="rho_c")
+
+# Alternatively, the simulations can be called by their Config objects or by their model numbers
+# v_max_phys returns the max velocity in physical units (km/s)
+gtf.plot_time_evolution(config1, config2, quantity="v_max_phys", ylabel=r"Custom ylabel")
+gtf.plot_time_evolution(5, 6, quantity="Kn_min")
+
+# The plot can be saved to a file
+gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png')
+```
+
+The default plot is `rho_c` is no quantity is specified.
+
+#### 2.
+`plot_snapshot()`
+TO BE FILLED IN LATER
+
+---
+
 ## Output files
 
 All outputs are written to the directory specified by `config.io.base_dir` and `model_no`.
@@ -116,18 +146,6 @@ i   log(r_i)   log(rmid_i)   m_i   rho_i   v2_i   trelax_i   kn_i
 ### 4. `time_evolution.txt`
 
 Records the time evolution of relevant quantites, written each time the central density changes by a fractional amount `drho_tevol` (set in `config.io`).
-
----
-
-## Plotting
-
-There are two plotting functions that are imported with the `pygtfcode` package:
-
-### 1. `plot_time_evolution()`
-TO BE FILLED IN
-
-### 2. `plot_snapshot()`
-TO BE FILLED IN
 
 ---
 
