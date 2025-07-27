@@ -44,17 +44,19 @@ cd pygtfcode
 pip install -e .
 ```
 
-Dependencies: Python 3.8+, `numpy`, `scipy`, `numba`.
+Dependencies: Python 3.8+, `numpy`, `scipy`, `numba`, `matplotlib`.
 
-### Minimal example
+### Example usage
 
 ```python
-from pygtfcode import Config, State
+import pygtfcode as gtf
 
-config = Config()
-state = State(config)
+config = gtf.Config()
+state = gtf.State(config)
 state.run()
 ```
+
+Alternatively, you can call `from pygtfcode import Config, State`.  In that case, plotting functions will not be automatically imported.
 
 We can also run for a specified duration:
 ```python
@@ -63,11 +65,7 @@ state.run(time=55.0) # Run for a duration of 55.0 simulation time units
 state.run(rho_c=500.0) # Run until the central density exceeds 500.0
 ```
 
-Halting criteria in `config` override these conditions.  multiple `run()` commands can be executed in succession, and each will continue from the current state.  To reset the state to its initial condition and reset the set counter:
-
-```python
-state.reset()
-```
+Halting criteria in `config` override these conditions.  multiple `run()` commands can be executed in succession, and each will continue from the current state.  Call `state.reset()` to reset the state to its initial condition and reset the set counter.
 
 To customize defaults:
 
@@ -88,6 +86,9 @@ config.init = ("truncated_nfw", {"Zt": 0.05, "deltaP": 1e-4})
 # Turn off chatter
 config.io.chatter = False
 ```
+
+If you don’t explicitly assign `config.io.model_no`, it is automatically set to the next available model number in `config.io.base_dir` (e.g., if `Model000`, `Model001`, and `Model002` directories exist, it will assign `model_no = 3`) **when a `State` is instantiated**. You can explicity assign a `model_no` with `config = gtf.Config(model_no=5)` or with `config.io.model_no = 5` once config is instantiated.  Note that in that case, outputs from a previous simulations with the same `model_no` will be overridden.
+
 ## Output files
 
 All outputs are written to the directory specified by `config.io.base_dir` and `model_no`.

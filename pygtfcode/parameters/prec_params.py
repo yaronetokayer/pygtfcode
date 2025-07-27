@@ -24,7 +24,7 @@ class PrecisionParams:
         self,
         eps_du : float = 1.0e-3,
         eps_dr : float = 1.0e-12,
-        eps_dt : float = 1.0e-3,
+        eps_dt : float = 1.0e-2,
         max_iter_du : int = 10,
         max_iter_v2 : int = 10,
         max_iter_dr : int = 20000,

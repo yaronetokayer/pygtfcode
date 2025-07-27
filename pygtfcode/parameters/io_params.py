@@ -8,6 +8,7 @@ class IOParams:
     ----------
     model_no : int
         Integer identifier for the model run (must be 0 <= model_no < 1000).
+        Doesn't evaluate until accessed, at which point it default to the next available model_no in the base_dir
     base_dir : str
         Path to the main directory where output files are written.
     model_dir : str
@@ -25,7 +26,7 @@ class IOParams:
     """
 
     def __init__(self, 
-                 model_no: int = 0, 
+                 model_no: int = None, 
                  base_dir: str = None, 
                  nlog: int = 100000,
                  drho_prof : float = 0.1,
@@ -41,7 +42,8 @@ class IOParams:
         self._overwrite = None
         self._chatter = None
 
-        self.model_no = model_no
+        if model_no is not None:
+            self.model_no = model_no
         self.base_dir = base_dir or os.getcwd()
         self.nlog = nlog
         self.drho_prof = drho_prof
@@ -51,6 +53,21 @@ class IOParams:
 
     @property
     def model_no(self):
+        # Lazily compute only if not set
+        if self._model_no is None:
+            existing = {
+                int(name.replace("Model", ""))
+                for name in os.listdir(self.base_dir)
+                if name.startswith("Model") and name[5:].isdigit()
+            }
+            for i in range(1000):
+                if i not in existing:
+                    self._model_no = i
+                    if self.chatter:
+                        print(f"'model_no' set to {i}")
+                    break
+            else:
+                raise RuntimeError("No available model numbers (0–999) in base_dir")
         return self._model_no
 
     @model_no.setter
@@ -60,6 +77,18 @@ class IOParams:
         if not (0 <= value < 1000):
             raise ValueError("model_no must be between 0 and 999 (inclusive)")
         self._model_no = value
+
+    # @property
+    # def model_no(self):
+    #     return self._model_no
+
+    # @model_no.setter
+    # def model_no(self, value):
+    #     if not isinstance(value, int):
+    #         raise TypeError("model_no must be an integer")
+    #     if not (0 <= value < 1000):
+    #         raise ValueError("model_no must be between 0 and 999 (inclusive)")
+    #     self._model_no = value
 
     @property
     def model_dir(self):
@@ -131,12 +160,24 @@ class IOParams:
         self._chatter = value
 
     def __repr__(self):
-        attrs = [
-            attr for attr in dir(self)
-            if not attr.startswith('_') and not callable(getattr(self, attr))
-        ]
+        all_attrs = ['model_no', 'model_dir', 'base_dir', 'nlog', 'drho_prof', 'drho_tevol', 'overwrite', 'chatter']
         attr_strs = []
-        for attr in attrs:
-            value = getattr(self, attr)
+
+        for attr in all_attrs:
+            try:
+                if attr == "model_no":
+                    value = self._model_no if self._model_no is not None else "<not evaluated>"
+                elif attr == "model_dir":
+                    if self._model_no is None:
+                        value = "<not evaluated>"
+                    else:
+                        value = f"Model{self._model_no:03d}"
+                else:
+                    value = getattr(self, attr)
+            except Exception:
+                value = "<not available>"
             attr_strs.append(f"{attr}={repr(value)}")
+
         return f"{self.__class__.__name__}({', '.join(attr_strs)})"
+
+
