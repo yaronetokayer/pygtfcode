@@ -51,7 +51,7 @@ def extract_snapshot_data(filename):
     -------
     dict
         Dictionary of numpy arrays with keys:
-        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'trel', 'Kn', 'time'
+        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'trel', 'kn', 'time'
     """
     data = np.loadtxt(filename, usecols=range(1, 8), skiprows=1)
 
@@ -67,7 +67,7 @@ def extract_snapshot_data(filename):
         'rho': data[:, 3],
         'v2': data[:, 4],
         'trelax': data[:, 5],
-        'Kn': data[:, 6],
+        'kn': data[:, 6],
         'time': t
     }
 
@@ -80,7 +80,7 @@ def plot_profile(ax, profile, data_list, legend=True):
     ax : Axis
         Axis object on which to plot
     profile : str
-        Profile to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'Kn'
+        Profile to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     data_list : dict
         Dictionary returned by extract_snapshot_data()
     legend : bool, optional
@@ -105,13 +105,13 @@ def plot_profile(ax, profile, data_list, legend=True):
 
         ax.plot(10**x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
-        if profile == 'Kn' and ind == 0:
+        if profile == 'kn' and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
             ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
             ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
 
         if ind == len(data_list) - 1:
-            if profile == 'Kn':
+            if profile == 'kn':
                 ylim_lower = np.min([ylim_lower, 0.1])
             ax.set_xlim([xlim_lower, xlim_upper])
             ax.set_ylim([ylim_lower, ylim_upper])
@@ -135,7 +135,7 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
     snapshots : int or list of int
         Snapshot indices to plot
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'Kn'
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     filepath : str, optional

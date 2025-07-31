@@ -21,7 +21,7 @@ def extract_time_evolution_data(filepath):
             'rho_c_phys',       # (array) Central density in physical units (Msun/pc^3)
             'v_max',            # (array) Maximum circular velocity in code units
             'v_max_phys'        # (array) Maximum circular velocity in physical units (km/s)
-            'Kn_min',           # (array) Minimum Knudsen number
+            'kn_min',           # (array) Minimum Knudsen number
             'mintrel',          # (array) Minimum relaxation time in code units
             'mintrel_phys',     # (array) Minimum relaxation time in physical units (Gyr)
             'model_id'          # (int) Model number
@@ -36,7 +36,7 @@ def extract_time_evolution_data(filepath):
         'rho_c_phys': data[:, 3],
         'v_max': data[:, 4],
         'v_max_phys': data[:, 5],
-        'Kn_min': data[:, 6],
+        'kn_min': data[:, 6],
         'mintrel': data[:, 7],
         'mintrel_phys': data[:, 8],
         'model_id': model_id

@@ -212,8 +212,8 @@ class State:
         self.step_count = 0                 # Global integration step counter (never reset)
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
-        self.du_max = prec.eps_du    # Initialize the max du to upper limit
-        self.dr_max = prec.eps_dr    # Initialize the max dr to upper limit
+        self.du_max = prec.eps_du           # Initialize the max du to upper limit
+        self.dr_max = prec.eps_dr           # Initialize the max dr to upper limit
 
         self.maxvel = np.sqrt(np.max(self.v2))
         self.minkn = np.min(self.kn)

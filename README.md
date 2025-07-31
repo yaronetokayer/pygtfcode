@@ -25,12 +25,15 @@ Stores static input parameters, grouped into modules:
 Holds the dynamically evolving quantities:
 
 * Radial grid and shell midpoints: `r`, `rmid`
-* Physical variables: `m`, `rho`, `P`, `u`, `v2`, `kn`
-* Time tracking: `t`, `dt`, `step_count`, `snapshot_index`, etc.
+* Physical variables: `m`, `rho`, `p`, `u`, `v2`, `kn`, `trelax`
+* Diagnostic quantities: `mintrel`, `maxvel`, `minkn`, `du_max`, `dr_max`
+* Time tracking: `t`, `dt`, `step_count`, `snapshot_index`
 * Characteristic scales (derived from `Config`)
 * A `run()` method to evolve the system until collapse or a stopping condition is reached
 
 The `State` object is initialized with a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
+
+Note that `r` and `m` defined bin edges, while `rho`, `p`, `u`, `v2`, `kn`, and `trelax` are all defined at `rmid`.  Therefore, `r` and `m` are longer than the other arrays by one entry.
 
 In addition to these two classes, there are two plotting functions that are automatically imported:
 
@@ -117,7 +120,7 @@ gtf.plot_time_evolution(state1, state2)
 gtf.plot_time_evolution(config1, config2, quantity="v_max_phys", ylabel=r"Custom ylabel")
 
 # base_dir needs to be specified if simulations are called by model number:
-gtf.plot_time_evolution(5, 6, quantity="Kn_min", base_dir='./') # This is useful for simulations run in a different session
+gtf.plot_time_evolution(5, 6, quantity="kn_min", base_dir='./') # This is useful for simulations run in a different session
 
 # The plot can be saved to a file
 # Use 'show' to show the figure in standard output as well
@@ -136,7 +139,7 @@ gtf.plot_time_evolution(state)
 gtf.plot_time_evolution(config, snapshots=50, profiles='m')
 
 # Plot the density, v^2, and Knudsen number profiles, comparing several snapshots
-gtf.plot_time_evolution(4, snapshots=[0, 50, 100], profiles=['rho', 'v2', 'Kn'], base_dir='./')
+gtf.plot_time_evolution(4, snapshots=[0, 50, 100], profiles=['rho', 'v2', 'kn'], base_dir='./')
 
 # The plot can be saved to a file
 # Use 'show=True' to show the figure in standard output as well
