@@ -28,6 +28,26 @@ def _xH(z, const):
 
     return xH_0 * np.sqrt(fac)
 
+def _print_time(start, end, funcname):
+    """
+    Routine to print elapsed time in a readable way
+    """
+    elapsed = end - start
+
+    days, rem = divmod(elapsed, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, seconds = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{int(days)}d")
+    if hours:
+        parts.append(f"{int(hours)}h")
+    if minutes:
+        parts.append(f"{int(minutes)}m")
+    parts.append(f"{seconds:.2f}s")  # Always include seconds
+
+    print(f"Total time for {funcname}:", "".join(parts))
+
 class State:
     """
     Holds characteristic scales, grid, physical variables, time tracking,
@@ -44,22 +64,6 @@ class State:
             self.rho_interp = generate_rho_lookup(config)
             self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
         self.reset() # Initialize all state variables
-        # self.r = self._setup_grid()
-        # self._initialize_grid()
-
-        # self.t = 0.0                        # Current time in simulation units
-        # self.step_count = 0                 # Global integration step counter (never reset)
-        # self.snapshot_index = 0             # Counts profile output snapshots
-        # self.dt = 1e-6                      # Initial time step (will be updated adaptively)
-        # self.du_max = config.prec.eps_du    # Initialize the max du to upper limit
-        # self.dr_max = config.prec.eps_dr    # Initialize the max dr to upper limit
-
-        # self.maxvel = np.sqrt(np.max(self.v2))
-        # self.minkn = np.min(self.kn)
-        # self.mintrelax = np.min(self.trelax)
-
-        # if config.io.chatter:
-        #     print("State initialized.") 
 
         make_dir(self)                      # Create the model directory if it doesn't exist
         write_metadata(self)                # Write model metadata to disk
@@ -215,16 +219,21 @@ class State:
         self.minkn = np.min(self.kn)
         self.mintrelax = np.min(self.trelax)
 
+        # For diagnostics
+        self.n_iter_du = 0
+        self.n_iter_v2 = 0
+        self.n_iter_dr = 0
+
         if config.io.chatter:
             print("State initialized.")
 
-    def run(self, steps=None, time=None, rho_c=None):
+    def run(self, steps=None, stoptime=None, rho_c=None):
         """
         Run the simulation until a halting criterion is met.
         User can set halting criteria to run for a specified duration.
         These are overridden by the halting criteria in self.config.
 
-        Arguments
+        Arguments 
         ---------
         steps : int, optional
             Number of steps to advance the simulation
@@ -235,13 +244,16 @@ class State:
         """
         from pygtfcode.evolve.integrator import run_until_stop
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot, write_time_evolution
+        from time import time
+
+        start = time()
 
         # Prepare kwargs for run_until_stop if any halting criteria are provided
         kwargs = {}
         if steps is not None:
             kwargs['steps'] = steps
         if time is not None:
-            kwargs['time'] = time
+            kwargs['stoptime'] = stoptime
         if rho_c is not None:
             kwargs['rho_c'] = rho_c
 
@@ -258,6 +270,9 @@ class State:
         write_time_evolution(self)
         write_log_entry(self)
 
+        end = time()
+        _print_time(start, end, funcname="run()")
+        
     def get_phys(self):
         """
         Method to print characteristic quantities in physical units

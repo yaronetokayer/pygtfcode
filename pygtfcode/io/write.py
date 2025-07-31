@@ -70,11 +70,18 @@ def write_log_entry(state):
     filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
     chatter = io.chatter
     step = state.step_count
+    nlog = io.nlog
+    if step % nlog != 0:
+        nlog = step % nlog
 
-    header = f"{'step':>10}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}\n"
-    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}\n"
+    header = f"{'step':>10}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_du>':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
+    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_du / nlog:12.1e}  {state.n_iter_v2 / nlog:12.1e}  {state.n_iter_dr / nlog:12.1e}\n"
 
     _update_file(filepath, header, new_line, step)
+
+    state.n_iter_du = 0
+    state.n_iter_v2 = 0
+    state.n_iter_dr = 0
 
     if chatter:
         if step == 0:

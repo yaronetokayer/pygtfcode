@@ -161,12 +161,15 @@ def integrate_potential(config, rho_interp):
     pot_vals : ndarray
         Corresponding potential values at those radial points.
     """
-    if config.io.chatter:
+    chatter = config.io.chatter
+    init = config.init
+
+    if chatter:
         print("Computing potential profile for truncated NFW halo...")
     r_min = config.grid.rmin / 2
     eps = 1e-6  # A small number used for finite differences
-    Zt = config.init.Zt
-    deltaP = -50 * config.init.deltaP
+    Zt = init.Zt
+    deltaP = -50 * init.deltaP
     Nstep = 10
 
     # Step 1: Compute initial log-derivative of potential
@@ -186,10 +189,15 @@ def integrate_potential(config, rho_interp):
     rad = [r1]
     pot_vals = [y[0]]
 
+    r_last_print = 0.0
+
     # Step 3: Integrate until potential crosses zero
     while y[0] > 0.0:
-        if config.io.chatter:
-            print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
+        # Only print if r has changed by at least 0.5 since last print
+        if chatter:
+            if len(rad) == 1 or abs(r1 - r_last_print) >= 1.0:
+                print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
+                r_last_print = r1
         step_size = (r2 - r1) / Nstep
 
         def dphi_dr(r, y):
@@ -220,8 +228,9 @@ def integrate_potential(config, rho_interp):
         dr = min(dr, 0.01)
         r2 = r1 + dr
 
-    if config.io.chatter:
-        print("") # Finalize output line
+    if chatter:
+        print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}")
+        # print("") # Finalize output line
 
     # Step 4: truncate and return values
     rcut = r1
