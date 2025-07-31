@@ -42,13 +42,13 @@ def extract_time_evolution_data(filepath):
         'model_id': model_id
     }
 
-def plot_time_evolution(*models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None):
+def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None, show=False):
     """
     Plot any time-evolution quantity vs. time for one or more simulations.
 
-    Parameters
-    ----------
-    *models : list
+    Arguments
+    ---------
+    models : State object, Config object, or model_no (or list of the above)
         Each model can be a State, Config, or integer model number.
     quantity : str
         Key from the time_evolution.txt file to plot on the y-axis.
@@ -60,7 +60,12 @@ def plot_time_evolution(*models, quantity='rho_c', ylabel=None, logy=True, filep
         If specified, saves the figure to this path.
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
+    show : bool, optional
+        If True, show the plot even if saving.  Default is False.
     """
+    if type(models) != list:
+        models = [models]
+
     def _resolve_path(model):
         if hasattr(model, 'config'): # Passed state object
             return os.path.join(model.config.io.base_dir, model.config.io.model_dir, f"time_evolution.txt")
@@ -69,10 +74,10 @@ def plot_time_evolution(*models, quantity='rho_c', ylabel=None, logy=True, filep
         elif isinstance(model, int): # Passed model number
             if base_dir is None:
                 raise ValueError("'base_dir' (base directory) must be specified if using model numbers.")
-            model_dir = f"model_{model:04d}"
+            model_dir = f"Model{model:03d}"
             return os.path.join(base_dir, model_dir, "time_evolution.txt")
         else:
-            raise TypeError(f"Unrecognized model type: {type(model)}")
+            raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
 
     data_list = [extract_time_evolution_data(_resolve_path(m)) for m in models]
 
@@ -92,6 +97,9 @@ def plot_time_evolution(*models, quantity='rho_c', ylabel=None, logy=True, filep
 
     if filepath:
         fig.savefig(filepath, bbox_inches='tight', dpi=300)
-        plt.close(fig)
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
     else:
         plt.show()

@@ -155,7 +155,7 @@ def integrate_time_step(state, dt_prop, step_count):
     repeat_revir = False
     while not converged:
         ### Step 1: Energy transport ###
-        u_new, p_cond, du_max_new = conduct_heat(m, u_orig, rho_orig, lum, dt_prop)
+        p_cond, du_max_new = conduct_heat(m, u_orig, rho_orig, lum, dt_prop)
 
         # Check du criterion
         if du_max_new > eps_du:
@@ -204,7 +204,6 @@ def integrate_time_step(state, dt_prop, step_count):
     state.rho = rho_new
     state.p = p_new
     state.v2 = v2_new
-    state.u = u_new
     state.dr_max = dr_max_new
     state.du_max = du_max_new
 

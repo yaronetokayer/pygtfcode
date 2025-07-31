@@ -38,7 +38,7 @@ In addition to these two classes, there are two plotting functions that are auto
 
 Plot the time evolution of any one of a number of system-wide quantities.  Multiple simulations can be passed to compare their evolutions on the same plot.
 
-### 2. `plot_snapshot()`
+### 2. `plot_snapshots()`
 
 Plot up to three profiles of a simulation or multiple simulations at specified points in time.
 
@@ -109,7 +109,8 @@ The `plot_time_evolution()` function plots the evolution of system-wide paramete
 import pygtfcode as gtf
 
 # Compare the central density evolution of two different simulations
-gtf.plot_time_evolution(state1, state2, quantity="rho_c")
+# The default plot is `rho_c` when no quantity is specified
+gtf.plot_time_evolution(state1, state2)
 
 # Alternatively, the simulations can be called by their Config objects or by their model numbers
 # v_max_phys returns the max velocity in physical units (km/s)
@@ -118,16 +119,29 @@ gtf.plot_time_evolution(config1, config2, quantity="v_max_phys", ylabel=r"Custom
 # base_dir needs to be specified if simulations are called by model number:
 gtf.plot_time_evolution(5, 6, quantity="Kn_min", base_dir='./') # This is useful for simulations run in a different session
 
-
 # The plot can be saved to a file
-gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png')
+# Use 'show' to show the figure in standard output as well
+gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png', show=True)
 ```
 
-The default plot is `rho_c` is no quantity is specified.
+The `plot_snapshots()` function plots up to three profiles in separate panels for one or multiple snapshots of the simulation.  Snapshots are specified by the index of the `snapshot_x.dat` file.  Like`plot_time_evolution()`, the State object, Config object, or model number can used to specify the simulation you wish to plot.
 
-`plot_snapshot()`
-TO BE FILLED IN LATER
+```python
+import pygtfcode as gtf
 
+# Plot the initial density profile
+gtf.plot_time_evolution(state)
+
+# Plot the mass profile at a specified snapshot
+gtf.plot_time_evolution(config, snapshots=50, profiles='m')
+
+# Plot the density, v^2, and Knudsen number profiles, comparing several snapshots
+gtf.plot_time_evolution(4, snapshots=[0, 50, 100], profiles=['rho', 'v2', 'Kn'], base_dir='./')
+
+# The plot can be saved to a file
+# Use 'show=True' to show the figure in standard output as well
+gtf.plot_time_evolution(state, filepath='./initial_rho.png')
+```
 ---
 
 ## Output files
@@ -162,10 +176,10 @@ Records the time evolution of relevant quantites, written each time the central 
 
 ```
 pygtfcode/
-├── config.py               # Defines Config class
-├── state.py                # Defines State class and evolution interface
+├── config.py               # Defines 'Config' class
+├── state.py                # Defines 'State' class
 │
-├── parameters/             # Parameter subclasses
+├── parameters/             # Parameter subclasses for 'Config' attributes
 │   ├── char_params.py
 │   ├── constants.py
 │   ├── grid_params.py
@@ -174,13 +188,13 @@ pygtfcode/
 │   ├── prec_params.py
 │   └── sim_params.py
 │
-├── profiles/               # Profile and phase-space tools to set initial conditions
+├── profiles/               # Profile specific tools to set initial conditions of 'State'
 │   ├── abg.py
 │   ├── nfw.py
 │   ├── truncated_nfw.py
 │   └── profile_routines.py
 │
-├── evolve/                 # Integration and solver
+├── evolve/                 # Integration and solver, used by 'State' methods
 │   ├── integrator.py
 │   ├── transport.py
 │   └── hydrostatic.py
@@ -188,8 +202,8 @@ pygtfcode/
 ├── io/                     # Output routines
 │   └── write.py
 │
-├── plot/
-│   ├── time_evolution.py   # Plotting routines
+├── plot/                   # Plotting routines
+│   ├── time_evolution.py
 │   └── snapshot.py
 ```
 

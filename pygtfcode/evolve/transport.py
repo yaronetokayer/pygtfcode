@@ -84,7 +84,7 @@ def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
         Max relative change in u
     """
 
-    dudt = -( lum[1:] - lum[:-1] ) / (m[1:] - m[: -1])
+    dudt = -( lum[1:] - lum[:-1] ) / (m[1:] - m[:-1])
     du = dudt * dt
 
     u = u + du
@@ -93,4 +93,4 @@ def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
     # Track max relative change in u for timestep control
     dumax = np.max(np.abs(du / u))
 
-    return u, p, dumax
+    return p, dumax
