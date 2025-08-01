@@ -71,7 +71,7 @@ def extract_snapshot_data(filename):
         'time': t
     }
 
-def plot_profile(ax, profile, data_list, legend=True):
+def plot_profile(ax, profile, data_list, legend=True, grid=False):
     """
     Plot specified profile on the passed axis object
 
@@ -85,6 +85,8 @@ def plot_profile(ax, profile, data_list, legend=True):
         Dictionary returned by extract_snapshot_data()
     legend : bool, optional
         If True, include a legend in the plot
+    grid : bool, optional
+        If True, shows grid on axes
     """
     cmap = plt.get_cmap('tab10')
     ylim_lower = None
@@ -123,8 +125,10 @@ def plot_profile(ax, profile, data_list, legend=True):
     ax.tick_params(axis='both', labelsize=12)
     if legend:
         ax.legend()
+    if grid:
+        ax.grid(True, which="both", ls="--")
 
-def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath=None, show=False):
+def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath=None, show=False, grid=False):
     """
     Plot up to three profiles at specified points in time for one simulation
 
@@ -142,6 +146,8 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
         If provided, save the plot to this file.
     show : bool, optional
         If True, show the plot even if saving.  Default is False.
+    grid : bool, optional
+        If True, shows grid on axes
     """
 
     if type(snapshots) != list:
@@ -167,11 +173,11 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
     fig, axs = plt.subplots(1, n, figsize=(6*n, 5))
 
     if n == 1:
-        plot_profile(axs, profiles, data_list, legend=True)
+        plot_profile(axs, profiles, data_list, legend=True, grid=grid)
     else:
         for ind, ax in enumerate(axs):
             legend = False if ind < len(axs) - 1 else True
-            plot_profile(ax, profiles[ind], data_list, legend=legend)
+            plot_profile(ax, profiles[ind], data_list, legend=legend, grid=grid)
 
     if filepath:
         fig.savefig(filepath, dpi=300, bbox_inches=None)

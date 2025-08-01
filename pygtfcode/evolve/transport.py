@@ -35,16 +35,17 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
 
     # Compute temperature gradient and midpoints using cell-centered values
     dTdr = ( v2[1:] - v2[:-1] ) / ( r[2:] - r[:-2] )
+    vmed = np.sqrt( 0.5 * ( v2[1:] + v2[:-1] ) )
+    pmed = 0.5 * ( p[1:] + p[:-1] )
 
     # One sided difference for cored profiles (i.e., ABG with gamma < 1)
     if cored:
         dTdr[0] = (v2[1] - v2[0]) / (r[2] - r[1])
-
-    vmed = np.sqrt(0.5 * v2[1:] + v2[:-1] )
-    pmed = 0.5 * ( p[1:] + p[:-1] )
+        vmed[0] = np.sqrt(v2[0])
+        pmed[0] = p[0]
 
     fac1 = -3.0 * vmed * r[1:-1]**2
-    fac2 = (a / b) * sigma_m**2 + (1.0 / c) / pmed
+    fac2 = (a / b) * sigma_m**2 + ( (1.0 / c) / pmed )
 
     lum[1:-1] = (fac1 / fac2) * dTdr
 
@@ -84,10 +85,10 @@ def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
         Max relative change in u
     """
 
-    dudt = -( lum[1:] - lum[:-1] ) / (m[1:] - m[:-1])
+    dudt = -( lum[1:] - lum[:-1] ) / ( m[1:] - m[:-1] )
     du = dudt * dt
 
-    u = u + du
+    u += du
     p = ( 2 / 3 ) * rho * u
 
     # Track max relative change in u for timestep control

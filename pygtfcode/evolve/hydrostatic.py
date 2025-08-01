@@ -57,9 +57,9 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
 
 @njit
 def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    r3c = r[1:]**3 / (r[1:]**3 - r[:-1]**3)
     r_new = r.copy()
     r_new[1:-1] *= (1.0 + x)
+    r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3)
 
     dV_over_V = np.empty_like(r3c)
     dV_over_V[0] = 3.0 * r3c[0] * x[0]
@@ -130,3 +130,12 @@ def build_tridiag_system(r, rho, p, m) -> tuple[np.ndarray, np.ndarray]:
     ab[2, :-1] = (r3d * c2 - q2)[1:]               # Subdiagonal
 
     return ab, y
+
+def solve_tridiag_name(a, b, c, y):
+    pass
+    # x = np.zeros_like(y)
+    # gam = np.zeros_like(y)
+    # bet = b[0]
+    # x[0] = y[0] / bet
+    # gam = c / bet
+
