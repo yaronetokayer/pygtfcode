@@ -56,7 +56,7 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
     return lum
 
 @njit
-def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
+def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, float]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
@@ -89,7 +89,7 @@ def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, np.ndarray, float]:
     du = dudt * dt
 
     u += du
-    p = ( 2 / 3 ) * rho * u
+    p = ( 2.0 / 3.0 ) * rho * u
 
     # Track max relative change in u for timestep control
     dumax = np.max(np.abs(du / u))

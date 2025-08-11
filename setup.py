@@ -13,7 +13,8 @@ setup(
         'numpy>=2.3',
         'scipy>=1.15',
         'numba>=0.61',
-        'matplotlib>=3.10'
+        'matplotlib>=3.10',
+        'tqdm>=4.67'
     ],
     classifiers=[
         'Programming Language :: Python :: 3',

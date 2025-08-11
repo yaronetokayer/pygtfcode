@@ -35,7 +35,7 @@ The `State` object is initialized with a `Config` object.  The `Config` object t
 
 Note that `r` and `m` defined bin edges, while `rho`, `p`, `u`, `v2`, `kn`, and `trelax` are all defined at `rmid`.  Therefore, `r` and `m` are longer than the other arrays by one entry.
 
-In addition to these two classes, there are two plotting functions that are automatically imported:
+In addition to these two classes, there are three plotting functions that are automatically imported, each of which also exists as a method of `State`:
 
 ### 1. `plot_time_evolution()`
 
@@ -44,6 +44,10 @@ Plot the time evolution of any one of a number of system-wide quantities.  Multi
 ### 2. `plot_snapshots()`
 
 Plot up to three profiles of a simulation or multiple simulations at specified points in time.
+
+### 3. `make_movie()`
+
+Animate the full evolution of up to three profiles.  This required ffmpeg to be installed and callable with `ffmpeg` from the working directory.
 
 ---
 
@@ -57,7 +61,7 @@ cd pygtfcode
 pip install -e .
 ```
 
-Dependencies: Python 3.8+, `numpy`, `scipy`, `numba`, `matplotlib`.
+Dependencies: Python 3.8+, `numpy`, `scipy`, `numba`, `matplotlib`, `tqdm`
 
 ### Example usage
 
@@ -104,7 +108,7 @@ If you don’t explicitly assign `config.io.model_no`, it is automatically set t
 
 ### Plotting
 
-There are two plotting functions that are imported with the `pygtfcode` package:
+There are three plotting functions that are imported with the `pygtfcode` package:
 
 The `plot_time_evolution()` function plots the evolution of system-wide parameters over time.  It can plot any of the columns in the `time_evolution.txt` output.
 
@@ -127,24 +131,55 @@ gtf.plot_time_evolution(5, 6, quantity="kn_min", base_dir='./') # This is useful
 gtf.plot_time_evolution(state1, filepath='./rho_c_vs_time.png', show=True)
 ```
 
-The `plot_snapshots()` function plots up to three profiles in separate panels for one or multiple snapshots of the simulation.  Snapshots are specified by the index of the `snapshot_x.dat` file.  Like`plot_time_evolution()`, the State object, Config object, or model number can used to specify the simulation you wish to plot.
+The `plot_snapshots()` function plots up to three profiles in separate panels for one or multiple snapshots of the simulation.  Snapshots are specified by the index of the `snapshot_x.dat` file.  Like `plot_time_evolution()`, the State object, Config object, or model number can used to specify the simulation you wish to plot.
 
 ```python
 import pygtfcode as gtf
 
 # Plot the initial density profile
-gtf.plot_time_evolution(state)
+gtf.plot_snapshots(state)
 
 # Plot the mass profile at a specified snapshot
-gtf.plot_time_evolution(config, snapshots=50, profiles='m')
+gtf.plot_snapshots(config, snapshots=50, profiles='m')
 
 # Plot the density, v^2, and Knudsen number profiles, comparing several snapshots
-gtf.plot_time_evolution(4, snapshots=[0, 50, 100], profiles=['rho', 'v2', 'kn'], base_dir='./')
+gtf.plot_snapshots(4, snapshots=[0, 50, 100], profiles=['rho', 'v2', 'kn'], base_dir='./')
 
 # The plot can be saved to a file
 # Use 'show=True' to show the figure in standard output as well
-gtf.plot_time_evolution(state, filepath='./initial_rho.png')
+gtf.plot_snapshots(state, filepath='./initial_rho.png')
 ```
+
+The `make_movie()` function generates animations of up to three profiles in separate panels for a simulation.  Like `plot_time_evolution()`, the State object, Config object, or model number can used to specify the simulation you wish to plot.  Only the snapshots of the most recent run for the simulation model_no will be included, even if profiles with higher indices are in the directory from previous simulation runs.  You can check the current version of the `snapshot_conversion.txt` file for all snapshots that will be included in the animation
+
+```python
+import pygtfcode as gtf
+
+# Plot the density profile
+gtf.make_movie(state)
+
+# All keyword arguments available in plot_snapshots function, other than 'snapshots', can be used here
+gtf.make_movie(2, base_dir='./', profiles=['v2', 'p'], grid=True)
+```
+
+The plotting functions also exist as methods to the `State` object:
+
+```python
+import pygtfcode as gtf
+
+config = gtf.Config()
+state = gtf.State(config)
+state.run()
+
+state.plot_time_evolution()         # Accepts all keyword arguments, but cannot compare between simulations when used this way
+
+state.plot_snapshots()              # Defaults to the latest state
+state.plot_snapshots(snapshots=0, filename="./initial_profs.png")   # Plot and save initial profiles
+# Note that while the standalone function defaults to the initial profile, the `State` method defaults to the current state.
+
+state.make_movie(profiles=['rho', 'kn', 'v2'])
+```
+
 ---
 
 ## Output files
@@ -209,6 +244,12 @@ pygtfcode/
 │   ├── time_evolution.py
 │   └── snapshot.py
 ```
+
+---
+
+## Next steps
+
+* Build in functionality to import a previous simulation as a `State` object in a new python session.
 
 ---
 

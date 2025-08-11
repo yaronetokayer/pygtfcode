@@ -42,7 +42,7 @@ def extract_time_evolution_data(filepath):
         'model_id': model_id
     }
 
-def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None, show=False):
+def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None, show=False, grid=False):
     """
     Plot any time-evolution quantity vs. time for one or more simulations.
 
@@ -50,8 +50,10 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
     ---------
     models : State object, Config object, or model_no (or list of the above)
         Each model can be a State, Config, or integer model number.
-    quantity : str
+    quantity : str, optional
         Key from the time_evolution.txt file to plot on the y-axis.
+        Default is 'rho_c'.
+        Options are 't_phys', 'rho_c', 'rho_c_phys', 'v_max', 'v_max_phys', 'kn_min', 'mintrel', 'mintrel_phys'
     ylabel : str, optional
         Custom y-axis label. Defaults to quantity.
     logy : bool, optional
@@ -62,6 +64,8 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     show : bool, optional
         If True, show the plot even if saving.  Default is False.
+    grid : bool, optional
+        If True, shows grid on axis
     """
     if type(models) != list:
         models = [models]
@@ -94,6 +98,8 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
         ax.set_yscale('log')
     ax.tick_params(axis='both', labelsize=12)
     ax.legend(fontsize=12)
+    if grid:
+        ax.grid(True, which="both", ls="--")
 
     if filepath:
         fig.savefig(filepath, bbox_inches='tight', dpi=300)

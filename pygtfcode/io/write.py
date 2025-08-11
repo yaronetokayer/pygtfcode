@@ -56,7 +56,7 @@ def write_metadata(state):
     if state.config.io.chatter:
         print(f"Model information written to model_metadata.txt")
 
-def write_log_entry(state):
+def write_log_entry(state, start_step):
     """ 
     Append a line to the simulation log file.
     Overwrites any lines with step_count >= current step_count.
@@ -65,27 +65,34 @@ def write_log_entry(state):
     ---------
     state : State
         The current simulation state.
+    start_step : int
+        The starting value of the current simulation run
     """
     io = state.config.io
     filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
     chatter = io.chatter
     step = state.step_count
     nlog = io.nlog
-    if step % nlog != 0:
-        nlog = step % nlog
+    if ( step - start_step ) % nlog != 0:
+        nlog = ( step - start_step ) % nlog
 
-    header = f"{'step':>10}  {'time':>12}  {'dt':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_du>':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
-    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_du / nlog:12.1e}  {state.n_iter_v2 / nlog:12.1e}  {state.n_iter_dr / nlog:12.1e}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_du>':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
+    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_du / nlog:12.6e}  {state.n_iter_v2 / nlog:12.6e}  {state.n_iter_dr / nlog:12.6e}\n"
+
+    if step == start_step:
+        new_line = new_line[:-97] + f"         N/A" +  new_line[38:-41] + f"         N/A           N/A           N/A\n"
 
     _update_file(filepath, header, new_line, step)
 
     state.n_iter_du = 0
     state.n_iter_v2 = 0
     state.n_iter_dr = 0
+    state.dt_cum = 0.0
 
     if chatter:
         if step == 0:
             print("Log file initialized:")
+        if step == start_step:
             print(header[:-1])
         print(new_line[:-1])
 
@@ -103,7 +110,7 @@ def write_profile_snapshot(state):
     with open(filename, "w") as f:
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'p':>12}  {'trelax':>12}  {'kn':>12}\n"
         )
         f.write(header)
         for i in range(len(state.r) - 1):
@@ -114,6 +121,7 @@ def write_profile_snapshot(state):
                 f"{state.m[i+1]:12.6e}  "
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
+                f"{state.p[i]:12.6e}  "
                 f"{state.trelax[i]:12.6e}  "
                 f"{state.kn[i]:12.6e}\n"
             )
@@ -123,6 +131,8 @@ def write_profile_snapshot(state):
     if state.config.io.chatter:
         if state.step_count == 0:
             print("Initial profiles written to disk.")
+
+    state.snapshot_index += 1
 
 def append_snapshot_conversion(state):
     """

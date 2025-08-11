@@ -41,15 +41,17 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     """
 
     # Solve for corrections to r
-    ab, y = build_tridiag_system(r, rho, p, m)
-    x = solve_banded((1, 1), ab, y)
+    a, b, c, y = build_tridiag_system(r, rho, p, m)
+    # x = solve_banded((1, 1), ab, y)
+    x = solve_tridiagonal_frank(a, b, c, y)
 
     # Update arrays accordingly
     r_new, p_new, rho_new, v2_new = _update_r_p_rho_v2(r, x, p, rho)
 
     # Check for unphysical negative velocity dispersion
     if np.any(v2_new < 0):
-        return None
+        # return None
+        return r_new, p_new # FOR DEBUGGING
     
     dr_max_new = np.max(np.abs(x))
 
@@ -123,19 +125,94 @@ def build_tridiag_system(r, rho, p, m) -> tuple[np.ndarray, np.ndarray]:
 
     y = dd - 1.0
 
+    a = r3d * c2 - q2                               # Subdiagonal
+    b = -2.0 - r3b * c1 - r3c * c2                  # Main diagonal, except first element
+    c = r3a * c1 + q1                               # Superdiagonal
+
     # Banded matrix format for solve_banded
-    ab = np.zeros((3, len(rC)))
-    ab[0, 1:] = (r3a * c1 + q1)[:-1]               # Superdiagonal
-    ab[1, :]  = -2.0 - r3b * c1 - r3c * c2         # Main diagonal
-    ab[2, :-1] = (r3d * c2 - q2)[1:]               # Subdiagonal
+    # ab = np.zeros((3, len(rC)))
+    # ab[0, 1:] = (r3a * c1 + q1)[:-1]               # Superdiagonal
+    # ab[1, :]  = -2.0 - r3b * c1 - r3c * c2         # Main diagonal
+    # ab[2, :-1] = (r3d * c2 - q2)[1:]               # Subdiagonal
 
-    return ab, y
+    return a, b, c, y
 
-def solve_tridiag_name(a, b, c, y):
-    pass
-    # x = np.zeros_like(y)
-    # gam = np.zeros_like(y)
-    # bet = b[0]
-    # x[0] = y[0] / bet
-    # gam = c / bet
+@njit
+def solve_tridiagonal_thomas(a, b, c, y):
+    """
+    Solve a tridiagonal system Ax = y using the Thomas algorithm.
 
+    Parameters
+    ----------
+    a : ndarray
+        Subdiagonal (length n-1)
+    b : ndarray
+        Main diagonal (length n)
+    c : ndarray
+        Superdiagonal (length n-1)
+    y : ndarray
+        Right-hand side vector (length n)
+
+    Returns
+    -------
+    x : ndarray
+        Solution vector (length n)
+    """
+    n = len(b)
+    cp = np.empty(n-1)
+    dp = np.empty(n)
+
+    # Forward sweep
+    cp[0] = c[0] / b[0]
+    dp[0] = y[0] / b[0] # Frank's u
+    for i in range(1, n-1):
+        denom = b[i] - a[i-1] * cp[i-1]
+        cp[i] = c[i] / denom
+        dp[i] = (y[i] - a[i-1] * dp[i-1]) / denom
+    dp[n-1] = (y[n-1] - a[n-2] * dp[n-2]) / (b[n-1] - a[n-2] * cp[n-2])
+
+    # Back substitution
+    x = np.empty(n)
+    x[-1] = dp[-1]
+    for i in range(n - 2, -1, -1):
+        x[i] = dp[i] - cp[i] * x[i+1]
+
+    return x
+
+@njit
+def solve_tridiagonal_frank(a, b, c, y):
+    """
+    Solve a tridiagonal system Ax = y using the Thomas algorithm.
+
+    Parameters
+    ----------
+    a : ndarray
+        Subdiagonal (length n-1)
+    b : ndarray
+        Main diagonal, except first element (length n-1)
+    c : ndarray
+        Superdiagonal (length n-1)
+    y : ndarray
+        Right-hand side vector (length n-1)
+
+    Returns
+    -------
+    x : ndarray
+        Solution vector (length n)
+    """
+    n = len(b)
+
+    u = np.empty(n)
+    gam = np.empty(n)
+    bet = b[0]
+    u[0] = y[0] / bet
+
+    for i in range(1, n):
+        gam[i] = c[i-1] / bet
+        bet = b[i] - a[i]*gam[i]
+        u[i] = ( y[i] - a[i] * u[i-1] ) / bet
+
+    for i in range(n - 2, -1, -1):
+        u[i] -= gam[i+1] * u[i+1]
+
+    return u

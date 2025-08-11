@@ -63,6 +63,7 @@ class State:
             from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
             self.rho_interp = generate_rho_lookup(config)
             self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
+        
         self.reset() # Initialize all state variables
 
         make_dir(self)                      # Create the model directory if it doesn't exist
@@ -74,7 +75,6 @@ class State:
         """
         from pygtfcode.parameters.char_params import CharParams
         from pygtfcode.profiles.nfw import fNFW
-        from pygtfcode.profiles.abg import chi
 
         if self.config.io.chatter:
             print("Computing characteristic parameters for simulation...")
@@ -83,21 +83,23 @@ class State:
 
         char = CharParams() # Instantiate CharParams object
 
-        rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
+        rvir = 0.169 * (init.Mvir / 1.0e12)**(1.0/3.0)
         rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
-        rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2/3)
+        rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2.0/3.0)
         rvir /= const.xhubble
 
         Mvir = init.Mvir / const.xhubble
+        char.fc = fNFW(init.cvir)
+        char.r_s = rvir / init.cvir
 
         if init.profile != 'abg':
-            char.fc = fNFW(init.cvir)
             char.m_s = Mvir / char.fc
-            char.r_s = rvir / init.cvir
+            
         else:
+            from pygtfcode.profiles.abg import chi
             char.chi = chi(self.config)
             char.m_s = Mvir / char.chi
-            char.r_s = rvir / init.cvir * ( fNFW(init.cvir) / char.chi )**(1/3)
+            char.r_s *= ( char.fc / char.chi )**(1.0/3.0)
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
         char.v0 = np.sqrt(const.gee * char.m_s / char.r_s)
@@ -164,13 +166,13 @@ class State:
         r = self.r
         r_mid = 0.5 * (r[1:] + r[:-1])          # Midpoint of each shell
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
-    
-        m_outer = menc(r[1:], self)             # m[i] at shell edges
-        m = np.concatenate(([0.0], m_outer))
-        dm = m_outer - m[:-1]
+
+        m = np.zeros_like(r)
+        m[1:] = menc(r[1:], self)             # m[i] at shell edges
+        # m = np.concatenate(([0.0], m_outer))
 
         v2 = sigr(r_mid, self)
-        rho = 3.0 * dm / dr3
+        rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         p = rho * v2
         u = 1.5 * v2
         kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p))
@@ -223,6 +225,7 @@ class State:
         self.n_iter_du = 0
         self.n_iter_v2 = 0
         self.n_iter_dr = 0
+        self.dt_cum = 0.0
 
         if config.io.chatter:
             print("State initialized.")
@@ -247,6 +250,7 @@ class State:
         from time import time
 
         start = time()
+        start_step = self.step_count
 
         # Prepare kwargs for run_until_stop if any halting criteria are provided
         kwargs = {}
@@ -257,18 +261,18 @@ class State:
         if rho_c is not None:
             kwargs['rho_c'] = rho_c
 
-        # Write initial state to disk
+        # Write initial state to disk 
         write_profile_snapshot(self)
         write_time_evolution(self)
-        write_log_entry(self)
+        write_log_entry(self, start_step)
 
         # Integrate forward in time until a halting criterion is met
-        run_until_stop(self, **kwargs)
+        run_until_stop(self, start_step, **kwargs)
 
         # Write final state to disk
         write_profile_snapshot(self)
         write_time_evolution(self)
-        write_log_entry(self)
+        write_log_entry(self, start_step)
 
         end = time()
         _print_time(start, end, funcname="run()")
@@ -299,6 +303,80 @@ class State:
         }
 
         return params_dict
+
+    def plot_time_evolution(self, **kwargs):
+        """
+        Plot any time-evolution quantity vs. time for for the simulation represented by
+        the State object
+
+        Arguments
+        ---------
+        quantity : str, optional
+            Key from the time_evolution.txt file to plot on the y-axis.
+            Default is 'rho_c'.
+            Options are 't_phys', 'rho_c', 'rho_c_phys', 'v_max', 'v_max_phys', 'kn_min', 'mintrel', 'mintrel_phys'.
+        ylabel : str, optional
+            Custom y-axis label. Defaults to quantity.
+        logy : bool, optional
+            Use logarithmic scale on y-axis. Default is True.
+        filepath : str, optional
+            If specified, saves the figure to this path.
+        show : bool, optional
+            If True, show the plot even if saving.  Default is False.
+        grid : bool, optional
+            If True, shows grid on axis
+        """
+        from pygtfcode.plot.time_evolution import plot_time_evolution
+
+        plot_time_evolution(self, **kwargs)
+
+    def plot_snapshots(self, **kwargs):
+        """
+        Method to plot up to three profiles at specified points in time for the simulation represented by
+        the State object
+
+        Arguments
+        ---------
+        snapshots : int or list of int, optional
+            Snapshot indices to plot, default is the current state
+        profiles : str or list of str, optional
+            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+        filepath : str, optional
+            If provided, save the plot to this file.
+        show : bool, optional
+            If True, show the plot even if saving.  Default is False.
+        grid : bool, optional
+            If True, shows grid on axes
+        """
+        from pygtfcode.plot.snapshot import plot_snapshots
+
+        snapshots = kwargs.pop('snapshots', self.snapshot_index)
+        plot_snapshots(self, snapshots=snapshots, **kwargs)
+        
+    def make_movie(self, **kwargs):
+        """
+        Method to animate up to three profiles for the simulation represented by
+        the State object
+
+        Arguments
+        ---------
+        filepath : str, optional
+            Save the plot to this file.  Defaults to '/base_dir/ModelXXX/movie_{profiles}.mp4'
+        profiles : str or list of str, optional
+            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+        grid : bool, optional
+            If True, shows grid on axes
+        fps : int, optional
+            Frames per second for the output movie. Default is 20
+
+        Returns
+        -------
+        None
+            Saves the movie as an MP4 file in the model directory.
+        """
+        from pygtfcode.plot.snapshot import make_movie
+
+        make_movie(self, **kwargs)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key
