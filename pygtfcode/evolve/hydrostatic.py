@@ -51,7 +51,7 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     # Check for unphysical negative velocity dispersion
     if np.any(v2_new < 0):
         # return None
-        return r_new, p_new # FOR DEBUGGING
+        return r_new, p_new, rho_new, v2_new # FOR DEBUGGING
     
     dr_max_new = np.max(np.abs(x))
 

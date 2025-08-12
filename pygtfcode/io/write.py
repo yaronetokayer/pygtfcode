@@ -150,12 +150,13 @@ def append_snapshot_conversion(state):
         )
     index = state.snapshot_index
     
-    header = (f"{'index':>6}  {'time':>12}  {'time_Gyr':>12}\n")
+    header = (f"{'index':>6}  {'time':>12}  {'time_Gyr':>12}  {'step':>10}\n")
 
     new_line = (
         f"{index:6d}  "
         f"{state.t:12.6e}  "
-        f"{state.t * state.char.t0 * const.sec_to_Gyr:12.6e}\n"
+        f"{state.t * state.char.t0 * const.sec_to_Gyr:12.6e}  "
+        f"{state.step_count:10d}\n"
     )
 
     _update_file(filepath, header, new_line, index)
