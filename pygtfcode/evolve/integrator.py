@@ -63,9 +63,9 @@ def run_until_stop(state, start_step, **kwargs):
         # Check I/O criteria
         # Write profile to disk
         drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
-        # if drho_for_prof > drho_prof:
-        # if step_count % 5000 == 0 or step_count in [992857, 992858, 992859, 992860, 992861, 992862, 992863]:
-        if step_count % 5000 == 0 or step_count in [468332, 468333, 468334, 468335, 468336, 468337]: # FOR DEBUGGING
+        if drho_for_prof > drho_prof:
+        # if step_count % 5000 == 0 or step_count in [992857, 992858, 992859, 992860, 992861, 992862, 992863]:  # FOR DEBUGGING
+        # if step_count % 5000 == 0 or step_count in [468332, 468333, 468334, 468335, 468336, 468337]: # FOR DEBUGGING
             rho0_last_prof = rho0
             write_profile_snapshot(state)
 
@@ -176,13 +176,13 @@ def integrate_time_step(state, dt_prop, step_count):
                 result = revirialize(r_orig, rho_orig, p_cond, m)
 
             # Check v2 criterion
-            # if result is None: # Negative v2 value
-            if len(result) == 4: # FOR DEBUGGING
+            if result is None: # Negative v2 value
+            # if len(result) == 4: # FOR DEBUGGING
                 if iter_v2 >= max_iter_v2:
-                    np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/p.npy', result[1]) # FOR DEBUGGING
-                    np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/r_new.npy', result[0]) # FOR DEBUGGING
-                    np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/rho.npy', result[2]) # FOR DEBUGGING
-                    np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/v2.npy', result[3]) # FOR DEBUGGING
+                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/p.npy', result[1]) # FOR DEBUGGING
+                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/r_new.npy', result[0]) # FOR DEBUGGING
+                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/rho.npy', result[2]) # FOR DEBUGGING
+                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/v2.npy', result[3]) # FOR DEBUGGING
                     raise RuntimeError("Max iterations exceeded for v2 in conduction/revirialization step")
                 dt_prop *= 0.5
                 iter_v2 += 1
