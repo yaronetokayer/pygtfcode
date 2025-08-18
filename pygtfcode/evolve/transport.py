@@ -1,7 +1,9 @@
 import numpy as np
-from numba import njit
+from numba import njit, float64, boolean
 
-@njit
+@njit(float64[:](float64, float64, float64, float64,
+                 float64[:], float64[:], float64[:], boolean),
+      cache=True)
 def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
@@ -31,7 +33,7 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
     lum : ndarray
         Luminosities at each shell boundary (same length as r).
     """
-    lum = np.empty_like(r)
+    lum = np.empty(r.shape, dtype=np.float64)
 
     # Compute temperature gradient and midpoints using cell-centered values
     dTdr = ( v2[1:] - v2[:-1] ) / ( r[2:] - r[:-2] )
@@ -55,12 +57,14 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
 
     return lum
 
-@njit
-def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, float]:
+@njit((float64[:], float64[:], float64[:], float64[:], float64, float64),
+      cache=True, fastmath=True)
+def conduct_heat(m, u, rho, lum, dt_prop, eps_du) -> tuple[np.ndarray, float]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
     Updates internal energy and recomputes pressure.
+    Updates dt_prop if necessary based on max relative change in u.
 
     Arguments
     ---------
@@ -72,26 +76,54 @@ def conduct_heat(m, u, rho, lum, dt) -> tuple[np.ndarray, float]:
         Density array
     lum : np.ndarray
         Array of luminosities from compute_luminosities (length = len(state.r))
-    dt : float
+    dt_prop : float
         Current timestep duration
+    eps_du : float
+        Maximum allowed relative change in u for convergence
 
     Returns
     -------
-    u : np.ndarray
-        Updated internal energy array.
     p : np.ndarray
         Updated pressure array.
     dumax : float
-        Max relative change in u
+        Max relative change in u.
+    dt_eff : float
+        Modified timestep.
     """
 
     dudt = -( lum[1:] - lum[:-1] ) / ( m[1:] - m[:-1] )
-    du = dudt * dt
+    du = dudt * dt_prop
 
-    u += du
-    p = ( 2.0 / 3.0 ) * rho * u
+    u_new = u + du
+    p_new = ( 2.0 / 3.0 ) * rho * u_new
 
-    # Track max relative change in u for timestep control
-    dumax = np.max(np.abs(du / u))
+    dumax = np.max(np.abs(du) / np.abs(u_new))
 
-    return p, dumax
+    if dumax <= eps_du:
+        return p_new, float(dumax), float(dt_prop)
+
+    # --- eps_du violated: compute a single global scale factor s ∈ (0,1] and rescale ---
+    # Sign-aware per-cell limit, expressed using du (no need to recompute dudt):
+    # same sign: s_i <= (eps/(1-eps)) * |u|/|du|
+    # opp  sign: s_i <= (eps/(1+eps)) * |u|/|du|
+
+    abs_u  = np.abs(u)
+    abs_du = np.abs(du)
+    same_sign = (u * du) >= 0.0
+
+    s_i = np.empty_like(abs_du)
+    s_i[same_sign]  = (eps_du / (1.0 - eps_du)) * (abs_u[same_sign]  / abs_du[same_sign])
+    s_i[~same_sign] = (eps_du / (1.0 + eps_du)) * (abs_u[~same_sign] / abs_du[~same_sign])
+
+    # Global factor with a small safety margin; cap at 1
+    s = 0.95 * np.min(s_i)
+    if s > 1.0:
+        s = 1.0
+    # Apply once
+    du     = du * s
+    u_new  = u + du
+    p_new  = (2.0 / 3.0) * rho * u_new
+    dumax  = np.max(np.abs(du) / np.abs(u_new))
+    dt_eff = dt_prop * s
+
+    return p_new, float(dumax), float(dt_eff)

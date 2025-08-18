@@ -15,30 +15,32 @@ def chi(config):
     float
         The value of chi.
     """
-    alpha = config.init.alpha
-    beta = config.init.beta
-    gamma = config.init.gamma
+    alpha = float(config.init.alpha)
+    beta = float(config.init.beta)
+    gamma = float(config.init.gamma)
     expo = (beta - gamma) / alpha
+    epsabs = float(config.prec.epsabs)
+    epsrel = float(config.prec.epsrel)
 
     def chi_integrand(x):
-        return x**(2 - gamma) / (1 + x**alpha)**expo
+        return x**(2.0 - gamma) / (1.0 + x**alpha)**expo
 
-    result, _ = quad(chi_integrand, 0.0, 1e4, epsabs=config.prec.epsabs, epsrel=config.prec.epsrel)
-    return result
+    result, _ = quad(chi_integrand, 0.0, 1e4, epsabs=epsabs, epsrel=epsrel)
+    return float(result)
 
 def _abg_jeans_mass_integrand(x, alpha, beta, gamma):
     """
     Mass integrand in the spherical Jeans equation for ABG profile.
     """
-    return x**(2 - gamma) / (1 + x**alpha)**((beta - gamma) / alpha)
+    return x**(2.0 - gamma) / (1.0 + x**alpha)**((beta - gamma) / alpha)
 
 def _abg_velocity_integrand(x, alpha, beta, gamma, epsabs, epsrel):
     """
     Integrand for the velocity dispersion from the Jeans equation.
     """
-    chi_integrand = lambda y: y**(2 - gamma) / (1 + y**alpha)**((beta - gamma) / alpha)
-    chi_x, _ = quad(chi_integrand, 0.0, x, epsabs=epsabs, epsrel=epsrel)
-    rho_x = x**(-gamma) / (1 + x**alpha)**((beta - gamma) / alpha)
+    chi_integrand = lambda y: y**(2.0 - gamma) / (1.0 + y**alpha)**((beta - gamma) / alpha)
+    chi_x, _ = quad(chi_integrand, 0.0, float(x), epsabs=epsabs, epsrel=epsrel)
+    rho_x = x**(-gamma) / (1.0 + x**alpha)**((beta - gamma) / alpha)
     return rho_x * chi_x / x**2
 
 def menc_abg(r, config):
@@ -57,18 +59,21 @@ def menc_abg(r, config):
     M_enc : float or ndarray
         Enclosed mass in units of Mvir.
     """
-    alpha = config.init.alpha
-    beta = config.init.beta
-    gamma = config.init.gamma
+    alpha = float(config.init.alpha)
+    beta  = float(config.init.beta)
+    gamma = float(config.init.gamma)
+    epsabs = float(config.prec.epsabs)
+    epsrel = float(config.prec.epsrel)
 
-    r = np.atleast_1d(r)
-    result = np.empty_like(r)
+    r = np.asarray(r, dtype=np.float64)
+    out = np.empty(r.shape, dtype=np.float64)
 
     for i, ri in enumerate(r):
-        integral, _ = quad(_abg_jeans_mass_integrand, 0, ri, args=(alpha, beta, gamma), epsabs=config.prec.epsabs, epsrel=config.prec.epsrel)
-        result[i] = integral
+        integral, _ = quad(_abg_jeans_mass_integrand, 0.0, float(ri), 
+                           args=(alpha, beta, gamma), epsabs=epsabs, epsrel=epsrel)
+        out[i] = integral
 
-    return result if result.shape[0] > 1 else result[0] 
+    return out if out.size > 1 else float(out[0])
 
 def sigr_abg(r, config):
     """
@@ -86,20 +91,20 @@ def sigr_abg(r, config):
     v2 : float or ndarray
         Velocity dispersion squared.
     """
-    alpha = config.init.alpha
-    beta = config.init.beta
-    gamma = config.init.gamma
+    alpha = float(config.init.alpha)
+    beta  = float(config.init.beta)
+    gamma = float(config.init.gamma)
 
-    epsabs=config.prec.epsabs
-    epsrel=config.prec.epsrel
+    epsabs = float(config.prec.epsabs)
+    epsrel = float(config.prec.epsrel)
 
-    r = np.atleast_1d(r)
-    result = np.empty_like(r)
+    r = np.asarray(r, dtype=np.float64)
+    out = np.empty(r.shape, dtype=np.float64)
 
     for i, ri in enumerate(r):
         integrand = lambda x: _abg_velocity_integrand(x, alpha, beta, gamma, epsabs, epsrel)
-        integral, _ = quad(integrand, ri, np.inf, epsabs=epsabs, epsrel=epsrel)
-        rho_ri = ri**(-gamma) / (1 + ri**alpha)**((beta - gamma) / alpha)
-        result[i] = integral / rho_ri
+        integral, _ = quad(integrand, float(ri), np.inf, epsabs=epsabs, epsrel=epsrel)
+        rho_ri = ri**(-gamma) / (1.0 + ri**alpha)**((beta - gamma) / alpha)
+        out[i] = integral / rho_ri
 
-    return result if result.shape[0] > 1 else result[0]
+    return out if out.size > 1 else float(out[0])

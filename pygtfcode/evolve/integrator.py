@@ -13,17 +13,17 @@ def run_until_stop(state, start_step, **kwargs):
     step_i = state.step_count if steps is not None else None
     time_i = state.t if time_limit is not None else None
 
-    # Store attributes faster access in loop
+    # Locals for speed + type hardening
     io = state.config.io
-    chatter = state.config.io.chatter
     sim = state.config.sim
-    t_halt = sim.t_halt
-    rho0_last_prof = state.rho[0]
-    rho0_last_tevol = state.rho[0]
-    rho_c_halt = sim.rho_c_halt
-    drho_prof = io.drho_prof
-    drho_tevol = io.drho_tevol
-    nlog = io.nlog
+    chatter = bool(io.chatter)
+    t_halt = float(sim.t_halt)
+    rho0_last_prof = float(state.rho[0])
+    rho0_last_tevol = float(state.rho[0])
+    rho_c_halt = float(sim.rho_c_halt)
+    drho_prof = float(io.drho_prof)
+    drho_tevol = float(io.drho_tevol)
+    nlog = int(io.nlog)
 
     while state.t < t_halt:
 
@@ -100,14 +100,15 @@ def compute_time_step(state) -> float:
     if state.step_count == 1:
         return 1.0e-7
     
-    else:
-        prec = state.config.prec
-        # Relaxation-limited time step
-        dt1 = prec.eps_dt * state.mintrelax
-        # Energy stability-limited time step
-        dt2 = state.dt * 0.95 * (prec.eps_du / state.du_max)
+    prec = state.config.prec
+    # Relaxation-limited time step
+    dt1 = prec.eps_dt * state.mintrelax
+    # Energy stability-limited time step
+    tiny = np.finfo(np.float64).tiny
+    du_max_safe = max(state.du_max, tiny)
+    dt2 = state.dt * 0.95 * (prec.eps_du / du_max_safe)
 
-        return min(dt1, dt2)
+    return float(min(dt1, dt2))
 
 def integrate_time_step(state, dt_prop, step_count):
     """
@@ -124,58 +125,49 @@ def integrate_time_step(state, dt_prop, step_count):
         Step count
     """
     from pygtfcode.evolve.transport import compute_luminosities, conduct_heat
-    from pygtfcode.evolve.hydrostatic import revirialize
+    from pygtfcode.evolve.hydrostatic import revirialize, compute_mass
 
     # Store state attributes for fast access in loop and to pass into njit functions
     prec = state.config.prec
-    sim = state.config.sim
+    sim  = state.config.sim
     init = state.config.init
-    a = sim.a
-    b = sim.b
-    c = sim.c
-    sigma_m = state.char.sigma_m_char
-    cored = init.profile == 'abg' and init.gamma < 1.0
-    r_orig = state.r
-    m = state.m
-    v2_orig = state.v2
-    p_orig = state.p
-    u_orig = state.u
-    rho_orig = state.rho
+
+    a = float(sim.a); b = float(sim.b); c = float(sim.c)
+    sigma_m = float(state.char.sigma_m_char)
+    cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+
+    r_orig  = np.asarray(state.r,   dtype=np.float64)
+    m       = np.asarray(state.m,   dtype=np.float64)
+    v2_orig = np.asarray(state.v2,  dtype=np.float64)
+    p_orig  = np.asarray(state.p,   dtype=np.float64)
+    u_orig  = np.asarray(state.u,   dtype=np.float64)
+    rho_orig= np.asarray(state.rho, dtype=np.float64)
 
     # Compute current luminosity array
     lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
     # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/arr.npy', lum) # FOR DEBUGGING
 
-    iter_du = 0
-    iter_v2 = 0
-    iter_dr = 0
-    eps_du = prec.eps_du
-    eps_dr = prec.eps_dr
-    max_iter_du = prec.max_iter_du
+    iter_v2 = iter_dr = 0
+    eps_du = float(prec.eps_du)
+    eps_dr = float(prec.eps_dr)
     max_iter_v2 = prec.max_iter_v2
     max_iter_dr = prec.max_iter_dr
     converged = False
     repeat_revir = False
+
     while not converged:
         ### Step 1: Energy transport ###
-        p_cond, du_max_new = conduct_heat(m, u_orig, rho_orig, lum, dt_prop)
-
-        # Check du criterion
-        if du_max_new > eps_du:
-            if iter_du >= max_iter_du:
-                raise RuntimeError("Max iterations exceeded for du in conduction step")
-            dt_prop *= 0.95 * (eps_du / du_max_new)
-            iter_du += 1
-            continue # Do not complete outer while loop, repeat conduct_heat with original values and smaller timestep
+        p_cond, du_max_new, dt_prop = conduct_heat(m, u_orig, rho_orig, lum, dt_prop, eps_du)
 
         ### Step 2: Reestablish hydrostatic equilibrium ###
         while True:
+            # compute_mass() # placeholder for mass computation
             if repeat_revir:
                 result = revirialize(r_new, rho_new, p_new, m)
             else:
                 result = revirialize(r_orig, rho_orig, p_cond, m)
 
-            # Check v2 criterion
+            # Negative v2 signaled by None
             if result is None: # Negative v2 value
             # if len(result) == 4: # FOR DEBUGGING
                 if iter_v2 >= max_iter_v2:
@@ -187,7 +179,7 @@ def integrate_time_step(state, dt_prop, step_count):
                 dt_prop *= 0.5
                 iter_v2 += 1
                 repeat_revir = False
-                break # Exit inner loop, repeat conduct_heat with original values and smaller timestep
+                break # Exit inner loop, redo conduct_heat with original values and smaller dt
             
             # Check dr criterion
             # Accept larger dr in first time step
@@ -199,18 +191,17 @@ def integrate_time_step(state, dt_prop, step_count):
                 repeat_revir = True
                 continue # Go to top of inner loop, repeat revirialize with new values
 
-            else: # Both criteria are met, break out of inner and outer loop
-                converged = True
-                break
+            # Both criteria are met, break out of inner and outer loop
+            r_new, rho_new, p_new, v2_new, dr_max_new = result
+            converged = True
+            break
 
     ### Step 3: Update state variables ###
     # m not updated in Lagrangian code
 
-    r_new, rho_new, p_new, v2_new, dr_max_new = result
-
-    if np.any(np.diff(r_new) < 0):
-        print(f"r_new has a negative diff!! {step_count}")
-        print(np.diff(r_new)[:4])
+    if np.any(np.diff(r_new) < 0): # FOR DEBUGGING
+        print(f"r_new has a negative diff!! {step_count}") # FOR DEBUGGING
+        print(np.diff(r_new)[:4]) # FOR DEBUGGING
 
     state.r = r_new
     state.rho = rho_new
@@ -225,15 +216,14 @@ def integrate_time_step(state, dt_prop, step_count):
     sqrt_v2_new = np.sqrt(v2_new)
     state.trelax = 1.0 / (sqrt_v2_new * rho_new)
 
-    state.maxvel = np.max(sqrt_v2_new)
-    state.minkn = np.min(state.kn)
-    state.mintrelax = np.min(state.trelax)
+    state.maxvel    = float(np.max(sqrt_v2_new))
+    state.minkn     = float(np.min(state.kn))
+    state.mintrelax = float(np.min(state.trelax))
 
     # Diagnostics
-    state.n_iter_du += iter_du
     state.n_iter_v2 += iter_v2
     state.n_iter_dr += iter_dr
-    state.dt_cum += dt_prop
+    state.dt_cum += float(dt_prop)
 
-    state.dt = dt_prop
-    state.t += dt_prop
+    state.dt = float(dt_prop)
+    state.t += float(dt_prop)

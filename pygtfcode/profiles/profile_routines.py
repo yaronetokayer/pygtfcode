@@ -1,9 +1,14 @@
-# pygtfcode/profiles/core_profiles.py
-
-# from pygtfcode.parameters.constants import Constants
+import numpy as np
 from pygtfcode.profiles.nfw import menc_nfw, sigr_nfw
 from pygtfcode.profiles.abg import menc_abg, sigr_abg
 from pygtfcode.profiles.truncated_nfw import menc_trunc, sigr_trunc
+
+def _as_f64(x):
+    """
+    Helper function to ensure double point precision for all input values
+    """
+    a = np.asarray(x, dtype=np.float64)
+    return a if a.ndim else float(a)
 
 def menc(r, state):
     """
@@ -21,6 +26,7 @@ def menc(r, state):
     float or ndarray
         Enclosed mass at r, normalized by Mvir.
     """
+    r = _as_f64(r)
     profile = state.config.init.profile
     if profile == "nfw":
         return menc_nfw(r)
@@ -47,6 +53,7 @@ def sigr(r, state):
     float or ndarray
         Velocity dispersion squared.
     """
+    r = _as_f64(r)
     profile = state.config.init.profile
     if profile == "nfw":
         return sigr_nfw(r, state.config)

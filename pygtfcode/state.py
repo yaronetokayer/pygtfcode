@@ -20,13 +20,17 @@ def _xH(z, const):
     H_z : float
         Hubble parameter at redshift z [km/s/Mpc].
     """
-    Omega_m = const.Omega_m
+    Omega_m = float(const.Omega_m)
     omega_lambda = 1 - Omega_m
-    xH_0 = 100 * const.xhubble  # H_0 in km/s/Mpc
+    xH_0 = 100 * float(const.xhubble)  # H_0 in km/s/Mpc
+
+    z = np.asarray(z, dtype=np.float64)
 
     fac = omega_lambda + (1.0 - omega_lambda - Omega_m) * (1.0 + z)**2 + Omega_m * (1.0 + z)**3
 
-    return xH_0 * np.sqrt(fac)
+    H = xH_0 * np.sqrt(fac)
+
+    return H if H.ndim else float(H)
 
 def _print_time(start, end, funcname):
     """
@@ -83,33 +87,38 @@ class State:
 
         char = CharParams() # Instantiate CharParams object
 
-        rvir = 0.169 * (init.Mvir / 1.0e12)**(1.0/3.0)
-        rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
-        rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2.0/3.0)
-        rvir /= const.xhubble
+        # Ensure double point precision
+        Mvir  = float(init.Mvir)
+        cvir  = float(init.cvir)
+        z     = float(init.z)
 
-        Mvir = init.Mvir / const.xhubble
-        char.fc = fNFW(init.cvir)
-        char.r_s = rvir / init.cvir
+        rvir = 0.169 * (Mvir / 1.0e12)**(1.0/3.0)
+        rvir *= (float(const.Delta_vir) / 178.0)**(-1.0/3.0)
+        rvir *= (_xH(z, const) / (100.0 * float(const.xhubble)))**(-2.0/3.0)
+        rvir /= float(const.xhubble)
+
+        Mvir_h = Mvir / float(const.xhubble)
+        char.fc = float(fNFW(cvir))
+        char.r_s = rvir / cvir
 
         if init.profile != 'abg':
-            char.m_s = Mvir / char.fc
+            char.m_s = Mvir_h / char.fc
             
         else:
             from pygtfcode.profiles.abg import chi
-            char.chi = chi(self.config)
-            char.m_s = Mvir / char.chi
+            char.chi = float(chi(self.config))
+            char.m_s = Mvir_h / char.chi
             char.r_s *= ( char.fc / char.chi )**(1.0/3.0)
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
-        char.v0 = np.sqrt(const.gee * char.m_s / char.r_s)
+        char.v0 = float(np.sqrt(const.gee * char.m_s / char.r_s))
         sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun^2
-        char.sigma0 = sigma0 * const.Mpc_to_cm**2 / const.Msun_to_gram # In cm^2 / g
+        char.sigma0 = sigma0 * float(const.Mpc_to_cm)**2 / float(const.Msun_to_gram) # In cm^2 / g
 
-        v0_cgs = char.v0 * 1e5
-        rho_s_cgs = char.rho_s * const.Msun_to_gram / const.Mpc_to_cm**3
-        char.t0 = 1.0 / (sim.a * sim.sigma_m * v0_cgs * rho_s_cgs)
-        char.sigma_m_char = sim.sigma_m / char.sigma0 # sigma_m in dimensionless form
+        v0_cgs = char.v0 * 1.0e5
+        rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
+        char.t0 = 1.0 / (float(sim.a) * float(sim.sigma_m) * v0_cgs * rho_s_cgs)
+        char.sigma_m_char = float(sim.sigma_m) / char.sigma0 # sigma_m in dimensionless form
 
         return char  # Store the CharParams object in config
     
@@ -130,16 +139,17 @@ class State:
         """
         if self.config.io.chatter:
             print("Setting up radial grid...")
-        rmin = self.config.grid.rmin
-        rmax = self.config.grid.rmax
-        ngrid = self.config.grid.ngrid
 
-        xlgrmin = np.log10(rmin)
-        xlgrmax = np.log10(rmax)
+        rmin  = float(self.config.grid.rmin)
+        rmax  = float(self.config.grid.rmax)
+        ngrid = int(self.config.grid.ngrid)
 
-        r = np.empty(ngrid + 1)
+        xlgrmin = float(np.log10(rmin))
+        xlgrmax = float(np.log10(rmax))
+
+        r = np.empty(ngrid + 1, dtype=np.float64)
         r[0] = 0.0
-        r[1:] = 10**np.linspace(xlgrmin, xlgrmax, ngrid)
+        r[1:] = 10.0 ** np.linspace(xlgrmin, xlgrmax, ngrid, dtype=np.float64)
 
         return r
     
@@ -163,15 +173,14 @@ class State:
         if self.config.io.chatter:
             print("Initializing profiles...")
 
-        r = self.r
+        r = self.r.astype(np.float64, copy=False)
         r_mid = 0.5 * (r[1:] + r[:-1])          # Midpoint of each shell
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
 
-        m = np.zeros_like(r)
+        m = np.zeros_like(r, dtype=np.float64)
         m[1:] = menc(r[1:], self)             # m[i] at shell edges
-        # m = np.concatenate(([0.0], m_outer))
 
-        v2 = sigr(r_mid, self)
+        v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         p = rho * v2
         u = 1.5 * v2
@@ -217,12 +226,11 @@ class State:
         self.du_max = prec.eps_du           # Initialize the max du to upper limit
         self.dr_max = prec.eps_dr           # Initialize the max dr to upper limit
 
-        self.maxvel = np.sqrt(np.max(self.v2))
-        self.minkn = np.min(self.kn)
-        self.mintrelax = np.min(self.trelax)
+        self.maxvel = float(np.sqrt(np.max(self.v2)))
+        self.minkn = float(np.min(self.kn))
+        self.mintrelax = float(np.min(self.trelax))
 
         # For diagnostics
-        self.n_iter_du = 0
         self.n_iter_v2 = 0
         self.n_iter_dr = 0
         self.dt_cum = 0.0
@@ -240,23 +248,23 @@ class State:
         ---------
         steps : int, optional
             Number of steps to advance the simulation
-        time : float, optional
-            Amount of time by which to advance the simulation
+        stoptime : float, optional
+            Amount of simulation time by which to advance the simulation
         rho_c: float, optional
             Max central denisty value to advance until
         """
         from pygtfcode.evolve.integrator import run_until_stop
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot, write_time_evolution
-        from time import time
+        from time import time as _now
 
-        start = time()
+        start = _now()
         start_step = self.step_count
 
         # Prepare kwargs for run_until_stop if any halting criteria are provided
         kwargs = {}
         if steps is not None:
             kwargs['steps'] = steps
-        if time is not None:
+        if stoptime is not None:
             kwargs['stoptime'] = stoptime
         if rho_c is not None:
             kwargs['rho_c'] = rho_c
@@ -274,7 +282,7 @@ class State:
         write_time_evolution(self)
         write_log_entry(self, start_step)
 
-        end = time()
+        end = _now()
         _print_time(start, end, funcname="run()")
         
     def get_phys(self):

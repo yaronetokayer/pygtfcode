@@ -76,11 +76,11 @@ def write_log_entry(state, start_step):
     if ( step - start_step ) % nlog != 0:
         nlog = ( step - start_step ) % nlog
 
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_du>':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
-    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_du / nlog:12.6e}  {state.n_iter_v2 / nlog:12.6e}  {state.n_iter_dr / nlog:12.6e}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
+    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_v2 / nlog:12.6e}  {state.n_iter_dr / nlog:12.6e}\n"
 
     if step == start_step:
-        new_line = new_line[:-97] + f"         N/A" +  new_line[38:-41] + f"         N/A           N/A           N/A\n"
+        new_line = new_line[:-97] + f"         N/A" +  new_line[38:-13] + f"         N/A           N/A\n"
 
     _update_file(filepath, header, new_line, step)
 
