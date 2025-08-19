@@ -80,7 +80,7 @@ def write_log_entry(state, start_step):
     new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_v2 / nlog:12.6e}  {state.n_iter_dr / nlog:12.6e}\n"
 
     if step == start_step:
-        new_line = new_line[:-97] + f"         N/A" +  new_line[38:-13] + f"         N/A           N/A\n"
+        new_line = new_line[:-83] + f"         N/A" +  new_line[38:-27] + f"         N/A           N/A\n"
 
     _update_file(filepath, header, new_line, step)
 
@@ -96,7 +96,7 @@ def write_log_entry(state, start_step):
             print(header[:-1])
         print(new_line[:-1])
 
-def write_profile_snapshot(state):
+def write_profile_snapshot(state, initialize=False):
     """ 
     Write full radial profiles to disk.
 
@@ -104,6 +104,8 @@ def write_profile_snapshot(state):
     ---------
     state : State
         The current simulation state.
+    initialize : bool
+        If True, this is part of initializing the grid and should not increment the snapshot index.
     """
     filename = os.path.join(state.config.io.base_dir, state.config.io.model_dir, f"profile_{state.snapshot_index}.dat")
 
@@ -132,7 +134,8 @@ def write_profile_snapshot(state):
         if state.step_count == 0:
             print("Initial profiles written to disk.")
 
-    state.snapshot_index += 1
+    if not initialize: # Do not increment if this is part of intializing the grid
+        state.snapshot_index += 1
 
 def append_snapshot_conversion(state):
     """

@@ -64,8 +64,6 @@ def run_until_stop(state, start_step, **kwargs):
         # Write profile to disk
         drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
         if drho_for_prof > drho_prof:
-        # if step_count % 5000 == 0 or step_count in [992857, 992858, 992859, 992860, 992861, 992862, 992863]:  # FOR DEBUGGING
-        # if step_count % 5000 == 0 or step_count in [468332, 468333, 468334, 468335, 468336, 468337]: # FOR DEBUGGING
             rho0_last_prof = rho0
             write_profile_snapshot(state)
 
@@ -145,7 +143,6 @@ def integrate_time_step(state, dt_prop, step_count):
 
     # Compute current luminosity array
     lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
-    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/arr.npy', lum) # FOR DEBUGGING
 
     iter_v2 = iter_dr = 0
     eps_du = float(prec.eps_du)
@@ -155,26 +152,25 @@ def integrate_time_step(state, dt_prop, step_count):
     converged = False
     repeat_revir = False
 
+    # Compute total enclosed mass including baryons, perturbers, etc.
+    # May need to move into loop depending on how m is updated
+    # Current version just returns m as is
+    m_tot = compute_mass(m)
+
     while not converged:
         ### Step 1: Energy transport ###
         p_cond, du_max_new, dt_prop = conduct_heat(m, u_orig, rho_orig, lum, dt_prop, eps_du)
 
         ### Step 2: Reestablish hydrostatic equilibrium ###
         while True:
-            # compute_mass() # placeholder for mass computation
             if repeat_revir:
-                result = revirialize(r_new, rho_new, p_new, m)
+                result = revirialize(r_new, rho_new, p_new, m_tot)
             else:
-                result = revirialize(r_orig, rho_orig, p_cond, m)
+                result = revirialize(r_orig, rho_orig, p_cond, m_tot)
 
             # Negative v2 signaled by None
             if result is None: # Negative v2 value
-            # if len(result) == 4: # FOR DEBUGGING
                 if iter_v2 >= max_iter_v2:
-                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/p.npy', result[1]) # FOR DEBUGGING
-                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/r_new.npy', result[0]) # FOR DEBUGGING
-                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/rho.npy', result[2]) # FOR DEBUGGING
-                    # np.save('/Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/tests/Model001/v2.npy', result[3]) # FOR DEBUGGING
                     raise RuntimeError("Max iterations exceeded for v2 in conduction/revirialization step")
                 dt_prop *= 0.5
                 iter_v2 += 1
@@ -198,10 +194,6 @@ def integrate_time_step(state, dt_prop, step_count):
 
     ### Step 3: Update state variables ###
     # m not updated in Lagrangian code
-
-    if np.any(np.diff(r_new) < 0): # FOR DEBUGGING
-        print(f"r_new has a negative diff!! {step_count}") # FOR DEBUGGING
-        print(np.diff(r_new)[:4]) # FOR DEBUGGING
 
     state.r = r_new
     state.rho = rho_new

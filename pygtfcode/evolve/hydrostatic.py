@@ -2,7 +2,7 @@ import numpy as np
 # from scipy.linalg import solve_banded
 from numba import njit, float64, types
 
-def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float] | None:
+def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float] | None:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -15,7 +15,7 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     p : ndarray
         Pressure values.
     m : ndarray
-        Enclosed mass values
+        Total enclosed mass at each radial grid point, including baryons/perturbers.
 
     Returns
     -------
@@ -41,7 +41,7 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     """
 
     # Solve for corrections to r
-    a, b, c, y = build_tridiag_system(r, rho, p, m) # For Frank method
+    a, b, c, y = build_tridiag_system(r, rho, p, m_tot) # For Frank method
     # ab, y = build_tridiag_system(r, rho, p, m) # For scipy method
     # x = solve_banded((1, 1), ab, y)
     x = solve_tridiagonal_frank(a, b, c, y)
@@ -55,7 +55,6 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
     thresh = -rel_eps * max(1.0, v2_max)
     if np.any(v2_new < thresh):
         return None
-        # return r_new, p_new, rho_new, v2_new # FOR DEBUGGING
     # Clamp tiny negatives to zero (purely cosmetic / avoids nan in later sqrt)
     if np.any(v2_new < 0.0):
         v2_new = np.maximum(v2_new, 0.0)      
@@ -64,11 +63,24 @@ def revirialize(r, rho, p, m) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.nd
 
     return r_new, rho_new, p_new, v2_new, dr_max_new
 
-def compute_mass():
+@njit(float64[:](float64[:]), cache=True)
+def compute_mass(m) -> np.ndarray:
     """
-    Placeholder funcion to compute mass used in build_tridiag_system
+    Placeholder funcion to compute mass used in build_tridiag_system.
+    Accounts for baryons, perturbers, etc. in future implementations.
+
+    Arguments
+    ---------
+    m : ndarray
+        Enclosed fluid mass at each radial grid point.
+
+    Returns
+    -------
+    ndarray
+        Total mass for hydrostatis equilibrium calculations.
     """
-    pass
+
+    return m
 
 @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
       (float64[:], float64[:], float64[:], float64[:]), cache=True)
@@ -96,7 +108,7 @@ def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray
 # )
 @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
       (float64[:], float64[:], float64[:], float64[:]), cache=True)
-def build_tridiag_system(r, rho, p, m) -> tuple[np.ndarray, np.ndarray]:
+def build_tridiag_system(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
     """
     Construct the tridiagonal matrix system (A·X = Y) used in the revirialization step.
 
@@ -108,8 +120,8 @@ def build_tridiag_system(r, rho, p, m) -> tuple[np.ndarray, np.ndarray]:
         Density at each radial grid point (length = n)
     p : ndarray
         Pressure at each radial grid point (length = n)
-    m : ndarray
-        Enclosed mass at each radial grid point (length = n + 1)
+    m_tot : ndarray
+        Total enclosed mass at each radial grid point, including baryons/perturbers (length = n + 1)
 
     Returns
     -------
@@ -144,8 +156,7 @@ def build_tridiag_system(r, rho, p, m) -> tuple[np.ndarray, np.ndarray]:
 
     # Gravitational correction term
     # This is where extra mass would be added for baryons, perturber, etc
-    mm = m[1:-1]
-    dd = -(4.0 / mm) * (rC**2 / dr) * (dP / drho)
+    dd = -(4.0 / m_tot[1:-1]) * (rC**2 / dr) * (dP / drho)
 
     c1 = 5.0 * dd * (p[1:] / dP) - 3.0 * (rho[1:] / drho)
     c2 = 5.0 * dd * (p[:-1] / dP) + 3.0 * (rho[:-1] / drho)

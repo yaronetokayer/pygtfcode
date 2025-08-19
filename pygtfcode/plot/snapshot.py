@@ -22,9 +22,15 @@ def extract_snapshot_indices(model_dir):
     path = os.path.join(model_dir, "snapshot_conversion.txt")
 
     data = np.loadtxt(path, usecols=(0, 1, 2), skiprows=1)
-    snapshot_index = data[:, 0].astype(int)
-    t_t0 = data[:, 1]
-    t_Gyr = data[:, 2]
+    if data.ndim == 1:
+        # Only one row of data
+        snapshot_index = np.array([int(data[0])])
+        t_t0 = np.array([data[1]])
+        t_Gyr = np.array([data[2]])
+    else:
+        snapshot_index = data[:, 0].astype(int)
+        t_t0 = data[:, 1]
+        t_Gyr = data[:, 2]
     return {
         'snapshot_index': snapshot_index,
         't_t0': t_t0,

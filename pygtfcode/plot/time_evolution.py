@@ -29,6 +29,9 @@ def extract_time_evolution_data(filepath):
     data = np.loadtxt(filepath, usecols=(1, 2, 3, 4, 5, 6, 7, 8, 9), skiprows=1)
     model_dir = os.path.basename(os.path.dirname(filepath))
     model_id = int(model_dir.replace("Model", ""))
+    # Handle case where data is 1D (only one row)
+    if data.ndim == 1:
+        data = data[np.newaxis, :]
     return {
         't': data[:, 0],
         't_phys': data[:, 1],

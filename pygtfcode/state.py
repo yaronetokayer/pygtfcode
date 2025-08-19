@@ -213,6 +213,7 @@ class State:
         """
         Resets initial state
         """
+        from pygtfcode.io.write import write_profile_snapshot
         config = self.config
         prec = config.prec
 
@@ -234,6 +235,9 @@ class State:
         self.n_iter_v2 = 0
         self.n_iter_dr = 0
         self.dt_cum = 0.0
+
+        # Write snapshot to disk
+        write_profile_snapshot(self, initialize=True)
 
         if config.io.chatter:
             print("State initialized.")
