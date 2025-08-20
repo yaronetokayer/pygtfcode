@@ -69,6 +69,7 @@ def write_log_entry(state, start_step):
         The starting value of the current simulation run
     """
     io = state.config.io
+    prec = state.config.prec
     filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
     chatter = io.chatter
     step = state.step_count
@@ -76,11 +77,11 @@ def write_log_entry(state, start_step):
     if ( step - start_step ) % nlog != 0:
         nlog = ( step - start_step ) % nlog
 
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<n_iter_v2>':>12}  {'<n_iter_dr>':>12}\n"
-    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.n_iter_v2 / nlog:12.6e}  {state.n_iter_dr / nlog:12.6e}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<dt lim>':>8}  {'<dr lim>':>8}  {'<du lim>':>8}  {'<n_iter_v2>':>11}  {'<n_iter_dr>':>11}\n"
+    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.n_iter_v2 / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     if step == start_step:
-        new_line = new_line[:-83] + f"         N/A" +  new_line[38:-27] + f"         N/A           N/A\n"
+        new_line = new_line[:26] + f"         N/A" +  new_line[38:80] + f"       N/A       N/A       N/A          N/A          N/A\n"
 
     _update_file(filepath, header, new_line, step)
 
@@ -88,6 +89,9 @@ def write_log_entry(state, start_step):
     state.n_iter_v2 = 0
     state.n_iter_dr = 0
     state.dt_cum = 0.0
+    state.du_max_cum = 0.0
+    state.dr_max_cum = 0.0
+    state.dt_over_trelax_cum = 0.0
 
     if chatter:
         if step == 0:

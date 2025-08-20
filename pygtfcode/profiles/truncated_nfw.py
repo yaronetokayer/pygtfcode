@@ -246,7 +246,7 @@ def _density_times_r2_trunc(r, state):
 
     return density * r**2
 
-def menc_trunc(r, state, chatter=True):
+def menc_trunc(r, state, chatter=True): 
     """
     Enclosed mass for a truncated NFW profile computed via numerical integration.
 
@@ -264,7 +264,7 @@ def menc_trunc(r, state, chatter=True):
     """
     chatter = chatter and bool(state.config.io.chatter)
     
-    r = np.asarray(r, dtype=np.float64)
+    r = np.atleast_1d(np.asarray(r, dtype=np.float64))
     epsabs = float(state.config.prec.epsabs)
     epsrel = float(state.config.prec.epsrel)
 

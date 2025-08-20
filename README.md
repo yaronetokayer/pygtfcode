@@ -31,7 +31,9 @@ Holds the dynamically evolving quantities:
 * Characteristic scales (derived from `Config`)
 * A `run()` method to evolve the system until collapse or a stopping condition is reached
 
-The `State` object is initialized with a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
+A `State` object can be constructed in one of two ways:
+1. From a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
+2. From the directory of a simulation that has already been initialized.  This is useful for either analyzing or resuming a simulation from a different Python session.  No `Config` object is needed.  By default the state will initialize to the latest snapshot of the imported simulation.
 
 Note that `r` and `m` defined bin edges, while `rho`, `p`, `u`, `v2`, `kn`, and `trelax` are all defined at `rmid`.  Therefore, `r` and `m` are longer than the other arrays by one entry.
 
@@ -69,8 +71,19 @@ Dependencies: Python 3.8+, `numpy`, `scipy`, `numba`, `matplotlib`, `tqdm`
 import pygtfcode as gtf
 
 config = gtf.Config()
-state = gtf.State(config)
+state = gtf.State.from_config(config)
 state.run()
+```
+
+To import an existing simulation:
+
+```python
+import pygtfcode as gtf
+
+state = gtf.State.from_dir(model_dir='/path/to/Model002')
+
+# The latest snapshot will be loaded by default.  To load a particular snapshot:
+state = gtf.State.from_dir(model_dir='/path/to/Model002', snapshot=59)
 ```
 
 Alternatively, you can call `from pygtfcode import Config, State`.  In that case, plotting functions will not be automatically imported.
@@ -168,7 +181,7 @@ The plotting functions also exist as methods to the `State` object:
 import pygtfcode as gtf
 
 config = gtf.Config()
-state = gtf.State(config)
+state = gtf.State.from_config(config)
 state.run()
 
 state.plot_time_evolution()         # Accepts all keyword arguments, but cannot compare between simulations when used this way

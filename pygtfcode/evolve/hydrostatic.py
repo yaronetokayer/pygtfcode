@@ -63,7 +63,7 @@ def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
 
     return r_new, rho_new, p_new, v2_new, dr_max_new
 
-@njit(float64[:](float64[:]), cache=True)
+@njit(float64[:](float64[:]), cache=True, fastmath=True)
 def compute_mass(m) -> np.ndarray:
     """
     Placeholder funcion to compute mass used in build_tridiag_system.
@@ -82,24 +82,55 @@ def compute_mass(m) -> np.ndarray:
 
     return m
 
-@njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
-      (float64[:], float64[:], float64[:], float64[:]), cache=True)
-def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+@njit(types.Tuple((float64[:], float64[:], float64[:], float64[:])) 
+      (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
     r_new = r.copy()
     r_new[1:-1] *= (1.0 + x)
     r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3)
-
+    # r3c = r[1:]**3 / (r[1:]**3 - r[:-1]**3)
+    
     dV_over_V = np.empty(r3c.shape, dtype=np.float64)
-    dV_over_V[0]    = 3.0 * r3c[0] * x[0]
+    dV_over_V[0] = 3.0 * r3c[0] * x[0]
     dV_over_V[1:-1] = 3.0 * (r3c[1:-1] * x[1:] - (r3c[1:-1] - 1.0) * x[:-1])
-    dV_over_V[-1]   = -3.0 * (r3c[-1] - 1.0) * x[-1]
-
-    p_new   = p   * (1.0 - (5.0 / 3.0) * dV_over_V)
+    dV_over_V[-1] = -3.0 * (r3c[-1] - 1.0) * x[-1]
+    
+    p_new = p * (1.0 - (5.0 / 3.0) * dV_over_V)
     rho_new = rho * (1.0 - dV_over_V)
-    v2_new  = p_new / rho_new
-
+    v2_new = p_new / rho_new
+    
     return r_new, p_new, rho_new, v2_new
 
+# @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
+#       (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+# def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+#     # Old method from Frank's (potentially mistaken) implementation
+#     # r_new = r.copy()
+#     # r_new[1:-1] *= (1.0 + x)
+#     # r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3)
+
+#     rL = r[:-1]
+#     rR = r[1:]
+#     rR3 = rR**3
+#     r3c = rR3 / (rR3 - rL**3)
+#     r3c_minus1 = r3c - 1.0
+
+#     dV_over_V = np.empty(r3c.shape, dtype=np.float64)
+#     dV_over_V[0]    = 3.0 * r3c[0] * x[0]
+#     dV_over_V[1:-1] = 3.0 * (r3c[1:-1] * x[1:] - r3c_minus1[1:-1] * x[:-1])
+#     dV_over_V[-1]   = -3.0 * r3c_minus1[-1] * x[-1]
+
+#     p_new   = p   * (1.0 - (5.0 / 3.0) * dV_over_V)
+#     rho_new = rho * (1.0 - dV_over_V)
+#     v2_new  = p_new / rho_new
+
+#     # build r_new without copying r
+#     r_new = np.empty(r.shape, dtype=np.float64)
+#     r_new[0]  = r[0]
+#     r_new[-1] = r[-1]
+#     r_new[1:-1] = r[1:-1] * (1.0 + x)
+
+#     return r_new, p_new, rho_new, v2_new
 
 # @njit(
 #     types.Tuple((float64[:, :], float64[:]))   # returns (ab, y)
@@ -107,7 +138,7 @@ def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray
 #     cache=True
 # )
 @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
-      (float64[:], float64[:], float64[:], float64[:]), cache=True)
+      (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
 def build_tridiag_system(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
     """
     Construct the tridiagonal matrix system (A·X = Y) used in the revirialization step.
@@ -134,6 +165,10 @@ def build_tridiag_system(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
     rR = r[2:]          # Right radial grid points
     rC = r[1:-1]        # Central radial grid points
 
+    # Central differences
+    dr = rR - rL
+    inv_dr = 1.0 / dr
+
     # Pressure gradient and density sum for difference equations
     dP   = p[1:] - p[:-1]                           # Pressure difference
     drho = rho[1:] + rho[:-1]
@@ -141,22 +176,21 @@ def build_tridiag_system(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
     # floors to avoid divide-by-zero/inf
     tiny = np.finfo(np.float64).tiny
     dP   = np.where(np.abs(dP)   < tiny, np.copysign(tiny, dP),   dP)
-    drho = np.where(drho         < tiny, tiny,                     drho)
-
-    dr = rR - rL                                    # Central differences
+    drho = np.where(drho         < tiny, tiny,                  drho)
 
     # Geometric volume factors
-    r3a = rR**3 / (rR**3 - rC**3)
-    r3c = rC**3 / (rC**3 - rL**3)
+    rR3 = rR**3
+    rC3 = rC**3
+    rL3 = rL**3
+    r3a = rR3 / (rR3 - rC3)
+    r3c = rC3 / (rC3 - rL3)
     r3b = r3a - 1.0
     r3d = r3c - 1.0
 
-    q1 = rR / dr
+    q1 = rR * inv_dr
     q2 = q1 - 1.0
 
-    # Gravitational correction term
-    # This is where extra mass would be added for baryons, perturber, etc
-    dd = -(4.0 / m_tot[1:-1]) * (rC**2 / dr) * (dP / drho)
+    dd = -(4.0 / m_tot[1:-1]) * ( (rC * rC) * inv_dr ) * (dP / drho)
 
     c1 = 5.0 * dd * (p[1:] / dP) - 3.0 * (rho[1:] / drho)
     c2 = 5.0 * dd * (p[:-1] / dP) + 3.0 * (rho[:-1] / drho)
@@ -176,7 +210,7 @@ def build_tridiag_system(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
     return a, b, c, y
     # return ab, y
 
-@njit(float64[:](float64[:], float64[:], float64[:], float64[:]), cache=True)
+@njit(float64[:](float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
 def solve_tridiagonal_frank(a, b, c, y):
     """
     Solve a tridiagonal system Ax = y using the Thomas algorithm.

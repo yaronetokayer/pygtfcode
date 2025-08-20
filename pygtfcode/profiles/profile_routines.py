@@ -10,7 +10,7 @@ def _as_f64(x):
     a = np.asarray(x, dtype=np.float64)
     return a if a.ndim else float(a)
 
-def menc(r, state):
+def menc(r, state, **kwargs):
     """
     Compute enclosed mass at radius r, in units of Mvir.
 
@@ -31,7 +31,7 @@ def menc(r, state):
     if profile == "nfw":
         return menc_nfw(r)
     elif profile == "truncated_nfw":
-        return menc_trunc(r, state)
+        return menc_trunc(r, state, **kwargs)
     elif profile == "abg":
         return menc_abg(r, state.config)
     else:

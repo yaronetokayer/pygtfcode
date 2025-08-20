@@ -1,6 +1,7 @@
 import numpy as np
 from pygtfcode.parameters.constants import Constants as const
 import pprint
+from pathlib import Path
 
 def _xH(z, const):
     """
@@ -59,7 +60,7 @@ class State:
     """
 
     def __init__(self, config):
-        from pygtfcode.io.write import make_dir, write_metadata
+        from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
 
         self.config = config
         self.char = self._set_param()
@@ -67,11 +68,107 @@ class State:
             from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
             self.rho_interp = generate_rho_lookup(config)
             self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
-        
-        self.reset() # Initialize all state variables
 
-        make_dir(self)                      # Create the model directory if it doesn't exist
-        write_metadata(self)                # Write model metadata to disk
+    @classmethod
+    def from_config(cls, config):
+        """
+        Create a State object from a Config object.
+
+        Parameters
+        ----------
+        config : Config
+            Configuration object containing simulation parameters.
+
+        Returns
+        -------
+        State
+            A new State object initialized with the given configuration.
+        """
+        from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
+
+        state = cls(config)
+        state.reset()                                    # Initialize all state variables
+
+        make_dir(state)                                  # Create the model directory if it doesn't exist
+        write_metadata(state)                            # Write model metadata to disk
+        write_profile_snapshot(state, initialize=True)   # Write initial snapshot to disk
+
+        return state
+
+    @classmethod
+    def from_dir(cls, model_dir: str, snapshot: None | int = None):
+        """
+        Create a State object from an existing model directory.
+
+        Parameters
+        ----------
+        model_dir : str
+            Path to the model directory containing simulation data.
+        snapshot : int, optional
+            Snapshot index to load. If None, loads the latest snapshot.
+
+        Returns
+        -------
+        State
+            A new State object initialized with data from the specified directory.
+        """
+        # Check directory exists
+        p = Path(model_dir)
+        if not p.is_dir():
+            raise FileNotFoundError(f"Model directory does not exist: {p}")
+        
+        # Imports
+        from pygtfcode.io.read import import_metadata, load_snapshot_bundle
+        from pygtfcode.config import Config
+
+        meta = import_metadata(p)
+        snapshot_bundle = load_snapshot_bundle(p, snapshot=snapshot)
+
+        # Construct config and state
+
+        config = Config.from_dict(meta)
+        if config.io.chatter:
+            print("Set config from metadata.")
+
+        state = cls(config)
+
+        if config.io.chatter:
+            print("Setting state variables from snapshot...")     
+
+        prec = config.prec
+
+        state.r = np.insert(10**snapshot_bundle['log_r'].astype(np.float64), 0, 0.0)
+        state.rmid = 10**snapshot_bundle['log_rmid'].astype(np.float64)
+        state.m = np.insert(snapshot_bundle['m'].astype(np.float64), 0, 0.0)
+        state.rho = snapshot_bundle['rho'].astype(np.float64)
+        state.v2 = snapshot_bundle['v2'].astype(np.float64)
+        state.p = snapshot_bundle['p'].astype(np.float64)
+        state.trelax = snapshot_bundle['trelax'].astype(np.float64)
+        state.kn = snapshot_bundle['kn'].astype(np.float64)
+        state.t = float(snapshot_bundle['time'])
+        state.step_count = int(snapshot_bundle['step_count'])
+        state.snapshot_index = int(snapshot_bundle['snapshot_index'])
+
+        state.dt = float(prec.eps_dt)
+        state.du_max = float(prec.eps_du)
+        state.dr_max = float(prec.eps_dr)
+
+        state.maxvel = float(np.sqrt(np.max(state.v2)))
+        state.minkn = float(np.min(state.kn))
+        state.mintrelax = float(np.min(state.trelax))
+
+        # For diagnostics
+        state.n_iter_v2 = 0
+        state.n_iter_dr = 0
+        state.dt_cum = 0.0
+        state.dr_max_cum = 0.0
+        state.du_max_cum = 0.0
+        state.dt_over_trelax_cum = 0.0
+
+        if config.io.chatter:
+            print("State loaded.")
+
+        return state
 
     def _set_param(self):
         """
@@ -213,7 +310,6 @@ class State:
         """
         Resets initial state
         """
-        from pygtfcode.io.write import write_profile_snapshot
         config = self.config
         prec = config.prec
 
@@ -235,9 +331,9 @@ class State:
         self.n_iter_v2 = 0
         self.n_iter_dr = 0
         self.dt_cum = 0.0
-
-        # Write snapshot to disk
-        write_profile_snapshot(self, initialize=True)
+        self.dr_max_cum = 0.0
+        self.du_max_cum = 0.0
+        self.dt_over_trelax_cum = 0.0
 
         if config.io.chatter:
             print("State initialized.")
@@ -297,7 +393,7 @@ class State:
         char = self.char
         init = self.config.init
 
-        Mtot = menc(self.config.grid.rmax, self) * char.m_s
+        Mtot = menc(self.config.grid.rmax, self, chatter=False) * char.m_s
         rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
         rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
         rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2/3)
@@ -362,7 +458,7 @@ class State:
         """
         from pygtfcode.plot.snapshot import plot_snapshots
 
-        snapshots = kwargs.pop('snapshots', self.snapshot_index)
+        snapshots = kwargs.pop('snapshots', -1)
         plot_snapshots(self, snapshots=snapshots, **kwargs)
         
     def make_movie(self, **kwargs):

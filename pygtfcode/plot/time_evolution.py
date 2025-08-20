@@ -1,49 +1,6 @@
 import os
-import numpy as np
 import matplotlib.pyplot as plt
-
-def extract_time_evolution_data(filepath):
-    """
-    Extract time-evolution data from a pygtfcode time_evolution.txt file.
-
-    Parameters
-    ----------
-    filepath : str
-        Path to the time_evolution.txt file.
-
-    Returns
-    -------
-    dict
-        Dictionary with keys:
-            't',                # (array) Time in code units
-            't_phys',           # (array) Time in physical units (Gyr)
-            'rho_c',            # (array) Central density in code units
-            'rho_c_phys',       # (array) Central density in physical units (Msun/pc^3)
-            'v_max',            # (array) Maximum circular velocity in code units
-            'v_max_phys'        # (array) Maximum circular velocity in physical units (km/s)
-            'kn_min',           # (array) Minimum Knudsen number
-            'mintrel',          # (array) Minimum relaxation time in code units
-            'mintrel_phys',     # (array) Minimum relaxation time in physical units (Gyr)
-            'model_id'          # (int) Model number
-    """
-    data = np.loadtxt(filepath, usecols=(1, 2, 3, 4, 5, 6, 7, 8, 9), skiprows=1)
-    model_dir = os.path.basename(os.path.dirname(filepath))
-    model_id = int(model_dir.replace("Model", ""))
-    # Handle case where data is 1D (only one row)
-    if data.ndim == 1:
-        data = data[np.newaxis, :]
-    return {
-        't': data[:, 0],
-        't_phys': data[:, 1],
-        'rho_c': data[:, 2],
-        'rho_c_phys': data[:, 3],
-        'v_max': data[:, 4],
-        'v_max_phys': data[:, 5],
-        'kn_min': data[:, 6],
-        'mintrel': data[:, 7],
-        'mintrel_phys': data[:, 8],
-        'model_id': model_id
-    }
+from pygtfcode.io.read import extract_time_evolution_data
 
 def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None, show=False, grid=False):
     """

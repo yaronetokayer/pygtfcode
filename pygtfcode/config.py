@@ -1,3 +1,4 @@
+from typing import Dict, Any
 from pygtfcode.parameters.io_params import IOParams
 from pygtfcode.parameters.grid_params import GridParams
 from pygtfcode.parameters.init_params import (
@@ -7,7 +8,6 @@ from pygtfcode.parameters.init_params import (
 )
 from pygtfcode.parameters.prec_params import PrecisionParams
 from pygtfcode.parameters.sim_params import SimParams
-
 
 def _init_param(param_class, arg):
     if arg is None:
@@ -52,6 +52,56 @@ class Config:
         self.init = init  # goes through the setter
         self.sim = _init_param(SimParams, sim)
         self.prec = _init_param(PrecisionParams, prec)
+
+    @classmethod
+    def from_dict(cls, meta: Dict[str, Dict[str, Any]]) -> "Config":
+        """
+        Build a Config from the nested dict produced by pygtfcode.io.read.import_metadata().
+
+        This is used when a state is constructed with State.from_dir().
+
+        The `meta` dict is expected to have sections like:
+          "_init", "grid", "io", "prec", "sim"
+        with keys possibly prefixed by underscores (e.g., "_Mvir", "_rmax", ...).
+        """
+        # Helper: strip leading underscores off keys
+        def norm(d: Dict[str, Any]) -> Dict[str, Any]:
+            return {k.lstrip("_"): v for k, v in d.items()}
+        
+        # Robustly fetch sections (allow with or without leading underscore)
+        def get_section(name: str) -> Dict[str, Any]:
+            if name in meta:
+                return meta[name]
+            alt = "_" + name
+            if alt in meta:
+                return meta[alt]
+            raise KeyError(f"Missing '{name}' section in metadata.")
+        
+        # Sections
+        _init_raw = get_section("init")
+        _grid_raw = get_section("grid")
+        _io_raw   = get_section("io")
+        _prec_raw = get_section("prec")
+        _sim_raw  = get_section("sim")
+
+        init_raw = norm(_init_raw)
+        grid_raw = norm(_grid_raw)
+        io_raw   = norm(_io_raw)
+        prec_raw = norm(_prec_raw)
+        sim_raw  = norm(_sim_raw)
+
+        # Build InitParams via existing factory
+        profile = init_raw.pop("profile", "nfw")
+        init_params = make_init_params(profile, **init_raw)
+
+        # Build the other parameter blocks using constructors
+        io_params   = IOParams(**io_raw)
+        grid_params = GridParams(**grid_raw)
+        prec_params = PrecisionParams(**prec_raw)
+        sim_params  = SimParams(**sim_raw)
+
+        return cls(io=io_params, grid=grid_params, init=init_params,
+                   sim=sim_params, prec=prec_params)
 
     @property
     def init(self):

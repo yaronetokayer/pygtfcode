@@ -4,104 +4,7 @@ import matplotlib.pyplot as plt
 import subprocess
 from tqdm import tqdm
 import shutil
-
-def extract_snapshot_indices(model_dir):
-    """
-    Extract snapshot indices and times from snapshot_conversion.txt.
-
-    Parameters
-    ----------
-    model_dir : str
-        Path to the model directory.
-
-    Returns
-    -------
-    dict
-        Dictionary with keys 'step', 't_t0', and 't_Gyr' containing numpy arrays.
-    """
-    path = os.path.join(model_dir, "snapshot_conversion.txt")
-
-    data = np.loadtxt(path, usecols=(0, 1, 2), skiprows=1)
-    if data.ndim == 1:
-        # Only one row of data
-        snapshot_index = np.array([int(data[0])])
-        t_t0 = np.array([data[1]])
-        t_Gyr = np.array([data[2]])
-    else:
-        snapshot_index = data[:, 0].astype(int)
-        t_t0 = data[:, 1]
-        t_Gyr = data[:, 2]
-    return {
-        'snapshot_index': snapshot_index,
-        't_t0': t_t0,
-        't_Gyr': t_Gyr
-    }
-
-def get_time_conversion(filepath, index, phys=False):
-    """
-    Get conversion from index to time from snapshot_conversion.txt.
-
-    Parameters
-    ----------
-    filepath : str
-        Path to the profile_x.dat file.
-    index : int
-        Snapshot index at which to get time
-    phys : bool
-        If True, get value in Gyr, otherwise in simulation units
-
-    Returns
-    -------
-    float
-        Time value.
-    """
-    # Find corresponding timestep.log in the same ModelXXX directory
-    model_dir = os.path.dirname(filepath)
-
-    data = extract_snapshot_indices(model_dir)
-
-    # Lookup time
-    idx = np.where(data['snapshot_index'] == index)[0][0]
-    if not phys:
-        t = data['t_t0'][idx]
-    else:
-        t = data['t_Gyr'][idx]
-
-    return t
-
-def extract_snapshot_data(filename):
-    """
-    Extract data from a snapshot timestep file.
-
-    Parameters
-    ----------
-    filename : str
-        Path to the timestep_*.dat file.
-
-    Returns
-    -------
-    dict
-        Dictionary of numpy arrays with keys:
-        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'p', 'trel', 'kn', 'time'
-    """
-    data = np.loadtxt(filename, usecols=range(1, 9), skiprows=1)
-
-    # Extract timestep number from filename and get time
-    basename = os.path.basename(filename)
-    step = int(basename.replace("profile_", "").replace(".dat", ""))
-    t = get_time_conversion(filename, step)
-
-    return {
-        'log_r': data[:, 0],
-        'log_rmid': data[:, 1],
-        'm': data[:, 2],
-        'rho': data[:, 3],
-        'v2': data[:, 4],
-        'p': data[:, 5],
-        'trelax': data[:, 6],
-        'kn': data[:, 7],
-        'time': t
-    }
+from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices
 
 def plot_profile(ax, profile, data_list, legend=True, grid=False, for_movie=False):
     """
@@ -200,8 +103,6 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
     if type(snapshots) != list:
         snapshots = [snapshots]
 
-    n = 1 if type(profiles) != list else len(profiles) # number of panels
-
     def _resolve_dir(model, ind):
         if hasattr(model, 'config'): # Passed state object
             return os.path.join(model.config.io.base_dir, model.config.io.model_dir, f"profile_{ind}.dat")
@@ -214,6 +115,14 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
             return os.path.join(base_dir, model_dir, f"profile_{ind}.dat")
         else:
             raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
+
+    # Change any '-1' entries to the last snapshot index
+    for ind, val in enumerate(snapshots):
+        if val == -1:
+            snapshot_indices_data = extract_snapshot_indices(os.path.dirname(_resolve_dir(model, 0)))
+            snapshots[ind] = snapshot_indices_data['snapshot_index'][-1]
+
+    n = 1 if type(profiles) != list else len(profiles) # number of panels
 
     data_list = [extract_snapshot_data(_resolve_dir(model,ind)) for ind in snapshots]
 

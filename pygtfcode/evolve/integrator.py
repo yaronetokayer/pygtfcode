@@ -216,6 +216,10 @@ def integrate_time_step(state, dt_prop, step_count):
     state.n_iter_v2 += iter_v2
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)
+    if step_count != 1:
+        state.dr_max_cum += float(dr_max_new)
+    state.du_max_cum += float(du_max_new)
+    state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
 
     state.dt = float(dt_prop)
     state.t += float(dt_prop)

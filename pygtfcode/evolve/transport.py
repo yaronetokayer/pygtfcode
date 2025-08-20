@@ -3,7 +3,7 @@ from numba import njit, float64, boolean
 
 @njit(float64[:](float64, float64, float64, float64,
                  float64[:], float64[:], float64[:], boolean),
-      cache=True)
+      cache=True, fastmath=True)
 def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
