@@ -250,8 +250,9 @@ pygtfcode/
 │   ├── transport.py
 │   └── hydrostatic.py
 │
-├── io/                     # Output routines
+├── io/                     # I/O routines
 │   └── write.py
+│   └── read.py
 │
 ├── plot/                   # Plotting routines
 │   ├── time_evolution.py
