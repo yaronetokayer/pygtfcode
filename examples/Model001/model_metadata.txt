@@ -1,4 +1,4 @@
-Model 000 Metadata
+Model 001 Metadata
 ========================================
 
 _init:
@@ -10,14 +10,14 @@ _init:
     profile: truncated_nfw
 grid:
     _ngrid: 200
-    _rmax: 115.6254864766432
-    _rmin: 0.01
+    _rmax: 115.6207124086288
+    _rmin: 0.001
 io:
     _base_dir: /Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/examples
     _chatter: True
     _drho_prof: 0.1
     _drho_tevol: 0.01
-    _model_no: 0
+    _model_no: 1
     _nlog: 100000
     _overwrite: True
 prec:

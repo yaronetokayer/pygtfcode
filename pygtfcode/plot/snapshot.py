@@ -44,12 +44,12 @@ def plot_profile(ax, profile, data_list, legend=True, grid=False, for_movie=Fals
         if ind == 0:
             ylim_lower = np.min(y[y > 0]) * 0.5
             xlim_lower = 10**np.min(x) * 0.8
-            ylim_upper = np.max(y) * 100
+            ylim_upper = np.max(y) * 10
             xlim_upper = 10**np.max(x) * 1.2
         else:
             ylim_lower = np.min([ylim_lower, np.min(y[y > 0]) * 0.5])
             xlim_lower = np.min([xlim_lower, 10**np.min(x) * 0.8])
-            ylim_upper = np.max([ylim_upper, np.max(y) * 100])
+            ylim_upper = np.max([ylim_upper, np.max(y) * 10])
             xlim_upper = np.max([xlim_upper, 10**np.max(x) * 1.2])
 
         ax.plot(10**x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
@@ -136,7 +136,7 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
             plot_profile(ax, profiles[ind], data_list, legend=legend, grid=grid, for_movie=for_movie)
 
     if filepath:
-        fig.savefig(filepath, dpi=300, bbox_inches=None)
+        fig.savefig(filepath, dpi=300, bbox_inches='tight')
         if show:
             plt.show()
         else:

@@ -78,7 +78,7 @@ class TruncatedNFWParams(InitParams):
         step size in potential for initial integration.
     """
 
-    def __init__(self, Zt=0.05938, deltaP=1.0e-4, **kwargs):
+    def __init__(self, Zt=0.05938, deltaP=1.0e-5, **kwargs):
         super().__init__(**kwargs)
         self.profile = 'truncated_nfw'
 

@@ -1,0 +1,2 @@
+      step          time         t_Gyr         rho_c  rhoc_Msunpc3         v_max     v_max_kms        Kn_min       mintrel   mintrel_Gyr
+         0  0.000000e+00  0.000000e+00  1.507436e+03  2.537557e+01  3.066838e-01  1.971378e+01  8.239064e+00  1.746269e-02  3.346579e-03

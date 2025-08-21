@@ -87,8 +87,9 @@ def compute_mass(m) -> np.ndarray:
 def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
     r_new = r.copy()
     r_new[1:-1] *= (1.0 + x)
-    r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3)
+    # r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3)
     # r3c = r[1:]**3 / (r[1:]**3 - r[:-1]**3)
+    r3c = r_new[1:]**3 / (r_new[1:]**3 - r_new[:-1]**3)
     
     dV_over_V = np.empty(r3c.shape, dtype=np.float64)
     dV_over_V[0] = 3.0 * r3c[0] * x[0]
