@@ -41,23 +41,15 @@ def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
     """
 
     # Solve for corrections to r
-    a, b, c, y = build_tridiag_system(r, rho, p, m_tot) # For Frank method
-    # ab, y = build_tridiag_system(r, rho, p, m) # For scipy method
-    # x = solve_banded((1, 1), ab, y)
+    a, b, c, y = build_tridiag_system(r, rho, p, m_tot)
     x = solve_tridiagonal_frank(a, b, c, y)
 
     # Update arrays accordingly
     r_new, p_new, rho_new, v2_new = _update_r_p_rho_v2(r, x, p, rho)
 
-    # Check for unphysical negative velocity dispersion (allow tiny round-off)
-    v2_max = float(np.max(v2_new)) if v2_new.size else 0.0
-    rel_eps = 64.0 * np.finfo(np.float64).eps  # ~1e-14 safety margin
-    thresh = -rel_eps * max(1.0, v2_max)
-    if np.any(v2_new < thresh):
-        return None
-    # Clamp tiny negatives to zero (purely cosmetic / avoids nan in later sqrt)
-    if np.any(v2_new < 0.0):
-        v2_new = np.maximum(v2_new, 0.0)      
+    # Check for shell crossing
+    if np.any((r_new[1:] - r_new[:-1]) <= 0.0):
+        return None  
     
     dr_max_new = float(np.max(np.abs(x)))
 

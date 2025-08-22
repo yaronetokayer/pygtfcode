@@ -144,10 +144,10 @@ def integrate_time_step(state, dt_prop, step_count):
     # Compute current luminosity array
     lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
 
-    iter_v2 = iter_dr = 0
+    iter_cr = iter_dr = 0
     eps_du = float(prec.eps_du)
     eps_dr = float(prec.eps_dr)
-    max_iter_v2 = prec.max_iter_v2
+    max_iter_cr = prec.max_iter_cr
     max_iter_dr = prec.max_iter_dr
     converged = False
     repeat_revir = False
@@ -168,12 +168,12 @@ def integrate_time_step(state, dt_prop, step_count):
             else:
                 result = revirialize(r_orig, rho_orig, p_cond, m_tot)
 
-            # Negative v2 signaled by None
-            if result is None: # Negative v2 value
-                if iter_v2 >= max_iter_v2:
-                    raise RuntimeError("Max iterations exceeded for v2 in conduction/revirialization step")
+            # Shell crossing signaled by None
+            if result is None:
+                if iter_cr >= max_iter_cr:
+                    raise RuntimeError("Max iterations exceeded for shell crossing in conduction/revirialization step")
                 dt_prop *= 0.5
-                iter_v2 += 1
+                iter_cr += 1
                 repeat_revir = False
                 break # Exit inner loop, redo conduct_heat with original values and smaller dt
             
@@ -213,7 +213,7 @@ def integrate_time_step(state, dt_prop, step_count):
     state.mintrelax = float(np.min(state.trelax))
 
     # Diagnostics
-    state.n_iter_v2 += iter_v2
+    state.n_iter_cr += iter_cr
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)
     if step_count != 1:
