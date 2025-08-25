@@ -1,5 +1,4 @@
 import numpy as np
-# from scipy.linalg import solve_banded
 from numba import njit, float64, types
 
 def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float] | None:

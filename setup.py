@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='pygtfcode',
-    version='0.1.0',
+    version='1.0.0',
     author='Yarone Tokayer',
     description='A Python implementation of a gravothermal fluid code',
     long_description=open('README.md').read(),

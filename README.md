@@ -263,8 +263,8 @@ pygtfcode/
 
 ## Next steps
 
-* Write example notebooks
-* Build in functionality to import a previous simulation as a `State` object in a new python session.
+* v1.0 is complete, v2.0 in development
+* v2.0 will be able to accomodate multiple species
 
 ---
 
