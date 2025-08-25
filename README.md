@@ -4,6 +4,8 @@
 
 This implementation follows the formalism outlined in Nishikawa et al. (2020), with modular components for initialization, evolution, and output.
 
+This branch is a beta version of v2.0, which features handling for multiple species.
+
 ---
 
 ## Overview
