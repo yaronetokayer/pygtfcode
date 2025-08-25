@@ -35,7 +35,7 @@ A `State` object can be constructed in one of two ways:
 1. From a `Config` object.  The `Config` object then becomes an attribute of `State`.  In this way, multiple `State`s can be instantiated with different `Config` objects.
 2. From the directory of a simulation that has already been initialized.  This is useful for either analyzing or resuming a simulation from a different Python session.  No `Config` object is needed.  By default the state will initialize to the latest snapshot of the imported simulation.
 
-Note that `r` and `m` defined bin edges, while `rho`, `p`, `u`, `v2`, `kn`, and `trelax` are all defined at `rmid`.  Therefore, `r` and `m` are longer than the other arrays by one entry.
+Note that `r` and `m` define bin edges, while `rho`, `p`, `u`, `v2`, `kn`, and `trelax` are all defined at `rmid`.  Therefore, `r` and `m` are longer than the other arrays by one entry.
 
 In addition to these two classes, there are three plotting functions that are automatically imported, each of which also exists as a method of `State`:
 
