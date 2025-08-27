@@ -17,6 +17,7 @@ setup(
         'tqdm>=4.67'
     ],
     classifiers=[
+        'Development Status :: 5 - Production/Stable',
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
