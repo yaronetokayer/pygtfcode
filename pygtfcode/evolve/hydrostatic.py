@@ -207,25 +207,3 @@ def solve_tridiagonal_frank(a, b, c, y):
         u[i] -= gam[i+1] * u[i+1]
 
     return u
-
-# OLD VERSION
-
-# @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:])) 
-#       (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-# def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]: 
-#     r_new = r.copy()
-#     r_new[1:-1] *= (1.0 + x)
-#     # r3c = r[1:]**3 / (r[1:]**3 - r_new[:-1]**3) # Mistaken version in fortran code
-#     # r3c = r[1:]**3 / (r[1:]**3 - r[:-1]**3) # Correct version to linear order
-#     r3c = r_new[1:]**3 / (r_new[1:]**3 - r_new[:-1]**3) # Incorrect
-    
-#     dV_over_V = np.empty(r3c.shape, dtype=np.float64)
-#     dV_over_V[0] = 3.0 * r3c[0] * x[0]
-#     dV_over_V[1:-1] = 3.0 * (r3c[1:-1] * x[1:] - (r3c[1:-1] - 1.0) * x[:-1])
-#     dV_over_V[-1] = -3.0 * (r3c[-1] - 1.0) * x[-1]
-    
-#     p_new = p * (1.0 - (5.0 / 3.0) * dV_over_V)
-#     rho_new = rho * (1.0 - dV_over_V)
-#     v2_new = p_new / rho_new
-    
-#     return r_new, p_new, rho_new, v2_new
