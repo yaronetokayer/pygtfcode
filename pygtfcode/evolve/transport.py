@@ -1,5 +1,5 @@
 import numpy as np
-from numba import njit, float64, boolean
+from numba import njit, float64, boolean, types
 
 @njit(float64[:](float64, float64, float64, float64,
                  float64[:], float64[:], float64[:], boolean),
@@ -57,9 +57,10 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, p, cored) -> np.ndarray:
 
     return lum
 
-@njit((float64[:], float64[:], float64[:], float64[:], float64, float64),
-      cache=True, fastmath=True)
-def conduct_heat(m, u, rho, lum, dt_prop, eps_du) -> tuple[np.ndarray, float]:
+@njit(types.Tuple((float64[:], float64, float64))(
+    float64[:], float64[:], float64[:], float64[:], float64, float64
+    ), cache=True, fastmath=True)
+def conduct_heat(m, u, rho, lum, dt_prop, eps_du) -> tuple[np.ndarray, float, float]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
@@ -87,43 +88,27 @@ def conduct_heat(m, u, rho, lum, dt_prop, eps_du) -> tuple[np.ndarray, float]:
         Updated pressure array.
     dumax : float
         Max relative change in u.
-    dt_eff : float
+    dt_prop : float
         Modified timestep.
     """
 
     dudt = -( lum[1:] - lum[:-1] ) / ( m[1:] - m[:-1] )
     du = dudt * dt_prop
 
+    tiny = np.finfo(np.float64).tiny
+    abs_u = np.abs(u)
+    abs_u[abs_u < tiny] = tiny
+    dumax = np.max(np.abs(du) / abs_u)
+
+    if dumax > eps_du:
+        scale = 0.95 * (eps_du / dumax)
+        dt_eff = dt_prop * scale
+        dumax *= scale
+        du *= scale
+    else:
+        dt_eff = dt_prop
+
     u_new = u + du
     p_new = ( 2.0 / 3.0 ) * rho * u_new
-
-    dumax = np.max(np.abs(du) / np.abs(u_new))
-
-    if dumax <= eps_du:
-        return p_new, float(dumax), float(dt_prop)
-
-    # --- eps_du violated: compute a single global scale factor s ∈ (0,1] and rescale ---
-    # Sign-aware per-cell limit, expressed using du (no need to recompute dudt):
-    # same sign: s_i <= (eps/(1-eps)) * |u|/|du|
-    # opp  sign: s_i <= (eps/(1+eps)) * |u|/|du|
-
-    abs_u  = np.abs(u)
-    abs_du = np.abs(du)
-    same_sign = (u * du) >= 0.0
-
-    s_i = np.empty_like(abs_du)
-    s_i[same_sign]  = (eps_du / (1.0 - eps_du)) * (abs_u[same_sign]  / abs_du[same_sign])
-    s_i[~same_sign] = (eps_du / (1.0 + eps_du)) * (abs_u[~same_sign] / abs_du[~same_sign])
-
-    # Global factor with a small safety margin; cap at 1
-    s = 0.95 * np.min(s_i)
-    if s > 1.0:
-        s = 1.0
-    # Apply once
-    du     = du * s
-    u_new  = u + du
-    p_new  = (2.0 / 3.0) * rho * u_new
-    dumax  = np.max(np.abs(du) / np.abs(u_new))
-    dt_eff = dt_prop * s
 
     return p_new, float(dumax), float(dt_eff)
