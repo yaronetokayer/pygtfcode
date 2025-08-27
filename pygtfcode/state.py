@@ -306,6 +306,47 @@ class State:
         self.kn = kn
         self.trelax = trelax
 
+    def _ensure_virial_equilibfrium(self):
+        """
+        Fine-tunes initial profile to ensure hydrostatic equilibrium.
+        Iteratively runs revirialize() until max |dr/r| < eps_dr.
+        """
+        from pygtfcode.evolve.hydrostatic import revirialize
+        chatter = self.config.io.chatter
+
+        if chatter:
+            print("Ensuring initial hydrostatic equilibrium...")
+
+        r_new = self.r.astype(np.float64, copy=True)
+        rho_new = self.rho.astype(np.float64, copy=True)
+        p_new = self.p.astype(np.float64, copy=True)
+        m = self.m.astype(np.float64, copy=False)
+
+        eps_dr = float(self.config.prec.eps_dr)
+
+        i = 0
+        while True:
+            i += 1
+            r_new, rho_new, p_new, dr_max_new = revirialize(r_new, rho_new, p_new, m)
+            if dr_max_new < eps_dr:
+                break
+            if i >= 100:
+                raise RuntimeError("Failed to achieve hydrostatic equilibrium in 100 iterations")
+            
+        v2_new = p_new / rho_new
+        self.r = r_new
+        self.rho = rho_new
+        self.p = p_new
+        self.v2 = v2_new
+
+        self.rmid = 0.5 * (r_new[1:] + r_new[:-1])
+        self.u = 1.5 * v2_new
+        self.kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
+        self.trelax = 1.0 / (np.sqrt(v2_new) * rho_new)
+
+        if chatter:
+            print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r|/eps_dr = {dr_max_new/eps_dr:.2e}")
+
     def reset(self):
         """
         Resets initial state
@@ -315,6 +356,7 @@ class State:
 
         self.r = self._setup_grid()
         self._initialize_grid()
+        self._ensure_virial_equilibfrium()
 
         self.t = 0.0                        # Current time in simulation units
         self.step_count = 0                 # Global integration step counter (never reset)

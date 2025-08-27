@@ -178,8 +178,11 @@ def integrate_time_step(state, dt_prop, step_count):
                 break # Exit inner loop, redo conduct_heat with original values and smaller dt
             
             # Check dr criterion
-            # Accept larger dr in first time step
-            if (result[3] > eps_dr) and (step_count != 1):
+            """
+            With new step to ensure equilibrium in initialization, no longer a need to accept larger dr in first time step.
+            If needed, can reintroduce with 'and (step_count != 1):' in the if statement below.
+            """
+            if result[3] > eps_dr:
                 if iter_dr >= max_iter_dr:
                     raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
                 iter_dr += 1
