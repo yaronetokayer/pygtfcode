@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, float64, types
 
-def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float] | None:
+def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, float] | None:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -44,7 +44,7 @@ def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
     x = solve_tridiagonal_frank(a, b, c, y)
 
     # Update arrays accordingly
-    r_new, p_new, rho_new, v2_new = _update_r_p_rho_v2(r, x, p, rho)
+    r_new, p_new, rho_new = _update_r_p_rho(r, x, p, rho)
 
     # Check for shell crossing
     if np.any((r_new[1:] - r_new[:-1]) <= 0.0):
@@ -52,7 +52,7 @@ def revirialize(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray, np.ndarray, n
     
     dr_max_new = float(np.max(np.abs(x)))
 
-    return r_new, rho_new, p_new, v2_new, dr_max_new
+    return r_new, rho_new, p_new, dr_max_new
 
 @njit(float64[:](float64[:]), cache=True, fastmath=True)
 def compute_mass(m) -> np.ndarray:
@@ -73,10 +73,10 @@ def compute_mass(m) -> np.ndarray:
 
     return m
 
-@njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
+@njit(types.Tuple((float64[:], float64[:], float64[:]))
       (float64[:], float64[:], float64[:], float64[:]),
       cache=True, fastmath=True)
-def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _update_r_p_rho(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Updates r, and then finds p, rho, and v2 based on exact volume ratios.
     Ensured positivity and stability.
@@ -100,8 +100,8 @@ def _update_r_p_rho_v2(r, x, p, rho) -> tuple[np.ndarray, np.ndarray, np.ndarray
 
     rho_new = rho * ratio
     p_new   = p * ratio**gamma
-    v2_new  = p_new / rho_new
-    return r_new, p_new, rho_new, v2_new
+
+    return r_new, p_new, rho_new
 
 @njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
       (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)

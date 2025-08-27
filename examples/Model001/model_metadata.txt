@@ -3,15 +3,16 @@ Model 001 Metadata
 
 _init:
     _Mvir: 3000000000.0
-    _Zt: 0.05938
+    _alpha: 4.0
+    _beta: 4.0
     _cvir: 20.0
-    _deltaP: 1e-05
+    _gamma: 0.1
     _z: 0.0
-    profile: truncated_nfw
+    profile: abg
 grid:
     _ngrid: 200
-    _rmax: 115.6207124086288
-    _rmin: 0.001
+    _rmax: 200.0
+    _rmin: 0.01
 io:
     _base_dir: /Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/examples
     _chatter: True
@@ -23,11 +24,11 @@ io:
 prec:
     _eps_dr: 1e-12
     _eps_dt: 0.001
-    _eps_du: 0.0001
+    _eps_du: 0.001
     _epsabs: 1e-06
     _epsrel: 1e-06
+    _max_iter_cr: 10
     _max_iter_dr: 20000
-    _max_iter_v2: 10
 sim:
     _a: 2.256758
     _b: 1.38

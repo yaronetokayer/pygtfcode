@@ -4,6 +4,10 @@
 
 This implementation follows the formalism outlined in Nishikawa et al. (2020), with modular components for initialization, evolution, and output.
 
+See the `./examples/demo.ipynb` for more comprehensive guidance on using this module.
+
+Contact yarone.tokayer-at-yale.edu with any questions/comments.
+
 ---
 
 ## Overview
@@ -50,6 +54,8 @@ Plot up to three profiles of a simulation or multiple simulations at specified p
 ### 3. `make_movie()`
 
 Animate the full evolution of up to three profiles.  This required ffmpeg to be installed and callable with `ffmpeg` from the working directory.
+
+Use `help()` for documentation on any of these classes, methods, and functions.
 
 ---
 

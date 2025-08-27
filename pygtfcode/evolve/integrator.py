@@ -179,22 +179,23 @@ def integrate_time_step(state, dt_prop, step_count):
             
             # Check dr criterion
             # Accept larger dr in first time step
-            if (result[4] > eps_dr) and (step_count != 1):
+            if (result[3] > eps_dr) and (step_count != 1):
                 if iter_dr >= max_iter_dr:
                     raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
                 iter_dr += 1
-                r_new, rho_new, p_new, _, _ = result
+                r_new, rho_new, p_new, _ = result
                 repeat_revir = True
                 continue # Go to top of inner loop, repeat revirialize with new values
 
             # Both criteria are met, break out of inner and outer loop
-            r_new, rho_new, p_new, v2_new, dr_max_new = result
+            r_new, rho_new, p_new, dr_max_new = result
             converged = True
             break
 
     ### Step 3: Update state variables ###
     # m not updated in Lagrangian code
 
+    v2_new = p_new / rho_new
     state.r = r_new
     state.rho = rho_new
     state.p = p_new

@@ -26,8 +26,8 @@ prec:
     _eps_du: 0.0001
     _epsabs: 1e-06
     _epsrel: 1e-06
+    _max_iter_cr: 10
     _max_iter_dr: 20000
-    _max_iter_v2: 10
 sim:
     _a: 2.256758
     _b: 1.38
