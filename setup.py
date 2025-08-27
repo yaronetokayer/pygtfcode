@@ -4,7 +4,7 @@ setup(
     name='pygtfcode',
     version='1.0.0',
     author='Yarone Tokayer',
-    description='A Python implementation of a gravothermal fluid code',
+    description='A Python implementation of a gravothermal fluid code for SIDM halos',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/yaronetokayer/pygtfcode',
