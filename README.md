@@ -4,7 +4,7 @@
 
 This implementation follows the formalism outlined in [Nishikawa et al. (2020)](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.101.063009), with modular components for initialization, evolution, and output.
 
-See the `./examples/demo.ipynb` for more comprehensive guidance on using this module.
+See `./examples/demo.ipynb` for more comprehensive guidance on using this module.
 
 Contact yarone.tokayer-at-yale.edu with any questions/comments.
 
