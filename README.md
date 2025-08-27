@@ -2,7 +2,7 @@
 
 **pygtfcode** is a modern Python implementation of a 1D Lagrangian gravothermal fluid code. It simulates the dynamical evolution of self-interacting dark matter halos using the fluid approximation, based on a Fortran code originally developed by Prof. Frank van den Bosch (Yale University).
 
-This implementation follows the formalism outlined in Nishikawa et al. (2020), with modular components for initialization, evolution, and output.
+This implementation follows the formalism outlined in [Nishikawa et al. (2020)](https://journals.aps.org/prd/abstract/10.1103/PhysRevD.101.063009), with modular components for initialization, evolution, and output.
 
 See the `./examples/demo.ipynb` for more comprehensive guidance on using this module.
 
