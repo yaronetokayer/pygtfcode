@@ -73,15 +73,22 @@ def write_log_entry(state, start_step):
     filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
     chatter = io.chatter
     step = state.step_count
-    nlog = io.nlog
-    if ( step - start_step ) % nlog != 0:
-        nlog = ( step - start_step ) % nlog
 
     header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<dt lim>':>8}  {'<dr lim>':>8}  {'<du lim>':>8}  {'<n_iter_cr>':>11}  {'<n_iter_dr>':>11}\n"
-    new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.n_iter_cr / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
-    if step == start_step:
-        new_line = new_line[:26] + f"         N/A" +  new_line[38:80] + f"       N/A       N/A       N/A          N/A          N/A\n"
+    if step == start_step: # Restart
+        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}       N/A       N/A       N/A          N/A          N/A\n"
+
+    else:
+        nlog = io.nlog
+        if step - start_step < nlog:                # First log since restart
+            nlog = step - start_step
+        elif step % nlog == 0:                      # Intermediate (regular) log
+            pass
+        elif ( step - start_step ) % nlog != 0:     # Final state
+            nlog = ( step - start_step ) % nlog
+
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.n_iter_cr / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 

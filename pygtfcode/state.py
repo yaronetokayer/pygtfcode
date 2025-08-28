@@ -142,6 +142,7 @@ class State:
         state.m = np.insert(snapshot_bundle['m'].astype(np.float64), 0, 0.0)
         state.rho = snapshot_bundle['rho'].astype(np.float64)
         state.v2 = snapshot_bundle['v2'].astype(np.float64)
+        state.u = 1.5 * state.v2
         state.p = snapshot_bundle['p'].astype(np.float64)
         state.trelax = snapshot_bundle['trelax'].astype(np.float64)
         state.kn = snapshot_bundle['kn'].astype(np.float64)
