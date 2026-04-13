@@ -45,7 +45,7 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored): # In place v
     for i in range(N-1):
         # One sided difference for cored profiles (i.e., ABG with gamma < 1)
         if i == 0 and cored:
-                dTdr = ( v2[1] - v2[0] ) / ( r[2] - r[1] )
+                dTdr = 0.5 * ( v2[1] - v2[0] ) / ( r[2] - r[1] ) # Need 0.5 to account for fact that this is not two-sided central difference in denom
         else:
             dTdr = ( v2[i+1] - v2[i] ) / ( r[i+2] - r[i] )
 
