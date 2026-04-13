@@ -1,10 +1,15 @@
 import numpy as np
+from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat
+from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
 
 def run_until_stop(state, start_step, **kwargs):
     """
     Repeatedly step forward until t >= t_halt or halting criterion met.
     """
-    from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
+    ##################
+    ### Set locals ###
+    ##################
 
     # User halting criteria
     steps = kwargs.get('steps', None)
@@ -14,8 +19,9 @@ def run_until_stop(state, start_step, **kwargs):
     time_i = state.t if time_limit is not None else None
 
     # Locals for speed + type hardening
-    io = state.config.io
-    sim = state.config.sim
+    config = state.config
+    io = config.io
+    sim = config.sim
     chatter = bool(io.chatter)
     t_halt = float(sim.t_halt)
     rho0_last_prof = float(state.rho[0])
@@ -24,20 +30,51 @@ def run_until_stop(state, start_step, **kwargs):
     drho_prof = float(io.drho_prof)
     drho_tevol = float(io.drho_tevol)
     nlog = int(io.nlog)
+    nupdate = int(io.nupdate)
+
+    # Preallocate working arrays for main loop
+    Np1         = state.r.shape[0]
+    n_int       = Np1 - 2
+    lum         = np.zeros(Np1,     dtype=np.float64)
+    a_alloc     = np.empty(n_int,   dtype=np.float64)
+    b_alloc     = np.empty(n_int,   dtype=np.float64)
+    c_alloc     = np.empty(n_int,   dtype=np.float64)
+    y_alloc     = np.empty(n_int,   dtype=np.float64)
+    x_alloc     = np.empty(n_int,   dtype=np.float64)
+    work        = np.empty(Np1 - 1, dtype=np.float64)
+
+    #################
+    ### Main loop ###
+    #################
 
     while state.t < t_halt:
+
+        ###########################
+        ### 1. Integrate system ###
+        ###########################
 
         # Increment counter
         state.step_count += 1
         step_count = state.step_count
 
-        # Compute proposed dt
-        dt_prop = compute_time_step(state)
+        # Compute relaxation-time-limited dt
+        # In low-Kn regime, only set by conduction in conduction routine
+        if state.minkn > 0.1:
+            dt_prop = config.prec.eps_dt * state.mintrelax
+        else:
+            dt_prop = 1.0
 
         # Integrate time step
-        integrate_time_step(state, dt_prop, step_count)
+        integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1)
+
+        if step_count % nupdate == 0:
+            print(f"Completed step {step_count}", end='\r', flush=True)
 
         rho0 = state.rho[0]
+
+        ###########################
+        ### 2. Halting criteria ###
+        ###########################
 
         # Check halting criteria
         if rho0 > rho_c_halt:
@@ -60,6 +97,10 @@ def run_until_stop(state, start_step, **kwargs):
                 print("Simulation halted: user stopping condition reached")
             break
 
+        #########################
+        ### 3. Output to disk ###
+        #########################
+
         # Check I/O criteria
         # Write profile to disk
         drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
@@ -73,7 +114,10 @@ def run_until_stop(state, start_step, **kwargs):
             rho0_last_tevol = rho0
             write_time_evolution(state)
 
-        # Log
+        ##############
+        ### 4. Log ###
+        ##############
+
         if step_count % nlog == 0:
             write_log_entry(state, start_step)
 
@@ -81,34 +125,7 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def compute_time_step(state) -> float:
-    """
-    Compute time step to be used for integration step.
-
-    Arguments
-    ---------
-    state : State
-        The current simulation state.
-
-    Returns
-    -------
-    float
-        The recommended time step.
-    """
-    if state.step_count == 1:
-        return 1.0e-7
-    
-    prec = state.config.prec
-    # Relaxation-limited time step
-    dt1 = prec.eps_dt * state.mintrelax
-    # Energy stability-limited time step
-    tiny = np.finfo(np.float64).tiny
-    du_max_safe = max(state.du_max, tiny)
-    dt2 = state.dt * 0.95 * (prec.eps_du / du_max_safe)
-
-    return float(min(dt1, dt2))
-
-def integrate_time_step(state, dt_prop, step_count):
+def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1):
     """
     Advance state by one time step.
     Applies conduction, revirialization, updates time, and checks stability diagnostics.
@@ -117,112 +134,99 @@ def integrate_time_step(state, dt_prop, step_count):
     ---------
     state : State
         The current simulation state.
+    config : Config
+        Configuration object for simulation.
     dt_prop : float
         Proposed dt value returned by compute_time_step
     step_count : int
         Step count
+    lum : ndarray (N+1,)
+        Memory allocation for luminosity array
+    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
+        Memory allocation for working arrays
+    work : ndarray (N,)
+        Memory allocation for working array
+    Np1 : float
+        Length of radial grid
     """
-    from pygtfcode.evolve.transport import compute_luminosities, conduct_heat
-    from pygtfcode.evolve.hydrostatic import revirialize, compute_mass
 
     # Store state attributes for fast access in loop and to pass into njit functions
-    prec = state.config.prec
-    sim  = state.config.sim
-    init = state.config.init
+    prec = config.prec
+    sim  = config.sim
+    init = config.init
+    char = state.char
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
-    sigma_m = float(state.char.sigma_m_char)
+    sigma_m = float(char.sigma_m_char)
     cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-
-    r_orig  = np.asarray(state.r,   dtype=np.float64)
-    m       = np.asarray(state.m,   dtype=np.float64)
-    v2_orig = np.asarray(state.v2,  dtype=np.float64)
-    p_orig  = np.asarray(state.p,   dtype=np.float64)
-    u_orig  = np.asarray(state.u,   dtype=np.float64)
-    rho_orig= np.asarray(state.rho, dtype=np.float64)
-
-    # Compute current luminosity array
-    lum = compute_luminosities(a, b, c, sigma_m, r_orig, v2_orig, p_orig, cored)
-
-    iter_cr = iter_dr = 0
-    eps_du = float(prec.eps_du)
-    eps_dr = float(prec.eps_dr)
-    max_iter_cr = prec.max_iter_cr
+    eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
     max_iter_dr = prec.max_iter_dr
-    converged = False
-    repeat_revir = False
+
+    r       = np.asarray(state.r,   dtype=np.float64)
+    m       = np.asarray(state.m,   dtype=np.float64)
+    v2      = np.asarray(state.v2,  dtype=np.float64)
+    rho     = np.asarray(state.rho, dtype=np.float64)
 
     # Compute total enclosed mass including baryons, perturbers, etc.
-    # May need to move into loop depending on how m is updated
+    # May need to move elsewhere depending on how m is updated
     # Current version just returns m as is
     m_tot = compute_mass(m)
 
-    while not converged:
-        ### Step 1: Energy transport ###
-        p_cond, du_max_new, dt_prop = conduct_heat(m, u_orig, rho_orig, lum, dt_prop, eps_du)
+    ### Step 1: Energy transport ###
+    compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
+    du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
+    p = rho * v2 # Needed for revir
 
-        ### Step 2: Reestablish hydrostatic equilibrium ###
-        while True:
-            if repeat_revir:
-                result = revirialize(r_new, rho_new, p_new, m_tot)
-            else:
-                result = revirialize(r_orig, rho_orig, p_cond, m_tot)
+    ### Step 2: Reestablish hydrostatic equilibrium ###
+    iter_dr = 0
+    while True:
+        status, dr_max = revirialize(r, rho, p, m_tot, 
+                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1) # Modifies r, rho, p in place
 
-            # Shell crossing signaled by None
-            if result is None:
-                if iter_cr >= max_iter_cr:
-                    raise RuntimeError("Max iterations exceeded for shell crossing in conduction/revirialization step")
-                dt_prop *= 0.5
-                iter_cr += 1
-                repeat_revir = False
-                break # Exit inner loop, redo conduct_heat with original values and smaller dt
-            
-            # Check dr criterion
-            """
-            With new step to ensure equilibrium in initialization, no longer a need to accept larger dr in first time step.
-            If needed, can reintroduce with 'and (step_count != 1):' in the if statement below.
-            """
-            if result[3] > eps_dr:
-                if iter_dr >= max_iter_dr:
-                    raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
-                iter_dr += 1
-                r_new, rho_new, p_new, _ = result
-                repeat_revir = True
-                continue # Go to top of inner loop, repeat revirialize with new values
+        # Shell crossing signaled by None
+        if status == STATUS_SHELL_CROSSING:
+            raise RuntimeError("Max iterations exceeded for shell crossing in conduction/revirialization step")
+        
+        # Check dr criterion
+        """
+        With new step to ensure equilibrium in initialization, no longer a need to accept larger dr in first time step.
+        If needed, can reintroduce with 'and (step_count != 1):' in the if statement below.
+        """
+        if dr_max > eps_dr:
+            if iter_dr >= max_iter_dr:
+                raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
+            iter_dr += 1
+            continue # Go to top of loop, repeat revirialize with new values
 
-            # Both criteria are met, break out of inner and outer loop
-            r_new, rho_new, p_new, dr_max_new = result
-            converged = True
-            break
+        # Break out of loop
+        break
 
     ### Step 3: Update state variables ###
     # m not updated in Lagrangian code
 
-    v2_new = p_new / rho_new
-    state.r = r_new
-    state.rho = rho_new
-    state.p = p_new
+    v2_new = p / rho
+    state.r = r
+    state.rho = rho
+    state.p = p
     state.v2 = v2_new
-    state.dr_max = dr_max_new
-    state.du_max = du_max_new
+    state.dr_max = dr_max
+    state.du_max = du_max
 
-    state.rmid = 0.5 * (r_new[1:] + r_new[:-1])
-    state.u = 1.5 * v2_new
-    state.kn = 1.0 / (state.char.sigma_m_char * np.sqrt(p_new))
+    state.rmid = 0.5 * (r[1:] + r[:-1])
+    state.kn = 1.0 / (sigma_m * np.sqrt(p))
     sqrt_v2_new = np.sqrt(v2_new)
-    state.trelax = 1.0 / (sqrt_v2_new * rho_new)
+    state.trelax = 1.0 / (sqrt_v2_new * rho)
 
     state.maxvel    = float(np.max(sqrt_v2_new))
     state.minkn     = float(np.min(state.kn))
     state.mintrelax = float(np.min(state.trelax))
 
     # Diagnostics
-    state.n_iter_cr += iter_cr
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)
     if step_count != 1:
-        state.dr_max_cum += float(dr_max_new)
-    state.du_max_cum += float(du_max_new)
+        state.dr_max_cum += float(dr_max)
+    state.du_max_cum += float(du_max)
     state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
 
     state.dt = float(dt_prop)

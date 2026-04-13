@@ -15,6 +15,8 @@ class IOParams:
         Subdirectory named 'ModelXXX', where XXX is zero-padded model number.
     nlog : int
         Timesteps between logging output.
+    nupdate : int
+        Timesteps between updating instantaneous timestep counter visual
     drho_prof : float
         Change in log of central density to trigger writing profiles to disk.
     drho_tevol : float
@@ -29,6 +31,7 @@ class IOParams:
                  model_no: int = None, 
                  base_dir: str = None, 
                  nlog: int = 100000,
+                 nupdate: int = 1000,
                  drho_prof : float = 0.1,
                  drho_tevol : float = 0.01,
                  overwrite: bool = True,
@@ -37,6 +40,7 @@ class IOParams:
         self._model_no = None
         self._base_dir = None
         self._nlog = nlog
+        self._nupdate = nupdate
         self._drho_prof = drho_prof
         self._drho_tevol = drho_tevol
         self._overwrite = None
@@ -46,6 +50,7 @@ class IOParams:
             self.model_no = model_no
         self.base_dir = base_dir or os.getcwd()
         self.nlog = nlog
+        self.nupdate = nupdate
         self.drho_prof = drho_prof
         self.drho_tevol = drho_tevol
         self.overwrite = overwrite
@@ -116,6 +121,16 @@ class IOParams:
         self._nlog = value
 
     @property
+    def nupdate(self):
+        return self._nupdate
+
+    @nupdate.setter
+    def nupdate(self, value):
+        if not isinstance(value, int):
+            raise TypeError("nupdate must be an integer")
+        self._nupdate = value
+
+    @property
     def drho_prof(self):
         return self._drho_prof
     
@@ -160,7 +175,7 @@ class IOParams:
         self._chatter = value
 
     def __repr__(self):
-        all_attrs = ['model_no', 'model_dir', 'base_dir', 'nlog', 'drho_prof', 'drho_tevol', 'overwrite', 'chatter']
+        all_attrs = ['model_no', 'model_dir', 'base_dir', 'nlog', 'nupdate', 'drho_prof', 'drho_tevol', 'overwrite', 'chatter']
         attr_strs = []
 
         for attr in all_attrs:

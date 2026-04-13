@@ -142,7 +142,6 @@ class State:
         state.m = np.insert(snapshot_bundle['m'].astype(np.float64), 0, 0.0)
         state.rho = snapshot_bundle['rho'].astype(np.float64)
         state.v2 = snapshot_bundle['v2'].astype(np.float64)
-        state.u = 1.5 * state.v2
         state.p = snapshot_bundle['p'].astype(np.float64)
         state.trelax = snapshot_bundle['trelax'].astype(np.float64)
         state.kn = snapshot_bundle['kn'].astype(np.float64)
@@ -159,7 +158,6 @@ class State:
         state.mintrelax = float(np.min(state.trelax))
 
         # For diagnostics
-        state.n_iter_cr = 0
         state.n_iter_dr = 0
         state.dt_cum = 0.0
         state.dr_max_cum = 0.0
@@ -260,7 +258,6 @@ class State:
             - m: Enclosed mass at r[i+1]
             - rho: Density in each shell (size ngrid)
             - p: Pressure in each shell
-            - u: Internal energy in each shell
             - v2: Velocity dispersion squared in each shell
             - kn: Knudsen number in each shell
             - maxvel: maximum velocity dispersion
@@ -281,7 +278,6 @@ class State:
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         p = rho * v2
-        u = 1.5 * v2
         kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p))
         trelax = 1.0 / (np.sqrt(v2) * rho)
 
@@ -296,13 +292,11 @@ class State:
             p[0] = p[1] - dr_ratio * (p[2] - p[1])
 
             v2[0] = p[0] / rho[0]
-            u[0] = 1.5 * v2[0]
 
         self.m = m
         self.rmid = r_mid
         self.rho = rho
         self.p = p
-        self.u = u
         self.v2 = v2
         self.kn = kn
         self.trelax = trelax
@@ -312,41 +306,63 @@ class State:
         Fine-tunes initial profile to ensure hydrostatic equilibrium.
         Iteratively runs revirialize() until max |dr/r| < eps_dr.
         """
-        from pygtfcode.evolve.hydrostatic import revirialize
+        from pygtfcode.evolve.hydrostatic import revirialize_w_he_resid, compute_he_pressures_with_resid, STATUS_SHELL_CROSSING
         chatter = self.config.io.chatter
 
         if chatter:
             print("Ensuring initial hydrostatic equilibrium...")
 
-        r_new = self.r.astype(np.float64, copy=True)
+        r_new   = self.r.astype(np.float64, copy=True)
         rho_new = self.rho.astype(np.float64, copy=True)
-        p_new = self.p.astype(np.float64, copy=True)
-        m = self.m.astype(np.float64, copy=False)
+        p_new   = self.p.astype(np.float64, copy=True)
+        m       = self.m.astype(np.float64, copy=False)
+
+        # Update pressure with backward sweep
+        res_old, res_new = compute_he_pressures_with_resid(self.r, self.rho, p_new, m)
+        if chatter:
+            print(f"\tInitial pressure correction applied. HE residual improved {float(res_old):.3e} -> {float(res_new):.3e}.")
+
+        # Iteratively revirialize to achieve necessary precision
+        # Preallocate arrays
+        Np1 = r_new.shape[0]
+        n_int = Np1 - 2
+        a  = np.empty(n_int, dtype=np.float64)
+        b  = np.empty(n_int, dtype=np.float64)
+        c  = np.empty(n_int, dtype=np.float64)
+        y  = np.empty(n_int, dtype=np.float64)
+        x  = np.empty(n_int, dtype=np.float64)
+        vol_old = np.empty(Np1 - 1, dtype=np.float64)
 
         eps_dr = float(self.config.prec.eps_dr)
 
         i = 0
         while True:
             i += 1
-            r_new, rho_new, p_new, dr_max_new = revirialize(r_new, rho_new, p_new, m)
+            status, dr_max_new, he_res = revirialize_w_he_resid(r_new, rho_new, p_new, m,
+                                                                 a, b, c, y, x, vol_old, Np1)
+            
+            if status == STATUS_SHELL_CROSSING:
+                raise RuntimeError(f"Initial revir iter {i}: Shell crossing!")
+
             if dr_max_new < eps_dr:
                 break
+
             if i >= 100:
-                raise RuntimeError("Failed to achieve hydrostatic equilibrium in 100 iterations")
+                raise RuntimeError("Failed to achieve hydrostatic equilibrium in 100 iterations.")
             
         v2_new = p_new / rho_new
+
         self.r = r_new
         self.rho = rho_new
         self.p = p_new
         self.v2 = v2_new
 
         self.rmid = 0.5 * (r_new[1:] + r_new[:-1])
-        self.u = 1.5 * v2_new
         self.kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
         self.trelax = 1.0 / (np.sqrt(v2_new) * rho_new)
 
         if chatter:
-            print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r|/eps_dr = {dr_max_new/eps_dr:.2e}")
+            print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
 
     def reset(self):
         """
@@ -371,7 +387,6 @@ class State:
         self.mintrelax = float(np.min(self.trelax))
 
         # For diagnostics
-        self.n_iter_cr = 0
         self.n_iter_dr = 0
         self.dt_cum = 0.0
         self.dr_max_cum = 0.0

@@ -173,7 +173,7 @@ def integrate_potential(config, rho_interp):
     # Step 3: Integrate until potential crosses zero
     while y[0] > 0.0:
         # Only print if r has changed by at least 0.5 since last print
-        if chatter and (len(rad) == 1 or abs(r1 - r_last_print) >= 1.0):
+        if chatter and (len(rad) == 1 or abs(r1 - r_last_print) >= 1.5):
                 print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
                 r_last_print = r1
         step_size = (r2 - r1) / Nstep
