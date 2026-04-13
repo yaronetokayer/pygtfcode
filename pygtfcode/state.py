@@ -142,7 +142,6 @@ class State:
         state.m = np.insert(snapshot_bundle['m'].astype(np.float64), 0, 0.0)
         state.rho = snapshot_bundle['rho'].astype(np.float64)
         state.v2 = snapshot_bundle['v2'].astype(np.float64)
-        state.p = snapshot_bundle['p'].astype(np.float64)
         state.trelax = snapshot_bundle['trelax'].astype(np.float64)
         state.kn = snapshot_bundle['kn'].astype(np.float64)
         state.t = float(snapshot_bundle['time'])
@@ -150,8 +149,8 @@ class State:
         state.snapshot_index = int(snapshot_bundle['snapshot_index'])
 
         state.dt = float(prec.eps_dt)
-        state.du_max = float(prec.eps_du)
-        state.dr_max = float(prec.eps_dr)
+        # state.du_max = float(prec.eps_du)
+        # state.dr_max = float(prec.eps_dr)
 
         state.maxvel = float(np.sqrt(np.max(state.v2)))
         state.minkn = float(np.min(state.kn))
@@ -277,8 +276,7 @@ class State:
 
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
-        p = rho * v2
-        kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p))
+        kn = 1.0 / (self.char.sigma_m_char * np.sqrt(rho * v2))
         trelax = 1.0 / (np.sqrt(v2) * rho)
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
@@ -289,6 +287,7 @@ class State:
             rho[0] = 2.0 * rho_c_ideal - rho[1]
 
             dr_ratio = (r[2] - r[0]) / (r[3] - r[1])
+            p = rho * v2
             p[0] = p[1] - dr_ratio * (p[2] - p[1])
 
             v2[0] = p[0] / rho[0]
@@ -296,7 +295,6 @@ class State:
         self.m = m
         self.rmid = r_mid
         self.rho = rho
-        self.p = p
         self.v2 = v2
         self.kn = kn
         self.trelax = trelax
@@ -314,8 +312,8 @@ class State:
 
         r_new   = self.r.astype(np.float64, copy=True)
         rho_new = self.rho.astype(np.float64, copy=True)
-        p_new   = self.p.astype(np.float64, copy=True)
         m       = self.m.astype(np.float64, copy=False)
+        p_new   = rho_new * self.v2.astype(np.float64, copy=True)
 
         # Update pressure with backward sweep
         res_old, res_new = compute_he_pressures_with_resid(self.r, self.rho, p_new, m)
@@ -354,7 +352,6 @@ class State:
 
         self.r = r_new
         self.rho = rho_new
-        self.p = p_new
         self.v2 = v2_new
 
         self.rmid = 0.5 * (r_new[1:] + r_new[:-1])
@@ -379,8 +376,8 @@ class State:
         self.step_count = 0                 # Global integration step counter (never reset)
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
-        self.du_max = prec.eps_du           # Initialize the max du to upper limit
-        self.dr_max = prec.eps_dr           # Initialize the max dr to upper limit
+        # self.du_max = prec.eps_du           # Initialize the max du to upper limit
+        # self.dr_max = prec.eps_dr           # Initialize the max dr to upper limit
 
         self.maxvel = float(np.sqrt(np.max(self.v2)))
         self.minkn = float(np.min(self.kn))

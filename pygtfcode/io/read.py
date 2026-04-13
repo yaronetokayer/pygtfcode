@@ -154,7 +154,7 @@ def extract_snapshot_data(filename):
     -------
     dict
         Dictionary of numpy arrays with keys:
-        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'p', 'trel', 'kn', 'time'
+        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'trel', 'kn', 'time'
     """
     data = np.loadtxt(filename, usecols=range(1, 9), skiprows=1)
 
@@ -169,7 +169,6 @@ def extract_snapshot_data(filename):
         'm': data[:, 2],
         'rho': data[:, 3],
         'v2': data[:, 4],
-        'p': data[:, 5],
         'trelax': data[:, 6],
         'kn': data[:, 7],
         'time': t

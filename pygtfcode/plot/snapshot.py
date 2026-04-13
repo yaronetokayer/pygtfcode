@@ -15,7 +15,7 @@ def plot_profile(ax, profile, data_list, legend=True, grid=False, for_movie=Fals
     ax : Axis
         Axis object on which to plot
     profile : str
-        Profile to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+        Profile to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     data_list : dict
         Dictionary returned by extract_snapshot_data()
     legend : bool, optional
@@ -86,7 +86,7 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
     snapshots : int or list of int
         Snapshot indices to plot
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     filepath : str, optional
@@ -157,7 +157,7 @@ def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, 
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     grid : bool, optional
         If True, shows grid on axes
     fps : int, optional

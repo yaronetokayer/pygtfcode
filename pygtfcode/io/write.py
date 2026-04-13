@@ -122,7 +122,7 @@ def write_profile_snapshot(state, initialize=False):
     with open(filename, "w") as f:
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'p':>12}  {'trelax':>12}  {'kn':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}\n"
         )
         f.write(header)
         for i in range(len(state.r) - 1):
@@ -133,7 +133,6 @@ def write_profile_snapshot(state, initialize=False):
                 f"{state.m[i+1]:12.6e}  "
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
-                f"{state.p[i]:12.6e}  "
                 f"{state.trelax[i]:12.6e}  "
                 f"{state.kn[i]:12.6e}\n"
             )

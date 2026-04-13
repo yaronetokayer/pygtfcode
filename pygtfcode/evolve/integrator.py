@@ -163,6 +163,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
     max_iter_dr = prec.max_iter_dr
 
+    # Preallocate these as well?
     r       = np.asarray(state.r,   dtype=np.float64)
     m       = np.asarray(state.m,   dtype=np.float64)
     v2      = np.asarray(state.v2,  dtype=np.float64)
@@ -208,10 +209,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     v2_new = p / rho
     state.r = r
     state.rho = rho
-    state.p = p
     state.v2 = v2_new
-    state.dr_max = dr_max
-    state.du_max = du_max
 
     state.rmid = 0.5 * (r[1:] + r[:-1])
     state.kn = 1.0 / (sigma_m * np.sqrt(p))
