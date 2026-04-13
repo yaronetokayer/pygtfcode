@@ -42,6 +42,7 @@ def run_until_stop(state, start_step, **kwargs):
     y_alloc     = np.empty(n_int,   dtype=np.float64)
     x_alloc     = np.empty(n_int,   dtype=np.float64)
     work        = np.empty(Np1 - 1, dtype=np.float64)
+    p           = np.empty(Np1 - 1, dtype=np.float64)
 
     #################
     ### Main loop ###
@@ -65,7 +66,7 @@ def run_until_stop(state, start_step, **kwargs):
             dt_prop = 1.0
 
         # Integrate time step
-        integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1)
+        integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -125,7 +126,7 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1):
+def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1):
     """
     Advance state by one time step.
     Applies conduction, revirialization, updates time, and checks stability diagnostics.
@@ -144,8 +145,8 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
         Memory allocation for luminosity array
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
         Memory allocation for working arrays
-    work : ndarray (N,)
-        Memory allocation for working array
+    work, p : ndarray (N,)
+        Memory allocation for working arrays
     Np1 : float
         Length of radial grid
     """
@@ -175,7 +176,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     ### Step 1: Energy transport ###
     compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
     du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
-    p = rho * v2 # Needed for revir
+    p[:] = rho * v2 # Used for revir and to set v2 later
 
     ### Step 2: Reestablish hydrostatic equilibrium ###
     iter_dr = 0
