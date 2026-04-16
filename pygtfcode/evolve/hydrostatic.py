@@ -1,9 +1,11 @@
 import numpy as np
+import math
 from numba import njit, float64, types, void, int64
 from pygtfcode.util.calc import solve_tridiagonal_thomas
 
 STATUS_OK = 0
 STATUS_SHELL_CROSSING = 1
+_TINY64 = np.finfo(np.float64).tiny
 
 @njit(float64[:](float64[:]), cache=True, fastmath=True)
 def compute_mass(m) -> np.ndarray:
@@ -113,12 +115,12 @@ def build_tridiag_system(r, rho, p, m_tot, a, b, c, y):
     # c[0] = -5.0 * p[1] * (rR3[0] / den1)   # note: rC3[1] == rR3[0]
     # y[0] = -(p[1] - p[0])
 
-@njit(types.Tuple((float64[:], float64[:], float64[:], float64[:]))
-      (float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=False)
-def build_tridiag_system_log(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
+@njit(types.void(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=False)
+def build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y):
     """
-    Construct the tridiagonal system A·x = y for interior radial corrections.
-    These are the coefficients for the log form of the HE equation.
+    Fill preallocated arrays ``a``, ``b``, ``c``, and ``y`` with the
+    tridiagonal system A·x = y for interior radial corrections in the
+    logarithmic form of the HE equation.
 
     Arguments
     ---------
@@ -130,81 +132,301 @@ def build_tridiag_system_log(r, rho, p, m_tot) -> tuple[np.ndarray, np.ndarray]:
         Shell-centered pressures, length = n.
     m_tot : ndarray
         Total enclosed mass at edge points, length = n + 1.
+    a : ndarray
+        Preallocated output array of length n - 1 for the subdiagonal
+        entries, ``a[i] = A[i, i-1]``.
+    b : ndarray
+        Preallocated output array of length n - 1 for the main diagonal
+        entries, ``b[i] = A[i, i]``.
+    c : ndarray
+        Preallocated output array of length n - 1 for the superdiagonal
+        entries, ``c[i] = A[i, i+1]``.
+    y : ndarray
+        Preallocated output array of length n - 1 for the right-hand side.
 
-    Returns
-    -------
-    a, b, c, y : ndarray
-        Tuple of 1D arrays (each length = n-1) defining the tridiagonal system
-        for the interior unknowns:
-          - a: subdiagonal (A[i, i-1])
-          - b: main diagonal (A[i, i])
-          - c: superdiagonal (A[i, i+1])
-          - y: right-hand side vector
+    Notes
+    -----
+    This function performs in-place updates only and returns nothing.
+
+    The output arrays must already be allocated with length ``n - 1``,
+    where ``n = len(rho) = len(p)``.
     """
-    # Geometric volume factors
-    rL = r[:-2]         # Left radial grid points
-    rR = r[2:]          # Right radial grid points
-    rC = r[1:-1]        # Central radial grid points
-    
-    rC2 = rC**2
+    tiny = _TINY64
+    n_out = p.shape[0] - 1
+
+    # Nothing to do if there are no interior unknowns.
+    if n_out <= 0:
+        return
+
+    # ------------------------------------------------------------------
+    # Row 0 is *not* assembled using the general formula, because we
+    # overwrite it with the special boundary condition anyway.
+    #
+    # The main loop below handles only i >= 1.
+    # ------------------------------------------------------------------
+    if n_out > 1:
+        # Initialize the sliding window for the first interior row that
+        # is actually assembled by the general formula, namely i = 1:
+        #
+        #   left  edge -> r[1]
+        #   center edge -> r[2]
+        #   right edge -> r[3]
+        #
+        # We also cache powers and logs that can be rolled forward from
+        # one iteration to the next to reduce repeated work.
+        rL = r[1]
+        rC = r[2]
+        rR = r[3]
+
+        rL3 = rL * rL * rL
+        rC2 = rC * rC
+        rC3 = rC2 * rC
+        rR3 = rR * rR * rR
+
+        log_rL = math.log(rL)
+        log_rC = math.log(rC)
+        log_rR = math.log(rR)
+
+        log_pL = math.log(p[1])
+        log_pR = math.log(p[2])
+
+        for i in range(1, n_out):
+            # Geometry factors for the current 3-point stencil.
+            denomL = rC3 - rL3
+            denomR = rR3 - rC3
+            inv_denomL = 1.0 / denomL
+            inv_denomR = 1.0 / denomR
+
+            rL3rL3 = rL3 * inv_denomL
+            rR3rC3 = rR3 * inv_denomR
+            rC3rC3 = rC3 * inv_denomR
+            rC3rL3 = rC3 * inv_denomL
+            rC2rC3 = rC2 * inv_denomR
+            rC2rL3 = rC2 * inv_denomL
+
+            # Local thermodynamic state.
+            pL = p[i]
+            pR = p[i + 1]
+            rhoL = rho[i]
+            rhoR = rho[i + 1]
+
+            dlnp = log_pR - log_pL
+            dlnr = 0.5 * (log_rR - log_rL)
+
+            sp = pL + pR
+            sr = rhoL + rhoR
+
+            # Floors to avoid divide-by-zero/inf.
+            if abs(sp) < tiny:
+                sp = math.copysign(tiny, sp)
+            if abs(dlnr) < tiny:
+                dlnr = math.copysign(tiny, dlnr)
+
+            inv_sp = 1.0 / sp
+            inv_dlnr = 1.0 / dlnr
+            inv_dlnr2 = inv_dlnr * inv_dlnr
+
+            dpdr = 0.5 * dlnp * inv_dlnr2
+            srsp = sr * inv_sp
+
+            m_edge = m_tot[i + 1]
+            mr = m_edge / rC
+            m_over_sp = m_edge * inv_sp
+            mr_over_sp = mr * inv_sp
+
+            afac = 5.0 * inv_dlnr + mr_over_sp * (5.0 * pL * srsp - 3.0 * rhoL)
+            cfac = 5.0 * inv_dlnr + mr_over_sp * (3.0 * rhoR - 5.0 * pR * srsp)
+
+            bfac3 = 5.0 * pR * srsp - 3.0 * rhoR
+            bfac4 = 3.0 * rhoL - 5.0 * pL * srsp
+
+            a[i] = dpdr - rL3rL3 * afac
+            b[i] = (
+                5.0 * inv_dlnr * (rC3rC3 + rC3rL3)
+                - mr * srsp
+                - m_over_sp * (rC2rC3 * bfac3 + rC2rL3 * bfac4)
+            )
+            c[i] = -dpdr - rR3rC3 * cfac
+            y[i] = -mr * srsp - dlnp * inv_dlnr
+
+            # Advance the sliding window:
+            #
+            # Old: (rL, rC, rR) = (r[i],   r[i+1], r[i+2])
+            # New: (rL, rC, rR) = (r[i+1], r[i+2], r[i+3])
+            #
+            # The same rolling update is used for log(r) and log(p),
+            # so each new iteration computes only one new log(r) and
+            # one new log(p).
+            if i + 1 < n_out:
+                rL = rC
+                rC = rR
+                rR = r[i + 3]
+
+                rL3 = rC3
+                rC2 = rC * rC
+                rC3 = rC2 * rC
+                rR3 = rR * rR * rR
+
+                log_rL = log_rC
+                log_rC = log_rR
+                log_rR = math.log(rR)
+
+                log_pL = log_pR
+                log_pR = math.log(p[i + 2])
+
+    # ------------------------------------------------------------------
+    # Enforce dp/dr = 0 for i = 1 exactly as in the original code.
+    #
+    # Since row 0 is always replaced by this boundary condition, we only
+    # assemble it here once and never build the discarded general row.
+    # ------------------------------------------------------------------
+    rL = r[0]
+    rC = r[1]
+    rR = r[2]
+
+    rC2 = rC * rC
     rC3 = rC2 * rC
-    rR3 = rR**3
-    rL3 = rL**3
+    rR3 = rR * rR * rR
+    rL3 = rL * rL * rL
 
-    rL3rL3 = rL3 / (rC3 - rL3)
-    rR3rC3 = rR3 / (rR3 - rC3)
-    rC3rC3 = rC3 / (rR3 - rC3)
-    rC3rL3 = rC3 / (rC3 - rL3)
-    rC2rC3 = rC2 / (rR3 - rC3)
-    rC2rL3 = rC2 / (rC3 - rL3)
-    
-    lnr = np.empty_like(r)
-    lnr[1:] = np.log(r[1:])             # Don't take ln0 - lnr[0] never used anyway
-    lnr[0]  = lnr[1]                    # Arbitrary finite placeholder
-    dlnr = 0.5 * ( lnr[2:] - lnr[:-2] ) # Central difference
+    denomL = rC3 - rL3
+    denomR = rR3 - rC3
+    inv_denomL = 1.0 / denomL
+    inv_denomR = 1.0 / denomR
 
-    pL = p[:-1]
-    pR = p[1:]
-    rhoL = rho[:-1]
-    rhoR = rho[1:]
-    lnp = np.log(p)
-    dlnp = lnp[1:] - lnp[:-1]           # Right-sided difference
+    rR3rC3 = rR3 * inv_denomR
+    rC3rC3 = rC3 * inv_denomR
+    rC3rL3 = rC3 * inv_denomL
 
-    sr = rho[:-1] + rho[1:]
-    sp = p[:-1] + p[1:]
-
-    mr = m_tot[1:-1] / r[1:-1]
-
-    # floors to avoid divide-by-zero/inf
-    tiny = np.finfo(np.float64).tiny
-    sp   = np.where(np.abs(sp)   < tiny, np.copysign(tiny, sp),   sp)
-    dlnr   = np.where(np.abs(dlnr)   < tiny, np.copysign(tiny, dlnr),   dlnr)
-
-    dpdr = 0.5 * dlnp / dlnr**2
-    srsp = sr / sp
-
-    # Terms in final expressions
-    afac = 5.0 / dlnr + (mr / sp) * (5.0 * pL * srsp - 3.0 * rhoL)
-    bfac1 = 5.0 / dlnr
-    bfac2 = m_tot[1:-1] / sp
-    bfac3 = 5.0 * pR  * srsp - 3.0 * rhoR
-    bfac4 = 3.0 * rhoL - 5.0 * pL * srsp
-    cfac = 5.0 / dlnr + (mr / sp) * (3.0 * rhoR - 5.0 * pR * srsp)
-    dfac = 2.0 * dpdr * dlnr
-
-    y = -mr * srsp - dfac
-
-    a = dpdr - rL3rL3 * afac                                                                # Subdiagonal
-    b = bfac1 * (rC3rC3 + rC3rL3) - mr * srsp - bfac2 * (rC2rC3 * bfac3 + rC2rL3 * bfac4)   # Main diagonal
-    c = -dpdr - rR3rC3 * cfac                                                               # Superdiagonal
-
-    # Enforce dp/dr = 0 for i=1
     a[0] = 0.0
-    b[0] = 5.0 * ( rC3rC3[0] + rC3rL3[0] )
-    c[0] = -5.0 * rR3rC3[0]
-    y[0] = -dlnp[0]
+    b[0] = 5.0 * (rC3rC3 + rC3rL3)
+    c[0] = -5.0 * rR3rC3
+    y[0] = -(math.log(p[1]) - math.log(p[0]))
 
-    return a, b, c, y
+@njit(types.void(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=False)
+def build_tridiag_system_log_OLD(r, rho, p, m_tot, a, b, c, y):
+    """
+    Fill preallocated arrays ``a``, ``b``, ``c``, and ``y`` with the
+    tridiagonal system A·x = y for interior radial corrections in the
+    logarithmic form of the HE equation.
+
+    Arguments
+    ---------
+    r : ndarray
+        Radial edge coordinates, length = n + 1.
+    rho : ndarray
+        Shell-centered densities, length = n.
+    p : ndarray
+        Shell-centered pressures, length = n.
+    m_tot : ndarray
+        Total enclosed mass at edge points, length = n + 1.
+    a : ndarray
+        Preallocated output array of length n - 1 for the subdiagonal
+        entries, ``a[i] = A[i, i-1]``.
+    b : ndarray
+        Preallocated output array of length n - 1 for the main diagonal
+        entries, ``b[i] = A[i, i]``.
+    c : ndarray
+        Preallocated output array of length n - 1 for the superdiagonal
+        entries, ``c[i] = A[i, i+1]``.
+    y : ndarray
+        Preallocated output array of length n - 1 for the right-hand side.
+
+    Notes
+    -----
+    This function performs in-place updates only and returns nothing.
+
+    The output arrays must already be allocated with length ``n - 1``,
+    where ``n = len(rho) = len(p)``.
+    """
+    tiny = np.finfo(np.float64).tiny
+    n_out = p.shape[0] - 1
+
+    for i in range(n_out):
+        # Local geometry
+        rL = r[i]
+        rC = r[i + 1]
+        rR = r[i + 2]
+
+        rC2 = rC * rC
+        rC3 = rC2 * rC
+        rR3 = rR * rR * rR
+        rL3 = rL * rL * rL
+
+        denomL = rC3 - rL3
+        denomR = rR3 - rC3
+
+        rL3rL3 = rL3 / denomL
+        rR3rC3 = rR3 / denomR
+        rC3rC3 = rC3 / denomR
+        rC3rL3 = rC3 / denomL
+        rC2rC3 = rC2 / denomR
+        rC2rL3 = rC2 / denomL
+
+        # Local thermodynamics
+        pL = p[i]
+        pR = p[i + 1]
+        rhoL = rho[i]
+        rhoR = rho[i + 1]
+
+        dlnp = math.log(pR) - math.log(pL)
+
+        # Match original handling of lnr[0] = lnr[1]
+        if i == 0:
+            dlnr = 0.5 * (math.log(rR) - math.log(rC))
+        else:
+            dlnr = 0.5 * (math.log(rR) - math.log(rL))
+
+        sp = pL + pR
+        sr = rhoL + rhoR
+
+        # Floors to avoid divide-by-zero/inf
+        if abs(sp) < tiny:
+            sp = math.copysign(tiny, sp)
+        if abs(dlnr) < tiny:
+            dlnr = math.copysign(tiny, dlnr)
+
+        inv_dlnr = 1.0 / dlnr
+        dpdr = 0.5 * dlnp * inv_dlnr * inv_dlnr
+        srsp = sr / sp
+        mr = m_tot[i + 1] / rC
+
+        afac = 5.0 * inv_dlnr + (mr / sp) * (5.0 * pL * srsp - 3.0 * rhoL)
+        cfac = 5.0 * inv_dlnr + (mr / sp) * (3.0 * rhoR - 5.0 * pR * srsp)
+
+        bfac3 = 5.0 * pR * srsp - 3.0 * rhoR
+        bfac4 = 3.0 * rhoL - 5.0 * pL * srsp
+
+        a[i] = dpdr - rL3rL3 * afac
+        b[i] = (
+            5.0 * inv_dlnr * (rC3rC3 + rC3rL3)
+            - mr * srsp
+            - (m_tot[i + 1] / sp) * (rC2rC3 * bfac3 + rC2rL3 * bfac4)
+        )
+        c[i] = -dpdr - rR3rC3 * cfac
+        y[i] = -mr * srsp - dlnp * inv_dlnr
+
+    # Enforce dp/dr = 0 for i = 1
+    rL = r[0]
+    rC = r[1]
+    rR = r[2]
+
+    rC2 = rC * rC
+    rC3 = rC2 * rC
+    rR3 = rR * rR * rR
+    rL3 = rL * rL * rL
+
+    denomL = rC3 - rL3
+    denomR = rR3 - rC3
+
+    rR3rC3 = rR3 / denomR
+    rC3rC3 = rC3 / denomR
+    rC3rL3 = rC3 / denomL
+
+    a[0] = 0.0
+    b[0] = 5.0 * (rC3rC3 + rC3rL3)
+    c[0] = -5.0 * rR3rC3
+    y[0] = -(math.log(p[1]) - math.log(p[0]))
 
 @njit(void(float64[:], float64[:],  float64[:],  float64[:],  float64[:]), cache=True, fastmath=True)
 def update_r_p_rho(r, x, p, rho, work):
@@ -269,9 +491,7 @@ def compute_he_resid_norm(r, rho, p, m):
 
     return np.linalg.norm(res_vec)
 
-@njit(types.Tuple((int64, float64))(
-        float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64
-    ), cache=True, fastmath=True,)
+@njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64), cache=True, fastmath=True,)
 def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, float, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
@@ -309,7 +529,7 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, fl
     """
 
     # Solve for corrections to r
-    build_tridiag_system(r, rho, p, m_tot, a, b, c, y)
+    build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)
     solve_tridiagonal_thomas(a, b, c, y, x)
     dr_max = float(np.max(np.abs(x)))
 
@@ -323,9 +543,7 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, fl
     
     return STATUS_OK, dr_max
 
-@njit(types.Tuple((int64, float64, float64))(
-        float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64
-    ), cache=True, fastmath=True,)
+@njit(types.Tuple((int64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64), cache=True, fastmath=True,)
 def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, float, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
@@ -366,7 +584,7 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tu
     """
 
     # Solve for corrections to r
-    build_tridiag_system(r, rho, p, m_tot, a, b, c, y)
+    build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)
     solve_tridiagonal_thomas(a, b, c, y, x)
     dr_max = float(np.max(np.abs(x)))
 

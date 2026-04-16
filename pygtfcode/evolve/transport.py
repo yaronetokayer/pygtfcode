@@ -141,3 +141,117 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
     p_new = ( 2.0 / 3.0 ) * rho * u_new
 
     return p_new, float(dumax), float(dt_eff)
+
+### IMPLICIT SCHEME
+
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
+def build_tridiag_system(a, b, c, d, rk, mk, rhok_int, uk, pref, dt):
+    """
+    Construct tridiagonal coefficients: a_i du_i-1 + b_i du_i + c_i du_i+1 = d_i
+    a, b, c, and d are updated in place
+
+    Arguments
+    ---------
+    a : ndarray, shape (N,)
+        Subdiagonal coefficients (multiply du_{i-1}) for interior nodes j=1..N.
+    b : ndarray, shape (N,)
+        Main diagonal coefficients (multiply du_i) for interior nodes.
+    c : ndarray, shape (N,)
+        Superdiagonal coefficients (multiply d_{u+1}) for interior nodes.
+    d : ndarray, shape (N,)
+        Right-hand side vector for the interior nodes.
+    rk : ndarray, shape (N+1,)
+        Edge radii.
+    mk : ndarray, shape (N+1,)
+        Enclosed mass at edges.
+    rhok_int : ndarray, shape (N-1,)
+        Densities interpolated to shell edges
+    uk : ndarray, shape (N,)
+        Specific internal energy.
+    pref : float
+        prefactor for species k
+    dt : float
+        timestep
+    """
+    drc     = 0.5 * (rk[2:] - rk[:-2])      # (N-1,)
+    delu    = uk[1:] - uk[:-1]              # (N-1,)
+    su      = uk[1:] + uk[:-1]              # (N-1,)
+    sqrt2   = 1.41421356237309
+
+    # Interior cells
+    facL    = rhok_int[:-1] * rk[1:-2]**2 / drc[:-1]
+    facR    = rhok_int[1:] * rk[2:-1]**2 / drc[1:]
+    su12L   = 1 / np.sqrt(su[:-1])
+    su12R   = 1 / np.sqrt(su[1:])
+    dusu32L = 0.5 * delu[:-1] / su[:-1]**(3.0/2.0)
+    dusu32R = 0.5 * delu[1:] / su[1:]**(3.0/2.0)
+
+    a[1:-1] = facL * ( su12L + dusu32L )
+    b[1:-1] = -1 * (
+        facR * ( su12R + dusu32R )
+        + facL * ( su12L - dusu32L )
+        + ( ( mk[2:-1] - mk[1:-2] ) / ( sqrt2 * pref * dt ) )
+    )
+    c[1:-1] = facR * ( su12R - dusu32R )
+    d[1:-1] = (
+        facL * delu[:-1] / np.sqrt(su[:-1])
+        - facR * delu[1:] / np.sqrt(su[1:])
+    )
+
+    # i = 1
+    a[0] = 0.0
+    b[0] = -1 *  (
+        su12L[0] + dusu32L[0]
+        + ( mk[1] * drc[0] / ( rhok_int[0] * rk[1]**2 * pref * sqrt2 * dt ) )
+    )
+    c[0] = su12L[0] - dusu32L[0]
+    d[0] = - delu[0] / np.sqrt(su[0])
+
+    # i = N
+    a[-1] = su12R[-1] + dusu32R[-1]
+    b[-1] = (
+        dusu32R[-1] - su12R[-1]
+        - ( 
+            (mk[-1] - mk[-2]) * drc[-1] 
+            / ( rhok_int[-1] * rk[-2]**2 * pref * sqrt2 * dt )
+        )
+    )
+    c[-1] = 0.0
+    d[-1] = delu[-1] / np.sqrt(su[-1])
+
+@njit(void(float64[:, :], float64[:, :], float64[:, :], float64[:, :], float64, float64[:], float64[:, :], float64[:, :], float64), cache=True, fastmath=True)
+def conduct_implicit(v2, rho, r, m, c2, mrat, lnL, du_trial, dt,):
+    """
+    Implicit intra-species conduction step on v2.
+    Use a fixed dt - no timestep limiting in this step - we find that the hex step limits in almost all cases.
+
+    For each species, solve a tridiagonal system for du, but only commit the
+    update once the limiter is satisfied.
+
+    The tridiagonal system is defined by:
+        a_i du_i-1 + b_i du_i + c_i du_i+1 = d_i
+    
+    v2 is updated in-place. u = 1.5 * v2
+    """
+    s, N = v2.shape
+
+    a = np.empty(N, dtype=np.float64)
+    b = np.empty(N, dtype=np.float64)
+    c = np.empty(N, dtype=np.float64)
+    d = np.empty(N, dtype=np.float64)
+
+    for k in range(s):
+        rk       = r[k]
+        mk       = m[k]
+        rhok     = rho[k]
+        uk       = 1.5 * v2[k]
+        rhok_int = interp_linear_to_interfaces(rk, rhok)
+
+        pref = c2 * (mrat[k] * lnL[k, k])
+
+        build_tridiag_system(a, b, c, d, rk, mk, rhok_int, uk, pref, dt)
+        solve_tridiagonal_thomas(a, b, c, d, du_trial[k])
+
+    for k in range(s):
+        for i in range(N):
+            v2[k, i] += (2.0 / 3.0) * du_trial[k, i]

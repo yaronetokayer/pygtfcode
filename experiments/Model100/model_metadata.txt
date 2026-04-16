@@ -9,8 +9,8 @@ _init:
     _z: 0.0
     profile: truncated_nfw
 grid:
-    _ngrid: 500
-    _rmax: 500.0
+    _ngrid: 300
+    _rmax: 1000.0
     _rmin: 0.01
 io:
     _base_dir: /Users/yaronetokayer/YaleDrive/Research/SIDM/pygtfcode/experiments
@@ -19,6 +19,7 @@ io:
     _drho_tevol: 0.01
     _model_no: 100
     _nlog: 100000
+    _nupdate: 3500
     _overwrite: True
 prec:
     _eps_dr: 1e-12
@@ -26,7 +27,6 @@ prec:
     _eps_du: 1e-06
     _epsabs: 1e-06
     _epsrel: 1e-06
-    _max_iter_cr: 10
     _max_iter_dr: 100
 sim:
     _a: 2.256758

@@ -117,7 +117,24 @@ def write_profile_snapshot(state, initialize=False):
     initialize : bool
         If True, this is part of initializing the grid and should not increment the snapshot index.
     """
-    filename = os.path.join(state.config.io.base_dir, state.config.io.model_dir, f"profile_{state.snapshot_index}.dat")
+    io = state.config.io
+    filename = os.path.join(io.base_dir, io.model_dir, f"profile_{state.snapshot_index}.dat")
+
+    # If not initializing, remove any higher-index snapshot files
+    if not initialize:
+        snapshot_dir = os.path.join(io.base_dir, io.model_dir)
+
+        for fname in os.listdir(snapshot_dir):
+            if not fname.startswith("profile_") or not fname.endswith(".dat"):
+                continue
+
+            try:
+                idx = int(fname[len("profile_"):-len(".dat")])
+            except ValueError:
+                continue  # ignore unexpected files
+
+            if idx > state.snapshot_index:
+                os.remove(os.path.join(snapshot_dir, fname))
 
     with open(filename, "w") as f:
         header = (
@@ -139,7 +156,7 @@ def write_profile_snapshot(state, initialize=False):
     
     append_snapshot_conversion(state)
 
-    if state.config.io.chatter:
+    if io.chatter:
         if state.step_count == 0:
             print("Initial profiles written to disk.")
 
