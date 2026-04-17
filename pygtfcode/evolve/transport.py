@@ -2,6 +2,8 @@ import numpy as np
 from numba import njit, float64, boolean, types, void
 from pygtfcode.util.interpolate import interp_linear_to_interfaces
 
+_TINY64 = np.finfo(np.float64).tiny
+
 @njit(void(float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
 def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored): # In place version
     """ 
@@ -92,7 +94,7 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
         dv2dt[i] = -(2.0 / 3.0) * (lum[i+1] - lum[i]) / dm
 
     # Find maximum relative proposed change
-    floor = 1e-40
+    floor = _TINY64
     dv2max = 0.0
     for i in range(N):
         dv2 = dv2dt[i] * dt_prop
@@ -118,29 +120,6 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
         v2[i] += dv2dt[i] * dt_eff
 
     return float(dv2max), float(dt_eff)
-
-    ###
-
-    dudt = -( lum[1:] - lum[:-1] ) / ( m[1:] - m[:-1] )
-    du = dudt * dt_prop
-
-    tiny = np.finfo(np.float64).tiny
-    abs_u = np.abs(u)
-    abs_u[abs_u < tiny] = tiny
-    dumax = np.max(np.abs(du) / abs_u)
-
-    if dumax > eps_du:
-        scale = 0.95 * (eps_du / dumax)
-        dt_eff = dt_prop * scale
-        dumax *= scale
-        du *= scale
-    else:
-        dt_eff = dt_prop
-
-    u_new = u + du
-    p_new = ( 2.0 / 3.0 ) * rho * u_new
-
-    return p_new, float(dumax), float(dt_eff)
 
 ### IMPLICIT SCHEME
 
