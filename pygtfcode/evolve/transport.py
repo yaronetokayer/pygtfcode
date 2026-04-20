@@ -330,18 +330,18 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     c[-1] = 0.0
     d[-1] = flux0[-1]
 
-@njit(float64(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64), cache=True, fastmath=True)
+def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m,):
     """
-    Implicit intra-species conduction step on v2.
-    Use a fixed dt - no timestep limiting in this step - we find that the hex step limits in almost all cases.
-
-    For each species, solve a tridiagonal system for dv2.
+    Implicit conduction step on v2.
 
     The tridiagonal system is defined by:
         a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
     
-    v2 is updated in-place
+    v2 is updated in-place.
+
+    No limit on maximum fractional change - assumes we are being limited by 
+    relaxation time criterion
     """
     N = v2.shape[0]
     du_max = 0.0
@@ -366,10 +366,67 @@ def conduct_implicit(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m,
 
         denom = v2i if v2i > tiny else tiny
         rat = abs(dv2i) / denom
-
         if rat > du_max:
             du_max = rat
-        
         v2[i] += dv2i
 
-    return du_max
+    return du_max, dt, 0
+
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64), cache=True, fastmath=True)
+def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, eps_du, max_iter,):
+    """
+    Implicit conduction step on v2.
+    Repeatedly solves the implicit system with a trial dt until the
+    maximum absolute fractional change satisfies
+
+        max_i |dv2_i| / v2_i <= eps_du
+
+    Then updates v2 in place and returns
+
+        (du_max, dt_used)
+
+    The tridiagonal system is defined by:
+        a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
+    
+    v2 is updated in-place.
+    """
+    N = v2.shape[0]
+
+    a = np.empty(N, dtype=np.float64)
+    b = np.empty(N, dtype=np.float64)
+    c = np.empty(N, dtype=np.float64)
+    d = np.empty(N, dtype=np.float64)
+
+    Csmfp = a_param * sigma_m**2 / b_param
+    Clmfp = 1.0 / c_param
+
+    rho_int = interp_linear_to_interfaces(r, rho)
+
+    tiny = _TINY64
+    safety = 0.95
+
+    dt_trial = dt
+
+    for j in range(max_iter):
+
+        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, a, b, c, d,)
+        solve_tridiagonal_thomas(a, b, c, d, dv2)
+
+        du_max = 0.0
+        for i in range(N):
+            v2i     = v2[i]
+
+            denom = v2i if v2i > tiny else tiny
+            rat = abs(dv2[i]) / denom
+
+            if rat > du_max:
+                du_max = rat
+        
+        if du_max <= eps_du:
+            for i in range(N):
+                v2[i] += dv2[i]
+            return du_max, dt_trial, j
+
+        dt_trial *= safety * eps_du / du_max
+
+    return du_max, dt_trial, -1

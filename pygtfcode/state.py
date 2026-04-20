@@ -157,6 +157,7 @@ class State:
         state.mintrelax = float(np.min(state.trelax))
 
         # For diagnostics
+        state.n_iter_du = 0
         state.n_iter_dr = 0
         state.dt_cum = 0.0
         state.dr_max_cum = 0.0
@@ -394,6 +395,7 @@ class State:
         self.mintrelax = float(np.min(self.trelax))
 
         # For diagnostics
+        self.n_iter_du = 0
         self.n_iter_dr = 0
         self.dt_cum = 0.0
         self.dr_max_cum = 0.0

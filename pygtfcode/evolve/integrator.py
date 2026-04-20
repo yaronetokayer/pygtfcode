@@ -1,6 +1,6 @@
 import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
 
 def run_until_stop(state, start_step, **kwargs):
@@ -33,16 +33,18 @@ def run_until_stop(state, start_step, **kwargs):
     nupdate = int(io.nupdate)
 
     # Preallocate working arrays for main loop
+    # Found that preallocating for conduction tridiagonal solve does not save time
     Np1         = state.r.shape[0]
+    N           = Np1 - 1
     n_int       = Np1 - 2
-    lum         = np.zeros(Np1,     dtype=np.float64)
+    dv2         = np.empty(N,       dtype=np.float64)
     a_alloc     = np.empty(n_int,   dtype=np.float64)
     b_alloc     = np.empty(n_int,   dtype=np.float64)
     c_alloc     = np.empty(n_int,   dtype=np.float64)
     y_alloc     = np.empty(n_int,   dtype=np.float64)
     x_alloc     = np.empty(n_int,   dtype=np.float64)
-    work        = np.empty(Np1 - 1, dtype=np.float64)
-    p           = np.empty(Np1 - 1, dtype=np.float64)
+    work        = np.empty(N,       dtype=np.float64)
+    p           = np.empty(N,       dtype=np.float64)
 
     #################
     ### Main loop ###
@@ -59,14 +61,18 @@ def run_until_stop(state, start_step, **kwargs):
         step_count = state.step_count
 
         # Compute relaxation-time-limited dt
-        # In low-Kn regime, only set by conduction in conduction routine
+        # In low-Kn regime, only set dt in conduction routine
+        small_kn_regime = False
         if state.minkn > 0.1:
             dt_prop = config.prec.eps_dt * state.mintrelax
         else:
-            dt_prop = 1.0
+            small_kn_regime = True
+            if step_count == 1:
+                dt_prop = 1.0
+            # Otherwise, use last dt
 
         # Integrate time step
-        integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1)
+        integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -126,7 +132,7 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1):
+def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1):
     """
     Advance state by one time step.
     Applies conduction, revirialization, updates time, and checks stability diagnostics.
@@ -139,6 +145,8 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
         Configuration object for simulation.
     dt_prop : float
         Proposed dt value returned by compute_time_step
+    small_kn_regime : Boolean
+        If True, use time-limited version of implicit conduction
     step_count : int
         Step count
     lum : ndarray (N+1,)
@@ -154,15 +162,14 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     # Store state attributes for fast access in loop and to pass into njit functions
     prec = config.prec
     sim  = config.sim
-    init = config.init
+    # init = config.init
     char = state.char
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     sigma_m = float(char.sigma_m_char)
-    cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-    cored = False
+    # cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
     eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
-    max_iter_dr = prec.max_iter_dr
+    max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
     # Preallocate these as well?
     r       = np.asarray(state.r,   dtype=np.float64)
@@ -178,8 +185,12 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     ### Step 1: Energy transport ###
     # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
     # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
-    dv2 = np.empty_like(v2, dtype=np.float64)
-    du_max = conduct_implicit(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m)
+    if small_kn_regime:
+        du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, eps_du, max_iter_du)
+    else:
+        du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m,)
+    if iter_du == -1:
+        raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
         
     p[:] = rho * v2 # Used for revir and to set v2 later
 
@@ -225,6 +236,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     state.mintrelax = float(np.min(state.trelax))
 
     # Diagnostics
+    state.n_iter_du += iter_du
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)
     if step_count != 1:

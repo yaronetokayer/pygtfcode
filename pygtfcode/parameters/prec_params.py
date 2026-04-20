@@ -10,6 +10,8 @@ class PrecisionParams:
         Maximum allowed relative change in radius per time step.
     eps_dt : float
         Epsilon factor for adjusting time step size.
+    max_iter_du : int
+        Maximum iterations allowed for re-virialization step convergence.
     max_iter_dr : int
         Maximum iterations allowed for re-virialization step convergence.
     epsabs : float
@@ -23,6 +25,7 @@ class PrecisionParams:
         eps_du : float = 1.0e-4,
         eps_dr : float = 1.0e-12,
         eps_dt : float = 1.0e-3,
+        max_iter_du : int = 10,
         max_iter_dr : int = 100,
         epsabs : float = 1e-6,
         epsrel : float = 1e-6
@@ -30,6 +33,7 @@ class PrecisionParams:
         self._eps_du = None
         self._eps_dr = None
         self._eps_dt = None
+        self._max_iter_du = None
         self._max_iter_dr = None
         self._epsabs = None
         self._epsrel = None
@@ -37,6 +41,7 @@ class PrecisionParams:
         self.eps_du = eps_du
         self.eps_dr = eps_dr
         self.eps_dt = eps_dt
+        self.max_iter_du = max_iter_dr
         self.max_iter_dr = max_iter_dr
         self.epsabs = epsabs
         self.epsrel = epsrel
@@ -67,6 +72,15 @@ class PrecisionParams:
     def eps_dt(self, value):
         self._validate_positive(value, "eps_dt")
         self._eps_dt = float(value)
+
+    @property
+    def max_iter_du(self):
+        return self._max_iter_du
+
+    @max_iter_du.setter
+    def max_iter_du(self, value):
+        self._validate_nonnegative_int(value, "max_iter_du")
+        self._max_iter_du = int(value)
 
     @property
     def max_iter_dr(self):
