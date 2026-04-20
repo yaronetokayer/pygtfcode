@@ -361,6 +361,16 @@ class State:
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
 
+        ### TESTING
+        # from pygtfcode.evolve.transport import conduct_implicit
+        # v2_new  = np.zeros_like(self.v2, dtype=np.float64)
+        # dv2     = np.empty_like(v2_new, dtype=np.float64)
+        # dt_prop = 1.0e-7
+        # a = self.config.sim.a; b = self.config.sim.b; c = self.config.sim.c; sigma_m = float(self.char.sigma_m_char)
+        # du_max = conduct_implicit(v2_new, rho_new, self.r, m, dv2, dt_prop, a, b, c, sigma_m)
+        # print(du_max)
+        # print(dv2)
+
     def reset(self):
         """
         Resets initial state

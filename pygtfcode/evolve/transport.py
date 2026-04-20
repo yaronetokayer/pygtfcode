@@ -1,6 +1,8 @@
 import numpy as np
+import math
 from numba import njit, float64, boolean, types, void
 from pygtfcode.util.interpolate import interp_linear_to_interfaces
+from pygtfcode.util.calc import solve_tridiagonal_thomas
 
 _TINY64 = np.finfo(np.float64).tiny
 
@@ -123,114 +125,251 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
 
 ### IMPLICIT SCHEME
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
-def build_tridiag_system(a, b, c, d, rk, mk, rhok_int, uk, pref, dt):
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     """
-    Construct tridiagonal coefficients: a_i du_i-1 + b_i du_i + c_i du_i+1 = d_i
-    a, b, c, and d are updated in place
+    Build tridiagonal system for implicit conduction update in v2:
 
-    Arguments
-    ---------
-    a : ndarray, shape (N,)
-        Subdiagonal coefficients (multiply du_{i-1}) for interior nodes j=1..N.
-    b : ndarray, shape (N,)
-        Main diagonal coefficients (multiply du_i) for interior nodes.
-    c : ndarray, shape (N,)
-        Superdiagonal coefficients (multiply d_{u+1}) for interior nodes.
-    d : ndarray, shape (N,)
-        Right-hand side vector for the interior nodes.
-    rk : ndarray, shape (N+1,)
+        a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
+
+    Assumes n > 3.
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
         Edge radii.
-    mk : ndarray, shape (N+1,)
+    m : ndarray, shape (N+1,)
         Enclosed mass at edges.
-    rhok_int : ndarray, shape (N-1,)
-        Densities interpolated to shell edges
-    uk : ndarray, shape (N,)
-        Specific internal energy.
-    pref : float
-        prefactor for species k
+    rho_int : ndarray, shape (N-1,)
+        Interface values of rhok.
+    v2 : ndarray, shape (N,)
+        Cell-centered v2 for one species.
+    Csmfp, Clmfp : float
+        Conductivity coefficients.
     dt : float
-        timestep
+        Timestep.
+    a, b, c, d : ndarray, shape (N,)
+        Output tridiagonal coefficients and RHS, filled in place.
     """
-    drc     = 0.5 * (rk[2:] - rk[:-2])      # (N-1,)
-    delu    = uk[1:] - uk[:-1]              # (N-1,)
-    su      = uk[1:] + uk[:-1]              # (N-1,)
-    sqrt2   = 1.41421356237309
+    n = v2.shape[0] # Number of cells with unknown dv2 values
+    sqrt2 = math.sqrt(2.0)
+    two_Clmfp = 2.0 * Clmfp
 
-    # Interior cells
-    facL    = rhok_int[:-1] * rk[1:-2]**2 / drc[:-1]
-    facR    = rhok_int[1:] * rk[2:-1]**2 / drc[1:]
-    su12L   = 1 / np.sqrt(su[:-1])
-    su12R   = 1 / np.sqrt(su[1:])
-    dusu32L = 0.5 * delu[:-1] / su[:-1]**(3.0/2.0)
-    dusu32R = 0.5 * delu[1:] / su[1:]**(3.0/2.0)
+    ### First cell ###
+    rL          = r[0]
+    rR          = r[1]
+    rRR         = r[2]
 
-    a[1:-1] = facL * ( su12L + dusu32L )
-    b[1:-1] = -1 * (
-        facR * ( su12R + dusu32R )
-        + facL * ( su12L - dusu32L )
-        + ( ( mk[2:-1] - mk[1:-2] ) / ( sqrt2 * pref * dt ) )
-    )
-    c[1:-1] = facR * ( su12R - dusu32R )
-    d[1:-1] = (
-        facL * delu[:-1] / np.sqrt(su[:-1])
-        - facR * delu[1:] / np.sqrt(su[1:])
-    )
+    drcR        = 0.5 * ( rRR - rL )
+    rR2         = rR * rR
+    coefR       = rR2 / drcR
 
-    # i = 1
+    v2C         = v2[0]
+    v2R         = v2[1]
+
+    dvR         = v2R - v2C
+    svR         = v2C + v2R
+    sqrt_svR    = math.sqrt(svR)
+    svR32       = sqrt_svR * svR
+
+    inv_rhoR    = 1.0 / rho_int[0]
+    denomR      = Csmfp * svR + two_Clmfp * inv_rhoR
+    inv_denomR  = 1.0 / denomR
+    inv_denomR2 = inv_denomR * inv_denomR
+
+    tmpR        = sqrt_svR * dvR
+    commonR     = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
+    termR       = svR32 * inv_denomR
+    fluxR       = coefR * svR32 * dvR * inv_denomR
+
     a[0] = 0.0
-    b[0] = -1 *  (
-        su12L[0] + dusu32L[0]
-        + ( mk[1] * drc[0] / ( rhok_int[0] * rk[1]**2 * pref * sqrt2 * dt ) )
-    )
-    c[0] = su12L[0] - dusu32L[0]
-    d[0] = - delu[0] / np.sqrt(su[0])
+    b[0] = coefR * (commonR - termR) - sqrt2 * m[1] / dt
+    c[0] = coefR * (commonR + termR)
+    d[0] = -fluxR
 
-    # i = N
-    a[-1] = su12R[-1] + dusu32R[-1]
-    b[-1] = (
-        dusu32R[-1] - su12R[-1]
-        - ( 
-            (mk[-1] - mk[-2]) * drc[-1] 
-            / ( rhok_int[-1] * rk[-2]**2 * pref * sqrt2 * dt )
+    ### INTERIOR CELLS ###
+    # Initialize sliding window
+    rL      = rR
+    rR      = rRR
+    rRR     = r[3]
+
+    drcR    = 0.5 * ( rRR - rL )
+    rR2     = rR * rR
+    coefL   = coefR
+    coefR   = rR2 / drcR
+
+    v2C     = v2R
+    v2R     = v2[2]
+
+    dvR = v2R - v2C
+    svR = v2C + v2R
+    sqrt_svR = math.sqrt(svR)
+    svR32 = sqrt_svR * svR
+
+    inv_rhoR = 1.0 / rho_int[1]
+    denomR = Csmfp * svR + two_Clmfp * inv_rhoR
+    inv_denomR = 1.0 / denomR
+    inv_denomR2 = inv_denomR * inv_denomR
+    
+    commonL = commonR
+    tmpR = sqrt_svR * dvR
+    commonR = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
+    termL = termR
+    termR = svR32 * inv_denomR
+    fluxL = fluxR
+    fluxR = coefR * svR32 * dvR * inv_denomR
+
+    for j in range(1, n - 1):
+        a[j] = -coefL * (commonL - termL)
+        b[j] = (
+            coefR * (commonR - termR)
+            - coefL * (commonL + termL)
+            - sqrt2 * (m[j + 1] - m[j]) / dt
         )
-    )
-    c[-1] = 0.0
-    d[-1] = delu[-1] / np.sqrt(su[-1])
+        c[j] = coefR * (commonR + termR)
+        d[j] = fluxL - fluxR
 
-@njit(void(float64[:, :], float64[:, :], float64[:, :], float64[:, :], float64, float64[:], float64[:, :], float64[:, :], float64), cache=True, fastmath=True)
-def conduct_implicit(v2, rho, r, m, c2, mrat, lnL, du_trial, dt,):
+        # Advance sliding window
+        if j < n - 2:
+            rL      = rR
+            rR      = rRR
+            rRR     = r[j + 3]
+
+            drcR    = 0.5 * ( rRR - rL )
+            rR2     = rR * rR
+            coefL   = coefR
+            coefR   = rR2 / drcR
+
+            v2C     = v2R
+            v2R     = v2[j + 2]
+
+            dvR         = v2R - v2C
+            svR         = v2C + v2R
+            sqrt_svR    = math.sqrt(svR)
+            svR32       = sqrt_svR * svR
+
+            inv_rhoR    = 1.0 / rho_int[j + 1]
+            denomR      = Csmfp * svR + two_Clmfp * inv_rhoR
+            inv_denomR  = 1.0 / denomR
+            inv_denomR2 = inv_denomR * inv_denomR
+
+            commonL     = commonR
+            tmpR        = sqrt_svR * dvR
+            commonR     = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
+            termL       = termR
+            termR       = svR32 * inv_denomR
+            fluxL       = fluxR
+            fluxR       = coefR * svR32 * dvR * inv_denomR
+
+    ### Last cell ###
+    a[n - 1] = - coefR * ( commonR - termR)
+    b[n - 1] = - coefR * ( commonR + termR ) - sqrt2 * ( m[n] - m[n - 1] ) / dt
+    c[n - 1] = 0.0
+    d[n - 1] = fluxR
+
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
+    """
+    Build tridiagonal system for implicit conduction update in v2:
+
+        a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Edge radii.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at edges.
+    rho_int : ndarray, shape (N-1,)
+        Interface values of rhok.
+    v2 : ndarray, shape (N,)
+        Cell-centered v2 for one species.
+    Csmfp, Clmfp : float
+        Conductivity coefficients.
+    dt : float
+        Timestep.
+    a, b, c, d : ndarray, shape (N,)
+        Output tridiagonal coefficients and RHS, filled in place.
+    """
+    N = v2.shape[0]
+
+    drc = 0.5 * (r[2:] - r[:-2])     # (N-1,)
+    dv  = v2[1:] - v2[:-1]           # (N-1,)
+    sv  = v2[1:] + v2[:-1]           # (N-1,)
+    r2  = r[1:-1] ** 2               # (N-1,)
+    dm  = m[1:] - m[:-1]             # (N,)
+
+    denom = Csmfp * sv + 2.0 * Clmfp / rho_int
+    sqrt_sv = np.sqrt(sv)
+    base  = (r2 / drc) * (sv * sqrt_sv)
+    flux0 = base * dv / denom
+
+    common = (r2 / drc) * (
+        0.5 * sqrt_sv * dv / denom
+        + 2.0 * Clmfp * sqrt_sv * dv / (denom * denom * rho_int)
+    )
+
+    left_coef  = common - base / denom
+    right_coef = common + base / denom
+
+    # interior rows
+    a[1:-1] = -left_coef[:-1]
+    b[1:-1] = left_coef[1:] - right_coef[:-1] - math.sqrt(2.0) * dm[1:-1] / dt
+    c[1:-1] = right_coef[1:]
+    d[1:-1] = flux0[:-1] - flux0[1:]
+
+    # inner boundary
+    a[0] = 0.0
+    b[0] = left_coef[0] - math.sqrt(2.0) * dm[0] / dt
+    c[0] = right_coef[0]
+    d[0] = -flux0[0]
+
+    # outer boundary
+    a[-1] = -left_coef[-1]
+    b[-1] = -right_coef[-1] - math.sqrt(2.0) * dm[-1] / dt
+    c[-1] = 0.0
+    d[-1] = flux0[-1]
+
+@njit(float64(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64), cache=True, fastmath=True)
+def conduct_implicit(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m,):
     """
     Implicit intra-species conduction step on v2.
     Use a fixed dt - no timestep limiting in this step - we find that the hex step limits in almost all cases.
 
-    For each species, solve a tridiagonal system for du, but only commit the
-    update once the limiter is satisfied.
+    For each species, solve a tridiagonal system for dv2.
 
     The tridiagonal system is defined by:
-        a_i du_i-1 + b_i du_i + c_i du_i+1 = d_i
+        a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
     
-    v2 is updated in-place. u = 1.5 * v2
+    v2 is updated in-place
     """
-    s, N = v2.shape
+    N = v2.shape[0]
+    du_max = 0.0
 
     a = np.empty(N, dtype=np.float64)
     b = np.empty(N, dtype=np.float64)
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    for k in range(s):
-        rk       = r[k]
-        mk       = m[k]
-        rhok     = rho[k]
-        uk       = 1.5 * v2[k]
-        rhok_int = interp_linear_to_interfaces(rk, rhok)
+    Csmfp = a_param * sigma_m**2 / b_param
+    Clmfp = 1.0 / c_param
 
-        pref = c2 * (mrat[k] * lnL[k, k])
+    rho_int = interp_linear_to_interfaces(r, rho)
 
-        build_tridiag_system(a, b, c, d, rk, mk, rhok_int, uk, pref, dt)
-        solve_tridiagonal_thomas(a, b, c, d, du_trial[k])
+    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,)
+    solve_tridiagonal_thomas(a, b, c, d, dv2)
 
-    for k in range(s):
-        for i in range(N):
-            v2[k, i] += (2.0 / 3.0) * du_trial[k, i]
+    tiny = _TINY64
+    for i in range(N):
+        dv2i    = dv2[i]
+        v2i     = v2[i]
+
+        denom = v2i if v2i > tiny else tiny
+        rat = abs(dv2i) / denom
+
+        if rat > du_max:
+            du_max = rat
+        
+        v2[i] += dv2i
+
+    return du_max

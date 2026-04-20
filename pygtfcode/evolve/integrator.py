@@ -1,6 +1,6 @@
 import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
 
 def run_until_stop(state, start_step, **kwargs):
@@ -160,6 +160,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     sigma_m = float(char.sigma_m_char)
     cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+    cored = False
     eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
     max_iter_dr = prec.max_iter_dr
 
@@ -175,8 +176,11 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
     m_tot = compute_mass(m)
 
     ### Step 1: Energy transport ###
-    compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
-    du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
+    # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
+    # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
+    dv2 = np.empty_like(v2, dtype=np.float64)
+    du_max = conduct_implicit(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m)
+        
     p[:] = rho * v2 # Used for revir and to set v2 later
 
     ### Step 2: Reestablish hydrostatic equilibrium ###
@@ -187,7 +191,7 @@ def integrate_time_step(state, config, dt_prop, step_count, lum, a_alloc, b_allo
 
         # Shell crossing signaled by None
         if status == STATUS_SHELL_CROSSING:
-            raise RuntimeError("Max iterations exceeded for shell crossing in conduction/revirialization step")
+            raise RuntimeError(f"Step {step_count}: Shell crossing in revirialization step")
         
         # Check dr criterion
         """
