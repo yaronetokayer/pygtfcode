@@ -47,7 +47,6 @@ def extract_time_evolution_data(filepath):
             't',                # (array) Time in code units
             't_phys',           # (array) Time in physical units (Gyr)
             'rho_c',            # (array) Central density in code units
-            'rho_c_phys',       # (array) Central density in physical units (Msun/pc^3)
             'v_max',            # (array) Maximum circular velocity in code units
             'v_max_phys'        # (array) Maximum circular velocity in physical units (km/s)
             'kn_min',           # (array) Minimum Knudsen number
@@ -65,12 +64,11 @@ def extract_time_evolution_data(filepath):
         't': data[:, 0],
         't_phys': data[:, 1],
         'rho_c': data[:, 2],
-        'rho_c_phys': data[:, 3],
-        'v_max': data[:, 4],
-        'v_max_phys': data[:, 5],
-        'kn_min': data[:, 6],
-        'mintrel': data[:, 7],
-        'mintrel_phys': data[:, 8],
+        'v_max': data[:, 3],
+        'v_max_phys': data[:, 4],
+        'kn_min': data[:, 5],
+        'mintrel': data[:, 6],
+        'mintrel_phys': data[:, 7],
         'model_id': model_id
     }
 

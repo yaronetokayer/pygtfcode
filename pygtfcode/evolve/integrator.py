@@ -22,15 +22,17 @@ def run_until_stop(state, start_step, **kwargs):
     config = state.config
     io = config.io
     sim = config.sim
+    t_evol = bool(io.t_evol); profiles = bool(io.profiles)
     chatter = bool(io.chatter)
     t_halt = float(sim.t_halt)
-    rho0_last_prof = float(state.rho[0])
-    rho0_last_tevol = float(state.rho[0])
     rho_c_halt = float(sim.rho_c_halt)
-    drho_prof = float(io.drho_prof)
-    drho_tevol = float(io.drho_tevol)
-    nlog = int(io.nlog)
-    nupdate = int(io.nupdate)
+    if t_evol:
+        rho0_last_tevol = float(state.rho[0])
+    if profiles:
+        rho0_last_prof = float(state.rho[0])
+        drho_prof = float(io.drho_prof)
+        drho_tevol = float(io.drho_tevol)
+    nlog = int(io.nlog); nupdate = int(io.nupdate)
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
@@ -110,16 +112,18 @@ def run_until_stop(state, start_step, **kwargs):
 
         # Check I/O criteria
         # Write profile to disk
-        drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
-        if drho_for_prof > drho_prof:
-            rho0_last_prof = rho0
-            write_profile_snapshot(state)
+        if profiles:
+            drho_for_prof = np.abs(rho0 - rho0_last_prof) / rho0_last_prof
+            if drho_for_prof > drho_prof:
+                rho0_last_prof = rho0
+                write_profile_snapshot(state)
 
-        # Track time evolution 
-        drho_for_tevol = np.abs(rho0 - rho0_last_tevol) / rho0_last_tevol
-        if drho_for_tevol > drho_tevol:
-            rho0_last_tevol = rho0
-            write_time_evolution(state)
+        # Track time evolution
+        if t_evol: 
+            drho_for_tevol = np.abs(rho0 - rho0_last_tevol) / rho0_last_tevol
+            if drho_for_tevol > drho_tevol:
+                rho0_last_tevol = rho0
+                write_time_evolution(state)
 
         ##############
         ### 4. Log ###
