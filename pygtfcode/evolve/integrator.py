@@ -2,7 +2,7 @@ import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
-from pygtfcode.util.calc import calc_core_r_m_v2
+from pygtfcode.util.calc import calc_core_r_m_v2, calc_smfp_r_m
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -29,10 +29,10 @@ def run_until_stop(state, start_step, **kwargs):
     rho_c_halt = float(sim.rho_c_halt)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
+        drho_tevol = float(io.drho_tevol)
     if profiles:
         rho0_last_prof = float(state.rho[0])
         drho_prof = float(io.drho_prof)
-        drho_tevol = float(io.drho_tevol)
     nlog = int(io.nlog); nupdate = int(io.nupdate)
 
     # Preallocate working arrays for main loop
@@ -231,8 +231,7 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     state.rho = rho
     state.v2 = v2_new
 
-    rmid = 0.5 * (r[1:] + r[:-1])
-    state.rmid = rmid
+    state.rmid = 0.5 * (r[1:] + r[:-1])
     state.kn = 1.0 / (sigma_m * np.sqrt(p))
     sqrt_v2_new = np.sqrt(v2_new)
     state.trelax = 1.0 / (sqrt_v2_new * rho)
@@ -240,8 +239,6 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     state.maxvel    = float(np.max(sqrt_v2_new))
     state.minkn     = float(np.min(state.kn))
     state.mintrelax = float(np.min(state.trelax))
-
-    state.r_c, state.m_c, state.v2_c = calc_core_r_m_v2(r, rmid, rho, v2_new, m)
 
     # Diagnostics
     state.n_iter_du += iter_du

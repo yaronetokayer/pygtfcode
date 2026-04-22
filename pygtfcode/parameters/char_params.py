@@ -31,10 +31,10 @@ class CharParams:
         self.t0 = None
         self.v0 = None
         self.rho_s = None
+        self.sigma_m_char = None
 
     def __repr__(self):
-        return (
-            f"CharParams(r_s={self.r_s}, fc={self.fc}, chi={self.chi}, "
-            f"m_s={self.m_s}, sigma0={self.sigma0}, t0={self.t0}, "
-            f"v0={self.v0}, rho_s={self.rho_s})"
+        attrs = ", ".join(
+            f"{key}={value}" for key, value in self.__dict__.items()
         )
+        return f"CharParams({attrs})"

@@ -1,6 +1,7 @@
 import numpy as np
-from pygtfcode.parameters.constants import Constants as const
 import os
+from pygtfcode.parameters.constants import Constants as const
+from pygtfcode.util.calc import calc_smfp_r_m, calc_core_r_m_v2
 
 def make_dir(state):
     """
@@ -208,6 +209,9 @@ def write_time_evolution(state):
     t = state.t
     t_conv = state.char.t0 * const.sec_to_Gyr
 
+    r_c, m_c, v2_c = calc_core_r_m_v2(state.r, state.rmid, state.rho, state.v2, state.m)
+    r_smfp, m_smfp = calc_smfp_r_m(state.r, state.rho, state.m, state.char.sigma_m_char)
+
     columns = [
         ("step", step),
         ("time", t),
@@ -216,9 +220,11 @@ def write_time_evolution(state):
         ("v_max", state.maxvel),
         ("Kn_min", state.minkn),
         ("mintrel", state.mintrelax),
-        ("r_c", state.r_c),
-        ("m_c", state.m_c),
-        ("v2_c", state.v2_c),
+        ("r_c", r_c),
+        ("m_c", m_c),
+        ("v2_c", v2_c),
+        ("r_smfp", r_c),
+        ("m_smfp", m_c),
     ]
 
     # Build header

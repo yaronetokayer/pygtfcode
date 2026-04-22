@@ -120,7 +120,6 @@ class State:
         # Imports
         from pygtfcode.io.read import import_metadata, load_snapshot_bundle
         from pygtfcode.config import Config
-        from pygtfcode.util.calc import calc_core_r_m_v2
 
         meta = import_metadata(p)
         snapshot_bundle = load_snapshot_bundle(p, snapshot=snapshot)
@@ -150,14 +149,10 @@ class State:
         state.snapshot_index = int(snapshot_bundle['snapshot_index'])
 
         state.dt = float(prec.eps_dt)
-        # state.du_max = float(prec.eps_du)
-        # state.dr_max = float(prec.eps_dr)
 
         state.maxvel = float(np.sqrt(np.max(state.v2)))
         state.minkn = float(np.min(state.kn))
         state.mintrelax = float(np.min(state.trelax))
-
-        state.r_c, state.m_c, state.v2_c = calc_core_r_m_v2(state.r, state.rmid, state.rho, state.v2, state.m)
 
         # For diagnostics
         state.n_iter_du = 0
@@ -369,8 +364,6 @@ class State:
         """
         Resets initial state
         """
-        from pygtfcode.util.calc import calc_core_r_m_v2
-
         config = self.config
 
         self.r = self._setup_grid()
@@ -385,8 +378,6 @@ class State:
         self.maxvel = float(np.sqrt(np.max(self.v2)))
         self.minkn = float(np.min(self.kn))
         self.mintrelax = float(np.min(self.trelax))
-
-        self.r_c, self.m_c, self.v2_c = calc_core_r_m_v2(self.r, self.rmid, self.rho, self.v2, self.m)
 
         # For diagnostics
         self.n_iter_du = 0

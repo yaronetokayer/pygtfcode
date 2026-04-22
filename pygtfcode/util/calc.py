@@ -121,6 +121,85 @@ def calc_core_r_m_v2(r, rmid, rho, v2, m):
 
     return r_c, m_c, v2_c
 
+@njit(types.Tuple((float64, float64))(float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
+def calc_smfp_r_m(r, rho, m, sigma_m):
+    """
+    Computes SMFP radius and SMFP mass.
+
+    SMFP radius is defined as r_smfp such that
+
+        int_0^{r_smfp} rho(r) dr = 1 / sigma_m
+
+    This is where the optical depth equals 1.
+    The integral is estimated by simple Riemann sums, assuming rho is
+    constant within each shell. If the threshold is crossed within a
+    shell, r_smfp is found by linear interpolation in radius within that
+    shell.
+
+    m_smfp is estimated by taking the shell that contains r_smfp and using
+    a constant-density-within-shell volume fraction.
+
+    Arguments
+    ---------
+    r : ndarray, shape (N+1,)
+        Shell edge radii.
+    rho : ndarray, shape (N,)
+        Shell densities.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    sigma_m : float
+        Cross section per unit mass.
+
+    Returns
+    -------
+    r_smfp : float
+        SMFP radius
+    m_smfp : float
+        Enclosed mass at r_smfp
+    """
+    N = rho.shape[0]
+
+    if sigma_m <= 0.0:
+        return 0.0, 0.0
+
+    tau_target = 1.0 / sigma_m
+    tau_prev = 0.0
+
+    r1 = r[0]
+    for j in range(N):
+        r0 = r1
+        r1 = r[j + 1]
+        dr = r1 - r0
+
+        tau_cur = tau_prev + rho[j] * dr
+
+        if tau_cur >= tau_target:
+            if tau_cur > tau_prev:
+                frac_r = (tau_target - tau_prev) / (tau_cur - tau_prev)
+            else:
+                frac_r = 0.0
+
+            r_smfp = r0 + frac_r * dr
+
+            m0 = m[j]
+            m1 = m[j + 1]
+
+            if r_smfp <= r0:
+                frac_m = 0.0
+            else:
+                r_smfp3 = r_smfp * r_smfp * r_smfp
+                r03 = r0 * r0 * r0
+                r13 = r1 * r1 * r1
+                frac_m = (r_smfp3 - r03) / (r13 - r03)
+
+            m_smfp = m0 + frac_m * (m1 - m0)
+
+            return r_smfp, m_smfp
+
+        tau_prev = tau_cur
+
+    return 0.0, 0.0
+
 @njit(void(float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True)
 def solve_tridiagonal_thomas(a, b, c, y, x):
     """
