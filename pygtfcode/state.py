@@ -120,6 +120,7 @@ class State:
         # Imports
         from pygtfcode.io.read import import_metadata, load_snapshot_bundle
         from pygtfcode.config import Config
+        from pygtfcode.util.calc import calc_core_r_m_v2
 
         meta = import_metadata(p)
         snapshot_bundle = load_snapshot_bundle(p, snapshot=snapshot)
@@ -155,6 +156,8 @@ class State:
         state.maxvel = float(np.sqrt(np.max(state.v2)))
         state.minkn = float(np.min(state.kn))
         state.mintrelax = float(np.min(state.trelax))
+
+        state.r_c, state.m_c, state.v2_c = calc_core_r_m_v2(state.r, state.rmid, state.rho, state.v2, state.m)
 
         # For diagnostics
         state.n_iter_du = 0
@@ -362,22 +365,13 @@ class State:
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
 
-        ### TESTING
-        # from pygtfcode.evolve.transport import conduct_implicit
-        # v2_new  = np.zeros_like(self.v2, dtype=np.float64)
-        # dv2     = np.empty_like(v2_new, dtype=np.float64)
-        # dt_prop = 1.0e-7
-        # a = self.config.sim.a; b = self.config.sim.b; c = self.config.sim.c; sigma_m = float(self.char.sigma_m_char)
-        # du_max = conduct_implicit(v2_new, rho_new, self.r, m, dv2, dt_prop, a, b, c, sigma_m)
-        # print(du_max)
-        # print(dv2)
-
     def reset(self):
         """
         Resets initial state
         """
+        from pygtfcode.util.calc import calc_core_r_m_v2
+
         config = self.config
-        prec = config.prec
 
         self.r = self._setup_grid()
         self._initialize_grid()
@@ -387,12 +381,12 @@ class State:
         self.step_count = 0                 # Global integration step counter (never reset)
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
-        # self.du_max = prec.eps_du           # Initialize the max du to upper limit
-        # self.dr_max = prec.eps_dr           # Initialize the max dr to upper limit
 
         self.maxvel = float(np.sqrt(np.max(self.v2)))
         self.minkn = float(np.min(self.kn))
         self.mintrelax = float(np.min(self.trelax))
+
+        self.r_c, self.m_c, self.v2_c = calc_core_r_m_v2(self.r, self.rmid, self.rho, self.v2, self.m)
 
         # For diagnostics
         self.n_iter_du = 0

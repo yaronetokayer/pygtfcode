@@ -43,34 +43,46 @@ def extract_time_evolution_data(filepath):
     Returns
     -------
     dict
-        Dictionary with keys:
-            't',                # (array) Time in code units
-            't_phys',           # (array) Time in physical units (Gyr)
-            'rho_c',            # (array) Central density in code units
-            'v_max',            # (array) Maximum circular velocity in code units
-            'v_max_phys'        # (array) Maximum circular velocity in physical units (km/s)
-            'kn_min',           # (array) Minimum Knudsen number
-            'mintrel',          # (array) Minimum relaxation time in code units
-            'mintrel_phys',     # (array) Minimum relaxation time in physical units (Gyr)
-            'model_id'          # (int) Model number
+        Dictionary mapping column names to numpy arrays,
+        plus 'model_id'.
     """
-    data = np.loadtxt(filepath, usecols=(1, 2, 3, 4, 5, 6, 7, 8, 9), skiprows=1)
-    model_dir = os.path.basename(os.path.dirname(filepath))
-    model_id = int(model_dir.replace("Model", ""))
-    # Handle case where data is 1D (only one row)
+    # Read header (first line)
+    with open(filepath, 'r') as f:
+        header = f.readline().strip().split()
+
+    # Load data (skip header)
+    data = np.loadtxt(filepath, skiprows=1)
+
+    # Handle single-row case
     if data.ndim == 1:
         data = data[np.newaxis, :]
-    return {
-        't': data[:, 0],
-        't_phys': data[:, 1],
-        'rho_c': data[:, 2],
-        'v_max': data[:, 3],
-        'v_max_phys': data[:, 4],
-        'kn_min': data[:, 5],
-        'mintrel': data[:, 6],
-        'mintrel_phys': data[:, 7],
-        'model_id': model_id
-    }
+
+    # Build dictionary dynamically
+    result = {col: data[:, i] for i, col in enumerate(header)}
+
+    # Extract model_id from directory name
+    model_dir = os.path.basename(os.path.dirname(filepath))
+    model_id = int(model_dir.replace("Model", ""))
+
+    result['model_id'] = model_id
+
+    return result
+
+    # data = np.loadtxt(filepath, usecols=(1, 2, 3, 4, 5, 6, 7, 8, 9), skiprows=1)
+    # model_dir = os.path.basename(os.path.dirname(filepath))
+    # model_id = int(model_dir.replace("Model", ""))
+    # # Handle case where data is 1D (only one row)
+    # if data.ndim == 1:
+    #     data = data[np.newaxis, :]
+    # return {
+    #     't': data[:, 0],
+    #     't_phys': data[:, 1],
+    #     'rho_c': data[:, 2],
+    #     'v_max': data[:, 3],
+    #     'kn_min': data[:, 4],
+    #     'mintrel': data[:, 5],
+    #     'model_id': model_id
+    # }
 
 def extract_snapshot_indices(model_dir):
     """

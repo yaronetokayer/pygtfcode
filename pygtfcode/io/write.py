@@ -199,45 +199,45 @@ def write_time_evolution(state):
     state : State
         The current simulation state.
     """
-    filepath = os.path.join(state.config.io.base_dir, state.config.io.model_dir, f"time_evolution.txt")
-    step = state.step_count
-
-    header = (
-        f"{'step':>10}  "
-        f"{'time':>12}  "
-        f"{'t_Gyr':>12}  "
-        f"{'rho_c':>12}  "
-        f"{'v_max':>12}  "
-        f"{'v_max_kms':>12}  "
-        f"{'Kn_min':>12}  "
-        f"{'mintrel':>12}  "
-        f"{'mintrel_Gyr':>12}\n"
+    filepath = os.path.join(
+        state.config.io.base_dir,
+        state.config.io.model_dir,
+        "time_evolution.txt"
     )
-
-    char = state.char
+    step = state.step_count
     t = state.t
-    t_conv = char.t0 * const.sec_to_Gyr
-    rho_c = state.rho[0]
-    maxvel = state.maxvel
-    mintrelax = state.mintrelax
+    t_conv = state.char.t0 * const.sec_to_Gyr
 
-    new_line = ( 
-        f"{step:10d}  "
-        f"{t:12.6e}  "
-        f"{t * t_conv:12.6e}  "
-        f"{rho_c:12.6e}  "
-        f"{maxvel:12.6e}  "
-        f"{maxvel * char.v0:12.6e}  "
-        f"{state.minkn:12.6e}  "
-        f"{mintrelax:12.6e}  "
-        f"{mintrelax * t_conv:12.6e}\n" 
-        )
-    
+    columns = [
+        ("step", step),
+        ("time", t),
+        ("t_Gyr", t * t_conv),
+        ("rho_c", state.rho[0]),
+        ("v_max", state.maxvel),
+        ("Kn_min", state.minkn),
+        ("mintrel", state.mintrelax),
+        ("r_c", state.r_c),
+        ("m_c", state.m_c),
+        ("v2_c", state.v2_c),
+    ]
+
+    # Build header
+    header = "  ".join(f"{name:>12}" for name, _ in columns) + "\n"
+
+    # Build row
+    formatted_values = []
+    for name, value in columns:
+        if isinstance(value, int):
+            formatted_values.append(f"{value:12d}")
+        else:
+            formatted_values.append(f"{value:12.6e}")
+
+    new_line = "  ".join(formatted_values) + "\n"
+
     _update_file(filepath, header, new_line, step)
 
-    if state.config.io.chatter:
-        if step == 0:
-            print("Time evolution file initialized.")
+    if state.config.io.chatter and step == 0:
+        print("Time evolution file initialized.")
 
 def _update_file(filepath, header, new_line, index):
     """

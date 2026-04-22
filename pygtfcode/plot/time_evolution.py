@@ -13,7 +13,7 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
     quantity : str, optional
         Key from the time_evolution.txt file to plot on the y-axis.
         Default is 'rho_c'.
-        Options are 't_phys', 'rho_c', 'rho_c_phys', 'v_max', 'v_max_phys', 'kn_min', 'mintrel', 'mintrel_phys'
+        Options are 't_Gyr', 'rho_c', 'v_max', 'Kn_min', 'mintrel'
     ylabel : str, optional
         Custom y-axis label. Defaults to quantity.
     logy : bool, optional
@@ -50,7 +50,7 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
 
     for i, data in enumerate(data_list):
         label = f"{data['model_id']:03d}"
-        ax.plot(data['t'], data[quantity], lw=2, ls='solid', color=cmap(i % 10), label=label)
+        ax.plot(data['time'], data[quantity], lw=2, ls='solid', color=cmap(i % 10), label=label)
 
     ax.set_xlabel(r'Time [$t_\mathrm{char}$]', fontsize=16)
     ax.set_ylabel(ylabel if ylabel else quantity, fontsize=16)
