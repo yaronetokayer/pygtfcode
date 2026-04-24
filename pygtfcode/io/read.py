@@ -68,22 +68,6 @@ def extract_time_evolution_data(filepath):
 
     return result
 
-    # data = np.loadtxt(filepath, usecols=(1, 2, 3, 4, 5, 6, 7, 8, 9), skiprows=1)
-    # model_dir = os.path.basename(os.path.dirname(filepath))
-    # model_id = int(model_dir.replace("Model", ""))
-    # # Handle case where data is 1D (only one row)
-    # if data.ndim == 1:
-    #     data = data[np.newaxis, :]
-    # return {
-    #     't': data[:, 0],
-    #     't_phys': data[:, 1],
-    #     'rho_c': data[:, 2],
-    #     'v_max': data[:, 3],
-    #     'kn_min': data[:, 4],
-    #     'mintrel': data[:, 5],
-    #     'model_id': model_id
-    # }
-
 def extract_snapshot_indices(model_dir):
     """
     Extract snapshot indices and times from snapshot_conversion.txt.
@@ -151,7 +135,7 @@ def get_time_conversion(filepath, index, phys=False):
 
     return t
 
-def extract_snapshot_data(filename):
+def extract_snapshot_data(filepath, add_time=True):
     """
     Extract data from a snapshot timestep file.
 
@@ -159,6 +143,8 @@ def extract_snapshot_data(filename):
     ----------
     filename : str
         Path to the timestep_*.dat file.
+    add_time : bool, optional
+        If True, find the time from the snapshot conversion file.
 
     Returns
     -------
@@ -166,23 +152,27 @@ def extract_snapshot_data(filename):
         Dictionary of numpy arrays with keys:
         'log_r', 'log_rmid', 'm', 'rho', 'v2', 'trel', 'kn', 'time'
     """
-    data = np.loadtxt(filename, usecols=range(1, 8), skiprows=1)
+    # Read first line
+    with open(filepath, "r") as f:
+        header = f.readline().strip().split()
 
-    # Extract timestep number from filename and get time
-    basename = os.path.basename(filename)
-    step = int(basename.replace("profile_", "").replace(".dat", ""))
-    t = get_time_conversion(filename, step)
+    # Load data
+    data = np.loadtxt(filepath, skiprows=1)
 
-    return {
-        'log_r': data[:, 0],
-        'log_rmid': data[:, 1],
-        'm': data[:, 2],
-        'rho': data[:, 3],
-        'v2': data[:, 4],
-        'trelax': data[:, 5],
-        'kn': data[:, 6],
-        'time': t
-    }
+    # Handle single-row case
+    if data.ndim == 1:
+        data = data[np.newaxis, :]
+
+    # Build dictionary dynamically
+    result = {col: data[:, i] for i, col in enumerate(header)}
+
+    # Extract timestep number from filepath and get time
+    if add_time:
+        basename = os.path.basename(filepath)
+        step = int(basename.replace("profile_", "").replace(".dat", ""))
+        result["time"] = get_time_conversion(filepath, step)
+
+    return result
 
 def import_metadata(model_dir: Union[Path, str]) -> Dict[str, Dict[str, Any]]:
     """

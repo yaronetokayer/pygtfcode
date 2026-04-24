@@ -59,18 +59,19 @@ class State:
     and simulation diagnostics. Constructed from a Config object.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, ic_filepath=None):
         from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
 
         self.config = config
         self.char = self._set_param()
-        if self.config.init.profile == 'truncated_nfw': # Numerical integrations for non-analytic truncated NFW profile
-            from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
-            self.rho_interp = generate_rho_lookup(config)
-            self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
+        if ic_filepath is None:
+            if self.config.init.profile == 'truncated_nfw': # Numerical integrations for non-analytic truncated NFW profile
+                from pygtfcode.profiles.truncated_nfw import integrate_potential, generate_rho_lookup
+                self.rho_interp = generate_rho_lookup(config)
+                self.rcut, self.config.grid.rmax, self.pot_interp, self.pot_rad, self.pot = integrate_potential(config, self.rho_interp)
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config, ic_filepath=None):
         """
         Create a State object from a Config object.
 
@@ -78,6 +79,8 @@ class State:
         ----------
         config : Config
             Configuration object containing simulation parameters.
+        ic_filepath : str, optional
+            If provided, loads initial conditions from this file
 
         Returns
         -------
@@ -86,8 +89,8 @@ class State:
         """
         from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
 
-        state = cls(config)
-        state.reset()                                    # Initialize all state variables
+        state = cls(config, ic_filepath=ic_filepath)
+        state.reset(ic_filepath=ic_filepath)                                    # Initialize all state variables
 
         make_dir(state)                                  # Create the model directory if it doesn't exist
         write_metadata(state)                            # Write model metadata to disk
@@ -112,6 +115,7 @@ class State:
         State
             A new State object initialized with data from the specified directory.
         """
+        raise RuntimeError("this module is still in development")
         # Check directory exists
         p = Path(model_dir)
         if not p.is_dir():
@@ -166,6 +170,33 @@ class State:
             print("State loaded.")
 
         return state
+
+    @classmethod
+    def make_ic_file(cls, config, ic_filepath):
+        """
+        Write initial conditions to a file.
+
+        Parameters
+        ----------
+        config : Config
+            Configuration object containing simulation parameters.
+        ic_filepath : str
+            Path to write IC file
+
+        Returns
+        -------
+        State
+            A new State object initialized with the given configuration.
+        """
+        from pygtfcode.io.write import write_profile_snapshot
+        
+        state = cls(config)
+        config = state.config
+
+        state.r = state._setup_grid()
+        state._initialize_grid()
+
+        write_profile_snapshot(state, initialize=True, ic_filename=ic_filepath)   # Write initial snapshot to disk
 
     def _set_param(self):
         """
@@ -298,6 +329,33 @@ class State:
         self.kn = kn
         self.trelax = trelax
 
+    def _load_ic(self, ic_filepath):
+        """
+        Loads initial conditions from a snapshot file.
+
+        Parameters
+        ----------
+        ic_filepath : str
+            Path to the snapshot file containing initial conditions.
+        """
+        from pygtfcode.io.read import extract_snapshot_data
+
+        if self.config.io.chatter:
+            print(f"Loading initial conditions from {ic_filepath}...")
+
+        data = extract_snapshot_data(ic_filepath, add_time=False)
+
+        # Check that the grid matches
+        r_loaded = np.insert(10**data['log_r'].astype(np.float64), 0, 0.0)
+        if not np.allclose(r_loaded, self.r, rtol=1e-5, atol=1e-8):
+            raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
+
+        self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
+        self.rho    = data['rho'].astype(np.float64)
+        self.v2     = data['v2'].astype(np.float64)
+        self.kn     = data['kn'].astype(np.float64)
+        self.trelax = data['trelax'].astype(np.float64)
+
     def _ensure_virial_equilibfrium(self):
         """
         Fine-tunes initial profile to ensure hydrostatic equilibrium.
@@ -360,14 +418,17 @@ class State:
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
 
-    def reset(self):
+    def reset(self, ic_filepath=None):
         """
         Resets initial state
         """
         config = self.config
 
         self.r = self._setup_grid()
-        self._initialize_grid()
+        if ic_filepath is not None:
+            self._load_ic(ic_filepath)
+        else:
+            self._initialize_grid()
         self._ensure_virial_equilibfrium()
 
         self.t = 0.0                        # Current time in simulation units

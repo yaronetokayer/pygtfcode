@@ -107,7 +107,7 @@ def write_log_entry(state, start_step):
             print(header[:-1])
         print(new_line[:-1])
 
-def write_profile_snapshot(state, initialize=False):
+def write_profile_snapshot(state, initialize=False, ic_filename=None):
     """ 
     Write full radial profiles to disk.
 
@@ -117,9 +117,14 @@ def write_profile_snapshot(state, initialize=False):
         The current simulation state.
     initialize : bool
         If True, this is part of initializing the grid and should not increment the snapshot index.
+    ic_file : string, optional
+        If provided, this is part of writing an initial condition file.
     """
-    io = state.config.io
-    filename = os.path.join(io.base_dir, io.model_dir, f"profile_{state.snapshot_index}.dat")
+    if ic_filename is None:
+        io = state.config.io
+        filename = os.path.join(io.base_dir, io.model_dir, f"profile_{state.snapshot_index}.dat")
+    else:
+        filename = ic_filename
 
     # If not initializing, remove any higher-index snapshot files
     if not initialize:
@@ -155,14 +160,18 @@ def write_profile_snapshot(state, initialize=False):
                 f"{state.kn[i]:12.6e}\n"
             )
     
-    append_snapshot_conversion(state)
+    if ic_filename is None:
+        append_snapshot_conversion(state)
 
-    if io.chatter:
-        if state.step_count == 0:
-            print("Initial profiles written to disk.")
+        if io.chatter:
+            if (ic_filename is None) and (state.step_count == 0):
+                print("Initial profiles written to disk.")
 
-    if not initialize: # Do not increment if this is part of intializing the grid
-        state.snapshot_index += 1
+        if not initialize: # Do not increment if this is part of intializing the grid
+            state.snapshot_index += 1
+
+    else:
+        print(f"Initial condition file written to {filename}.")
 
 def append_snapshot_conversion(state):
     """
@@ -223,8 +232,8 @@ def write_time_evolution(state):
         ("r_c", r_c),
         ("m_c", m_c),
         ("v2_c", v2_c),
-        ("r_smfp", r_c),
-        ("m_smfp", m_c),
+        ("r_smfp", r_smfp),
+        ("m_smfp", m_smfp),
     ]
 
     # Build header

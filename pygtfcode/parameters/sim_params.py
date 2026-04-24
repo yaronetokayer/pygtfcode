@@ -6,6 +6,9 @@ class SimParams:
     ----------
     sigma_m : float
         Self-interaction cross-section in cm^2/g. Must be positive.
+    alph : float
+        Coefficient for interpolation scheme between lmfp and smfp regimes.
+        kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph). Must be positive.
     t_halt : float
         Simulation halt time. Must be positive.
     rho_c_halt : float
@@ -19,14 +22,16 @@ class SimParams:
     """
     def __init__(
             self, 
-            sigma_m : float = 10.0,
-            t_halt : float = 1e3,
-            rho_c_halt : float = 1500,
-            a : float = 2.256758,
-            b: float = 1.38,
-            c: float = 0.75
+            sigma_m     : float = 10.0,
+            alph        : float = 1.0,
+            t_halt      : float = 1e3,
+            rho_c_halt  : float = 1500,
+            a           : float = 2.256758,
+            b           : float = 1.38,
+            c           : float = 0.75
     ):
         self._sigma_m = None
+        self._alph = None
         self._t_halt = None
         self.rho_c_halt = rho_c_halt
         self._a = None
@@ -34,6 +39,7 @@ class SimParams:
         self._c = None
 
         self.sigma_m = sigma_m
+        self.alph = alph
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
         self.a = a
@@ -49,6 +55,16 @@ class SimParams:
         if value <= 0:
             raise ValueError("sigma_m must be positive")
         self._sigma_m = float(value)
+
+    @property
+    def alph(self):
+        return self._alph
+
+    @alph.setter
+    def alph(self, value):
+        if value <= 0:
+            raise ValueError("alph must be positive")
+        self._alph = float(value)
 
     @property
     def t_halt(self):

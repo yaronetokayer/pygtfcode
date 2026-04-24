@@ -165,14 +165,11 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     """
 
     # Store state attributes for fast access in loop and to pass into njit functions
-    prec = config.prec
-    sim  = config.sim
-    # init = config.init
-    char = state.char
+    prec = config.prec; sim  = config.sim; char = state.char
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     sigma_m = float(char.sigma_m_char)
-    # cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+    alph = float(sim.alph)
     eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
@@ -191,9 +188,9 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
     # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
     if small_kn_regime:
-        du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, eps_du, max_iter_du)
+        du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
     else:
-        du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m,)
+        du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph)
     if iter_du == -1:
         raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
         

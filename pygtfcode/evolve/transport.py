@@ -6,8 +6,10 @@ from pygtfcode.util.calc import solve_tridiagonal_thomas
 
 _TINY64 = np.finfo(np.float64).tiny
 
+# cored = (init.profile == 'abg') and (float(init.gamma) < 1.0) # Leftover from integration loop when we used this function
+
 @njit(void(float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
-def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored): # In place version
+def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored): 
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
     e.g, Eq. (2) in Nishikawa et al. 2020.
@@ -125,8 +127,157 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
 
 ### IMPLICIT SCHEME
 
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,):
+    """
+    Build tridiagonal system for implicit conduction update in v2:
+
+        a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
+
+    Assumes n > 3.
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Edge radii.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at edges.
+    rho_int : ndarray, shape (N-1,)
+        Interface values of rhok.
+    v2 : ndarray, shape (N,)
+        Cell-centered v2 for one species.
+    Csmfp, Clmfp : float
+        Conductivity coefficients.
+    dt : float
+        Timestep.
+    alph : float
+        Coefficient for interpolation scheme between lmfp and smfp regimes.
+        kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph)
+    a, b, c, d : ndarray, shape (N,)
+        Output tridiagonal coefficients and RHS, filled in place.
+    """
+    n           = v2.shape[0] # Number of cells with unknown dv2 values
+    sqrt2       = math.sqrt(2.0)
+    two_Clmfp   = 2.0 * Clmfp
+    inv_alph    = 1.0 / alph
+
+    ### First cell ###
+    rL          = r[0]
+    rR          = r[1]
+    rRR         = r[2]
+
+    drcR        = 0.5 * ( rRR - rL )
+    rR2         = rR * rR
+    coefR       = rR2 / drcR
+
+    v2C         = v2[0]
+    v2R         = v2[1]
+
+    dvR         = v2R - v2C
+    svR         = v2C + v2R
+    sqrt_svR    = math.sqrt(svR)
+    svR32       = sqrt_svR * svR
+
+    rhofacR         = ( two_Clmfp / rho_int[0] )**alph
+    denombaseR      = ( Csmfp * svR )**alph + rhofacR
+    inv_denombaseR  = 1.0 / denombaseR
+    inv_denomR1     = inv_denombaseR**inv_alph
+    inv_denomR2     = inv_denomR1 * inv_denombaseR
+
+    tmpR        = sqrt_svR * dvR
+    commonR     = tmpR * ( 0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
+    termR       = svR32 * inv_denomR1
+    fluxR       = coefR * svR32 * dvR * inv_denomR1
+
+    a[0] = 0.0
+    b[0] = coefR * (commonR - termR) - sqrt2 * m[1] / dt
+    c[0] = coefR * (commonR + termR)
+    d[0] = -fluxR
+
+    ### INTERIOR CELLS ###
+    # Initialize sliding window
+    rL      = rR
+    rR      = rRR
+    rRR     = r[3]
+
+    drcR    = 0.5 * ( rRR - rL )
+    rR2     = rR * rR
+    coefL   = coefR
+    coefR   = rR2 / drcR
+
+    v2C     = v2R
+    v2R     = v2[2]
+
+    dvR         = v2R - v2C
+    svR         = v2C + v2R
+    sqrt_svR    = math.sqrt(svR)
+    svR32       = sqrt_svR * svR
+
+    rhofacR         = ( two_Clmfp / rho_int[1] )**alph
+    denombaseR      = ( Csmfp * svR )**alph + rhofacR
+    inv_denombaseR  = 1.0 / denombaseR
+    inv_denomR1     = inv_denombaseR**inv_alph
+    inv_denomR2     = inv_denomR1 * inv_denombaseR
+    
+    commonL = commonR
+    tmpR    = sqrt_svR * dvR
+    commonR = tmpR * (0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
+    termL   = termR
+    termR   = svR32 * inv_denomR1
+    fluxL   = fluxR
+    fluxR   = coefR * svR32 * dvR * inv_denomR1
+
+    for j in range(1, n - 1):
+        a[j] = -coefL * (commonL - termL)
+        b[j] = (
+            coefR * (commonR - termR)
+            - coefL * (commonL + termL)
+            - sqrt2 * (m[j + 1] - m[j]) / dt
+        )
+        c[j] = coefR * (commonR + termR)
+        d[j] = fluxL - fluxR
+
+        # Advance sliding window
+        if j < n - 2:
+            rL      = rR
+            rR      = rRR
+            rRR     = r[j + 3]
+
+            drcR    = 0.5 * ( rRR - rL )
+            rR2     = rR * rR
+            coefL   = coefR
+            coefR   = rR2 / drcR
+
+            v2C     = v2R
+            v2R     = v2[j + 2]
+
+            dvR         = v2R - v2C
+            svR         = v2C + v2R
+            sqrt_svR    = math.sqrt(svR)
+            svR32       = sqrt_svR * svR
+
+            rhofacR         = ( two_Clmfp / rho_int[j + 1] )**alph
+            denombaseR      = ( Csmfp * svR )**alph + rhofacR
+            inv_denombaseR  = 1.0 / denombaseR
+            inv_denomR1     = inv_denombaseR**inv_alph
+            inv_denomR2     = inv_denomR1 * inv_denombaseR
+
+            commonL     = commonR
+            tmpR        = sqrt_svR * dvR
+            commonR     = tmpR * ( 0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
+            termL       = termR
+            termR       = svR32 * inv_denomR1
+            fluxL       = fluxR
+            fluxR       = coefR * svR32 * dvR * inv_denomR1
+
+    ### Last cell ###
+    a[n - 1] = - coefR * ( commonR - termR)
+    b[n - 1] = - coefR * ( commonR + termR ) - sqrt2 * ( m[n] - m[n - 1] ) / dt
+    c[n - 1] = 0.0
+    d[n - 1] = fluxR
+
 @njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
+def build_tridiag_system_OLD(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     """
     Build tridiagonal system for implicit conduction update in v2:
 
@@ -330,8 +481,8 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     c[-1] = 0.0
     d[-1] = flux0[-1]
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
+def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, alph,):
     """
     Implicit conduction step on v2.
 
@@ -356,7 +507,7 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     rho_int = interp_linear_to_interfaces(r, rho)
 
-    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,)
+    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
     solve_tridiagonal_thomas(a, b, c, d, dv2)
 
     tiny = _TINY64
@@ -372,8 +523,8 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
+def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
     Repeatedly solves the implicit system with a trial dt until the
@@ -409,7 +560,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     for j in range(max_iter):
 
-        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, a, b, c, d,)
+        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, alph, a, b, c, d,)
         solve_tridiagonal_thomas(a, b, c, d, dv2)
 
         du_max = 0.0
