@@ -1,6 +1,7 @@
 import numpy as np
 from pygtfcode.parameters.constants import Constants as const
 import pprint
+import warnings
 from pathlib import Path
 
 def _xH(z, const):
@@ -348,7 +349,12 @@ class State:
         # Check that the grid matches
         r_loaded = np.insert(10**data['log_r'].astype(np.float64), 0, 0.0)
         if not np.allclose(r_loaded, self.r, rtol=1e-5, atol=1e-8):
-            raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
+            # for i in range(len(r_loaded)):
+            #     print(r_loaded[i], self.r[i])
+                # print(abs(r_loaded[i]- self.r[i]), 1e-8 + 1e-5*self.r[i], abs(r_loaded[i]- self.r[i]) < 1e-8 + 1e-5*self.r[i])
+            warnings.warn("Radial grid in IC file does not match the grid defined by the current configuration.  Using IC file grid.", RuntimeWarning)
+            self.r[:] = r_loaded
+            # raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
 
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
         self.rho    = data['rho'].astype(np.float64)
