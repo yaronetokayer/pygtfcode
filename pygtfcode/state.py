@@ -205,6 +205,7 @@ class State:
         """
         from pygtfcode.parameters.char_params import CharParams
         from pygtfcode.profiles.nfw import fNFW
+        from pygtfcode.io.write import write_char_params
 
         if self.config.io.chatter:
             print("Computing characteristic parameters for simulation...")
@@ -245,6 +246,8 @@ class State:
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
         char.t0 = 1.0 / (float(sim.a) * float(sim.sigma_m) * v0_cgs * rho_s_cgs)
         char.sigma_m_char = float(sim.sigma_m) / char.sigma0 # sigma_m in dimensionless form
+
+        write_char_params(self, char)
 
         return char  # Store the CharParams object in config
     

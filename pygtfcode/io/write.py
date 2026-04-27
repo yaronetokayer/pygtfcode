@@ -57,6 +57,51 @@ def write_metadata(state):
     if state.config.io.chatter:
         print(f"Model information written to model_metadata.txt")
 
+def write_char_params(state, char):
+    """
+    Write characteristic parameters to a file.
+
+    Arguments
+    ---------
+    state : State
+        The current simulation state.
+    char : object
+        The characteristic parameters object.
+    """
+    io = state.config.io
+    filename = os.path.join(io.base_dir, io.model_dir, f"char_params.txt")
+
+    # Get items from char's attributes
+    items = list(char.__dict__.items())
+
+    # Extract names and values, converting None to NaN and ensuring floats
+    names = [key for key, value in items]
+    values = [
+        np.nan if value is None else float(value)
+        for key, value in items
+    ]
+
+    # Set column width for formatting
+    col_width = 18
+    # Create header string with right-aligned names
+    header = "".join(f"{name:>{col_width}}" for name in names)
+    # Format string for scientific notation
+    fmt = f"%{col_width}.8e"
+
+    # Save the values to file with header
+    np.savetxt(
+        filename,
+        [values],
+        header=header,
+        fmt=fmt,
+        delimiter='',
+        comments=""
+    )
+
+    # Print message if chatter is enabled
+    if state.config.io.chatter:
+        print(f"\tCharacteristic parameters written to char_params.txt")
+
 def write_log_entry(state, start_step):
     """ 
     Append a line to the simulation log file.
