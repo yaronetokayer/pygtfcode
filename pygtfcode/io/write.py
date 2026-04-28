@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from pygtfcode.parameters.constants import Constants as const
-from pygtfcode.util.calc import calc_smfp_r_m, calc_core_r_m_v2
+from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2
 
 def make_dir(state):
     """
@@ -120,7 +120,7 @@ def write_log_entry(state, start_step):
     chatter = io.chatter
     step = state.step_count
 
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho_c':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<dt lim>':>8}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<dt lim>':>8}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
 
     if step == start_step: # Restart
         new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}       N/A       N/A       N/A          N/A          N/A\n"
@@ -261,24 +261,32 @@ def write_time_evolution(state):
     )
     step = state.step_count
     t = state.t
-    t_conv = state.char.t0 * const.sec_to_Gyr
+    
+    r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
 
-    r_c, m_c, v2_c = calc_core_r_m_v2(state.r, state.rmid, state.rho, state.v2, state.m)
-    r_smfp, m_smfp = calc_smfp_r_m(state.r, state.rho, state.m, state.char.sigma_m_char)
+    r_c, rho_c, m_c, v2_c = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
+    r_m2, rho_m2, m_m2, v2_m2 = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
+    r_smfp, rho_smfp, m_smfp, v2_smfp = calc_smfp_r_rho_m_v2(r, rho,  v2, m, state.char.sigma_m_char)
 
     columns = [
         ("step", step),
         ("time", t),
-        ("t_Gyr", t * t_conv),
-        ("rho_c", state.rho[0]),
+        ("rho0", state.rho[0]),
         ("v_max", state.maxvel),
         ("Kn_min", state.minkn),
         ("mintrel", state.mintrelax),
         ("r_c", r_c),
+        ("rho_c", rho_c),
         ("m_c", m_c),
         ("v2_c", v2_c),
+        ("r_m2", r_m2),
+        ("rho_m2", rho_m2),
+        ("m_m2", m_m2),
+        ("v2_m2", v2_m2),
         ("r_smfp", r_smfp),
+        ("rho_smfp", rho_smfp),
         ("m_smfp", m_smfp),
+        ("v2_smfp", v2_smfp),
     ]
 
     # Build header

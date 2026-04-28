@@ -2,7 +2,7 @@ import os
 import matplotlib.pyplot as plt
 from pygtfcode.io.read import extract_time_evolution_data
 
-def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepath=None, base_dir=None, show=False, grid=False):
+def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepath=None, base_dir=None, show=False, grid=False):
     """
     Plot any time-evolution quantity vs. time for one or more simulations.
 
@@ -12,8 +12,8 @@ def plot_time_evolution(models, quantity='rho_c', ylabel=None, logy=True, filepa
         Each model can be a State, Config, or integer model number.
     quantity : str, optional
         Key from the time_evolution.txt file to plot on the y-axis.
-        Default is 'rho_c'.
-        Options are 't_Gyr', 'rho_c', 'v_max', 'Kn_min', 'mintrel'
+        Default is 'rho0'.
+        Options are 't_Gyr', 'rho0', 'v_max', 'Kn_min', 'mintrel'
     ylabel : str, optional
         Custom y-axis label. Defaults to quantity.
     logy : bool, optional

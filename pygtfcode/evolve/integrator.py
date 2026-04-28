@@ -2,7 +2,6 @@ import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
-from pygtfcode.util.calc import calc_core_r_m_v2, calc_smfp_r_m
 
 def run_until_stop(state, start_step, **kwargs):
     """
