@@ -134,7 +134,7 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
 
         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
 
-    Assumes n > 3.
+    Assumes n > 3.  Can take arbitrary alpha, see below.
 
     Parameters
     ----------
@@ -277,13 +277,13 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
     d[n - 1] = fluxR
 
 @njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def build_tridiag_system_OLD(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
+def build_tridiag_system_ALPH1(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     """
     Build tridiagonal system for implicit conduction update in v2:
 
         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
 
-    Assumes n > 3.
+    Assumes n > 3.  This is for alpha=1.
 
     Parameters
     ----------
@@ -523,6 +523,62 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt, 0
 
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
+def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m, alph,):
+    """
+    Implicit conduction step on v2.
+
+    The tridiagonal system is defined by:
+        a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
+    
+    v2 is updated in-place. Also updates Theta in place.
+
+    Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
+
+    No limit on maximum fractional change - assumes we are being limited by 
+    relaxation time criterion
+    """
+    N = v2.shape[0]
+    du_max = 0.0
+
+    a = np.empty(N, dtype=np.float64)
+    b = np.empty(N, dtype=np.float64)
+    c = np.empty(N, dtype=np.float64)
+    d = np.empty(N, dtype=np.float64)
+
+    Csmfp = a_param * sigma_m**2 / b_param
+    Clmfp = 1.0 / c_param
+
+    rho_int = interp_linear_to_interfaces(r, rho)
+
+    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
+    solve_tridiagonal_thomas(a, b, c, d, dv2)
+
+    tiny = _TINY64
+    rR = r[0]
+    for i in range(N):
+        dv2i    = dv2[i]
+        absdv2i = abs(dv2i)
+        v2i     = v2[i]
+
+        rL = rR
+        rR = r[i + 1]
+        dr = rR - rL
+
+        denom = v2i if v2i > tiny else tiny
+        rat = absdv2i / denom
+        if rat > du_max:
+            du_max = rat
+
+        if absdv2i > tiny and dr > tiny and v2i > tiny:
+            Th[i] = v2i * math.sqrt(v2i) * dt / (dr * absdv2i)
+        else:
+            Th[i] = np.inf
+
+        v2[i] += dv2i
+
+    return du_max, dt, 0
+
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
 def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
     """
@@ -576,6 +632,83 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
         if du_max <= eps_du:
             for i in range(N):
                 v2[i] += dv2[i]
+            return du_max, dt_trial, j
+
+        dt_trial *= safety * eps_du / du_max
+
+    return du_max, dt_trial, -1
+
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
+def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
+    """
+    Implicit conduction step on v2.
+    Repeatedly solves the implicit system with a trial dt until the
+    maximum absolute fractional change satisfies
+
+        max_i |dv2_i| / v2_i <= eps_du
+
+    Then updates v2 in place and returns
+
+        (du_max, dt_used).
+
+    Also updates Theta in place.
+
+    Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
+
+    The tridiagonal system is defined by:
+        a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
+    
+    v2 is updated in-place.
+    """
+    N = v2.shape[0]
+
+    a = np.empty(N, dtype=np.float64)
+    b = np.empty(N, dtype=np.float64)
+    c = np.empty(N, dtype=np.float64)
+    d = np.empty(N, dtype=np.float64)
+
+    Csmfp = a_param * sigma_m**2 / b_param
+    Clmfp = 1.0 / c_param
+
+    rho_int = interp_linear_to_interfaces(r, rho)
+
+    tiny = _TINY64
+    safety = 0.95
+
+    dt_trial = dt
+
+    for j in range(max_iter):
+
+        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, alph, a, b, c, d,)
+        solve_tridiagonal_thomas(a, b, c, d, dv2)
+
+        du_max = 0.0
+        for i in range(N):
+            v2i     = v2[i]
+
+            denom = v2i if v2i > tiny else tiny
+            rat = abs(dv2[i]) / denom
+
+            if rat > du_max:
+                du_max = rat
+        
+        if du_max <= eps_du:
+            rR = r[0]
+            for i in range(N):
+                rL = rR
+                rR = r[i + 1]
+                dr = rR - rL
+
+                v2i     = v2[i]
+                dv2i    = dv2[i]
+                absdv2i = abs(dv2i)
+
+                if absdv2i > tiny and dr > tiny and v2i > tiny:
+                    Th[i] = v2i * math.sqrt(v2i) * dt_trial / (dr * absdv2i)
+                else:
+                    Th[i] = np.inf
+
+                v2[i] += dv2i
             return du_max, dt_trial, j
 
         dt_trial *= safety * eps_du / du_max

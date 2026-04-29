@@ -88,12 +88,13 @@ class State:
         State
             A new State object initialized with the given configuration.
         """
-        from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
+        from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot, write_char_params
 
         state = cls(config, ic_filepath=ic_filepath)
         state.reset(ic_filepath=ic_filepath)                                    # Initialize all state variables
 
         make_dir(state)                                  # Create the model directory if it doesn't exist
+        write_char_params(state)                         # Write model characteristic parameters to disk
         write_metadata(state)                            # Write model metadata to disk
         write_profile_snapshot(state, initialize=True)   # Write initial snapshot to disk
 
@@ -155,11 +156,10 @@ class State:
 
         state.dt = float(prec.eps_dt)
 
-        state.maxvel = float(np.sqrt(np.max(state.v2)))
-        state.minkn = float(np.min(state.kn))
-        state.mintrelax = float(np.min(state.trelax))
-
         # For diagnostics
+        # state.minkn = float(np.min(state.kn))
+        # state.mintrelax = float(np.min(state.trelax))
+
         state.n_iter_du = 0
         state.n_iter_dr = 0
         state.dt_cum = 0.0
@@ -205,7 +205,6 @@ class State:
         """
         from pygtfcode.parameters.char_params import CharParams
         from pygtfcode.profiles.nfw import fNFW
-        from pygtfcode.io.write import write_char_params
 
         if self.config.io.chatter:
             print("Computing characteristic parameters for simulation...")
@@ -246,8 +245,6 @@ class State:
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
         char.t0 = 1.0 / (float(sim.a) * float(sim.sigma_m) * v0_cgs * rho_s_cgs)
         char.sigma_m_char = float(sim.sigma_m) / char.sigma0 # sigma_m in dimensionless form
-
-        write_char_params(self, char)
 
         return char  # Store the CharParams object in config
     
@@ -420,8 +417,8 @@ class State:
         self.rho = rho_new
         self.v2 = v2_new
 
-        self.rmid = 0.5 * (r_new[1:] + r_new[:-1])
-        self.kn = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
+        self.rmid   = 0.5 * (r_new[1:] + r_new[:-1])
+        self.kn     = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
         self.trelax = 1.0 / (np.sqrt(v2_new) * rho_new)
 
         if chatter:
@@ -445,17 +442,19 @@ class State:
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
 
-        self.maxvel = float(np.sqrt(np.max(self.v2)))
+        # For diagnostics
         self.minkn = float(np.min(self.kn))
         self.mintrelax = float(np.min(self.trelax))
 
-        # For diagnostics
-        self.n_iter_du = 0
-        self.n_iter_dr = 0
-        self.dt_cum = 0.0
-        self.dr_max_cum = 0.0
-        self.du_max_cum = 0.0
+        self.n_iter_du          = 0
+        self.n_iter_dr          = 0
+
+        self.dt_cum             = 0.0
+        self.dr_max_cum         = 0.0
+        self.du_max_cum         = 0.0
         self.dt_over_trelax_cum = 0.0
+
+        self.Theta              = np.zeros_like(self.rho, dtype=np.float64)
 
         if config.io.chatter:
             print("State initialized.")
@@ -544,7 +543,7 @@ class State:
         quantity : str, optional
             Key from the time_evolution.txt file to plot on the y-axis.
             Default is 'rho_c'.
-            Options are 't_phys', 'rho_c', 'rho_c_phys', 'v_max', 'v_max_phys', 'kn_min', 'mintrel', 'mintrel_phys'.
+            Options are 'rho0', 'v_max', 'kn_min', 'mintrel'
         ylabel : str, optional
             Custom y-axis label. Defaults to quantity.
         logy : bool, optional

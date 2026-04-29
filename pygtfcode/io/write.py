@@ -57,7 +57,7 @@ def write_metadata(state):
     if state.config.io.chatter:
         print(f"Model information written to model_metadata.txt")
 
-def write_char_params(state, char):
+def write_char_params(state):
     """
     Write characteristic parameters to a file.
 
@@ -65,11 +65,10 @@ def write_char_params(state, char):
     ---------
     state : State
         The current simulation state.
-    char : object
-        The characteristic parameters object.
     """
-    io = state.config.io
-    filename = os.path.join(io.base_dir, io.model_dir, f"char_params.txt")
+    char        = state.char
+    io          = state.config.io
+    filename    = os.path.join(io.base_dir, io.model_dir, f"char_params.txt")
 
     # Get items from char's attributes
     items = list(char.__dict__.items())
@@ -100,7 +99,7 @@ def write_char_params(state, char):
 
     # Print message if chatter is enabled
     if state.config.io.chatter:
-        print(f"\tCharacteristic parameters written to char_params.txt")
+        print(f"Characteristic parameters written to char_params.txt")
 
 def write_log_entry(state, start_step):
     """ 
@@ -120,10 +119,13 @@ def write_log_entry(state, start_step):
     chatter = io.chatter
     step = state.step_count
 
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'<dt lim>':>8}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    maxvel      = np.max(np.sqrt(state.v2))
+    minTheta    = np.min(state.Theta)
+
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'Theta_min':>12}  {'<dt lim>':>8}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
 
     if step == start_step: # Restart
-        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}       N/A       N/A       N/A          N/A          N/A\n"
+        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}           N/A       N/A       N/A       N/A          N/A          N/A\n"
 
     else:
         nlog = io.nlog
@@ -134,7 +136,7 @@ def write_log_entry(state, start_step):
         elif ( step - start_step ) % nlog != 0:     # Final state
             nlog = ( step - start_step ) % nlog
 
-        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {state.maxvel:12.6e}  {state.minkn:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {minTheta:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 
@@ -190,7 +192,7 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     with open(filename, "w") as f:
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}  {'Theta':>12}\n"
         )
         f.write(header)
         for i in range(len(state.r) - 1):
@@ -202,7 +204,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
                 f"{state.trelax[i]:12.6e}  "
-                f"{state.kn[i]:12.6e}\n"
+                f"{state.kn[i]:12.6e}  "
+                f"{state.Theta[i]:12.6e}\n"
             )
     
     if ic_filename is None:
@@ -268,13 +271,16 @@ def write_time_evolution(state):
     r_m2, rho_m2, m_m2, v2_m2 = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
     r_smfp, rho_smfp, m_smfp, v2_smfp = calc_smfp_r_rho_m_v2(r, rho,  v2, m, state.char.sigma_m_char)
 
+    maxvel      = np.max(np.sqrt(state.v2))
+    minTheta    = np.min(state.Theta)
+
     columns = [
         ("step", step),
         ("time", t),
         ("rho0", state.rho[0]),
-        ("v_max", state.maxvel),
+        ("v_max", maxvel),
         ("Kn_min", state.minkn),
-        ("mintrel", state.mintrelax),
+        ("minTheta", minTheta),
         ("r_c", r_c),
         ("rho_c", rho_c),
         ("m_c", m_c),

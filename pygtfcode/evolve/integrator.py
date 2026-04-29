@@ -1,6 +1,6 @@
 import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
 
 def run_until_stop(state, start_step, **kwargs):
@@ -172,33 +172,36 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
-    # Preallocate these as well?
-    r       = np.asarray(state.r,   dtype=np.float64)
-    m       = np.asarray(state.m,   dtype=np.float64)
-    v2      = np.asarray(state.v2,  dtype=np.float64)
-    rho     = np.asarray(state.rho, dtype=np.float64)
+    # Copy state arrays
+    r       = np.asarray(state.r,       dtype=np.float64)
+    m       = np.asarray(state.m,       dtype=np.float64)
+    v2      = np.asarray(state.v2,      dtype=np.float64)
+    rho     = np.asarray(state.rho,     dtype=np.float64)
+    Theta   = np.asarray(state.Theta,   dtype=np.float64)
 
     # Compute total enclosed mass including baryons, perturbers, etc.
     # May need to move elsewhere depending on how m is updated
     # Current version just returns m as is
-    m_tot = compute_mass(m)
+    # m_tot = compute_mass(m)
 
     ### Step 1: Energy transport ###
     # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
     # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
     if small_kn_regime:
-        du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
+        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
+        du_max, dt_prop, iter_du = conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
     else:
-        du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph)
+        # du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph)
+        du_max, dt_prop, iter_du = conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph)
     if iter_du == -1:
         raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
         
-    p[:] = rho * v2 # Used for revir and to set v2 later
+    np.multiply(rho, v2, out=p) # p is used for revir and to set v2 later
 
     ### Step 2: Reestablish hydrostatic equilibrium ###
     iter_dr = 0
     while True:
-        status, dr_max = revirialize(r, rho, p, m_tot, 
+        status, dr_max = revirialize(r, rho, p, m, 
                                      a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1) # Modifies r, rho, p in place
 
         # Shell crossing signaled by None
@@ -222,18 +225,24 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     ### Step 3: Update state variables ###
     # m not updated in Lagrangian code
 
-    v2_new = p / rho
-    state.r = r
-    state.rho = rho
-    state.v2 = v2_new
+    # r, rho, and theta were modified in place already; no need to assign them
+    # Still need to update v2 based on the new p and rho
+    np.divide(p, rho, out=state.v2)
 
-    state.rmid = 0.5 * (r[1:] + r[:-1])
-    state.kn = 1.0 / (sigma_m * np.sqrt(p))
-    sqrt_v2_new = np.sqrt(v2_new)
-    state.trelax = 1.0 / (sqrt_v2_new * rho)
+    # Update rmid without allocations
+    np.add(r[1:], r[:-1], out=state.rmid)
+    state.rmid *= 0.5
 
-    state.maxvel    = float(np.max(sqrt_v2_new))
-    state.minkn     = float(np.min(state.kn))
+    # Update kn without allocations
+    np.sqrt(p, out=state.kn)
+    state.kn *= sigma_m
+    np.reciprocal(state.kn, out=state.kn)
+    state.minkn = float(np.min(state.kn))
+
+    # Update trelax without allocations
+    np.sqrt(state.v2, out=state.trelax)
+    state.trelax *= rho
+    np.reciprocal(state.trelax, out=state.trelax)
     state.mintrelax = float(np.min(state.trelax))
 
     # Diagnostics
