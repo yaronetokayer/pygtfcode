@@ -117,6 +117,7 @@ def run_until_stop(state, start_step, **kwargs):
             if drho_for_prof > drho_prof:
                 rho0_last_prof = rho0
                 write_profile_snapshot(state)
+                write_time_evolution(state) # Always have a time evolution column concurrent with a profile
 
         # Track time evolution
         if t_evol: 

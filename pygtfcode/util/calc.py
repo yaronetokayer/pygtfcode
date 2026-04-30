@@ -366,6 +366,178 @@ def calc_smfp_r_rho_m_v2(r, rho, v2, m, sigma_m):
 
     return 0.0, rho[0], 0.0, v2[0]
 
+@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta):
+    """
+    Computes core radius, core average density, core mass, and core v2.
+
+    Core radius is defined as the radius where Theta is minimum.
+    Theta is defined at rmid.
+
+    Arguments
+    ---------
+    r : ndarray, shape (N+1,)
+        Shell edge radii.
+    rmid : ndarray, shape (N,)
+        Midpoint radii.
+    rho : ndarray, shape (N,)
+        Shell densities.
+    v2 : ndarray, shape (N,)
+        Shell square of 1D velocity dispersion.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    Theta : ndarray, shape (N,)
+        Local cooling-to-sound-crossing time ratio.
+
+    Returns
+    -------
+    r_c : float
+        Radius of min Theta.
+    rho_c : float
+        Mean density within r_c.
+    m_c : float
+        Mass within r_c.
+    v2_c : float
+        v2 within r_c.
+    """
+    N = rmid.shape[0]
+
+    # Find index of minimum Theta
+    k = 0
+    theta_min = Theta[0]
+    for j in range(1, N):
+        if Theta[j] < theta_min:
+            theta_min = Theta[j]
+            k = j
+
+    r_c = rmid[k]
+
+    # Mass inside r_c, assuming constant density within shell k
+    rk0 = r[k]
+    rk1 = r[k + 1]
+    mk0 = m[k]
+    mk1 = m[k + 1]
+
+    if r_c <= rk0:
+        frac = 0.0
+    elif r_c >= rk1:
+        frac = 1.0
+    else:
+        rc3 = r_c * r_c * r_c
+        rk03 = rk0 * rk0 * rk0
+        rk13 = rk1 * rk1 * rk1
+        frac = (rc3 - rk03) / (rk13 - rk03)
+
+    m_c = mk0 + frac * (mk1 - mk0)
+
+    # Mass-weighted v2 inside r_c
+    numv = 0.0
+
+    for j in range(k):
+        dm = m[j + 1] - m[j]
+        numv += dm * v2[j]
+
+    dm_partial = m_c - mk0
+    numv += dm_partial * v2[k]
+
+    if m_c > 0.0:
+        v2_c = numv / m_c
+    else:
+        v2_c = v2[0]
+
+    if r_c > 0.0:
+        rho_c = 3.0 * m_c / (r_c * r_c * r_c)
+    else:
+        rho_c = rho[0]
+
+    return r_c, rho_c, m_c, v2_c
+
+@njit(float64[:](float64[:], float64[:], types.int64), fastmath=True, cache=True)
+def calc_zeta_local_fit_v2(m_c, v2_c, window):
+    """
+    Computes zeta = dln(m_c) / dln(v2_c) using a local log-log fit.
+
+    zeta is estimated as the local power-law slope between m_c and v2_c,
+    so that locally m_c is approximately proportional to v2_c**zeta.
+
+    At each point i, zeta[i] is computed by fitting
+
+        ln(m_c) = a + zeta * ln(v2_c)
+
+    over a window of neighboring points.
+
+    Arguments
+    ---------
+    m_c : ndarray, shape (N,)
+        Core masses.
+    v2_c : ndarray, shape (N,)
+        Core square of 1D velocity dispersion.
+    window : int
+        Number of points used in each local fit. Must be odd.
+
+    Returns
+    -------
+    zeta : ndarray, shape (N,)
+        Local logarithmic slope dln(m_c) / dln(v2_c).
+    """
+    N = m_c.shape[0]
+
+    zeta = np.empty(N, dtype=np.float64)
+
+    half_window = window // 2
+
+    for i in range(N):
+
+        # Choose local fitting window centered on i.
+        i0 = i - half_window
+        i1 = i + half_window + 1
+
+        # Shift the window back inside the valid index range near boundaries.
+        if i0 < 0:
+            i1 -= i0
+            i0 = 0
+
+        if i1 > N:
+            i0 -= i1 - N
+            i1 = N
+
+        if i0 < 0:
+            i0 = 0
+
+        # First pass: compute mean log(v2_c) and mean log(m_c).
+        xbar = 0.0
+        ybar = 0.0
+        count = 0
+
+        for j in range(i0, i1):
+            xbar += math.log(v2_c[j])
+            ybar += math.log(m_c[j])
+            count += 1
+
+        xbar /= count
+        ybar /= count
+
+        # Second pass: compute least-squares slope in log-log space.
+        num = 0.0
+        den = 0.0
+
+        for j in range(i0, i1):
+            x = math.log(v2_c[j])
+            y = math.log(m_c[j])
+
+            dx = x - xbar
+            dy = y - ybar
+
+            num += dx * dy
+            den += dx * dx
+
+        if den > 0.0:
+            zeta[i] = num / den
+        else:
+            zeta[i] = 0.0
+
+    return zeta
+
 @njit(void(float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True)
 def solve_tridiagonal_thomas(a, b, c, y, x):
     """

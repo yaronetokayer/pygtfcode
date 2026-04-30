@@ -80,30 +80,31 @@ def extract_snapshot_indices(model_dir):
     Returns
     -------
     dict
-        Dictionary with keys 'step', 't_t0', and 't_Gyr' containing numpy arrays.
+        Dictionary mapping snapshot_conversion.txt column names to numpy arrays.
     """
     path = os.path.join(model_dir, "snapshot_conversion.txt")
 
-    data = np.loadtxt(path, usecols=(0, 1, 2, 3), skiprows=1)
-    if data.ndim == 1:
-        # Only one row of data
-        snapshot_index = np.array([int(data[0])])
-        t_t0 = np.array([data[1]])
-        t_Gyr = np.array([data[2]])
-        step = np.array([int(data[3])])
-    else:
-        snapshot_index = data[:, 0].astype(int)
-        t_t0 = data[:, 1]
-        t_Gyr = data[:, 2]
-        step = data[:, 3].astype(int)
-    return {
-        'snapshot_index': snapshot_index,
-        't_t0': t_t0,
-        't_Gyr': t_Gyr,
-        'step_count': step
-    }
+    # Read file with column names from header
+    data = np.genfromtxt(path, names=True, dtype=None, encoding=None)
 
-def get_time_conversion(filepath, index, phys=False):
+    # Handle single-row case (genfromtxt returns 0-d structured array)
+    if data.shape == ():
+        data = np.array([data], dtype=data.dtype)
+
+    # Convert structured array to dictionary
+    result = {}
+    for name in data.dtype.names:
+        col = data[name]
+
+        # Optional: cast integer-like columns
+        if np.issubdtype(col.dtype, np.integer):
+            result[name] = col.astype(int)
+        else:
+            result[name] = col
+
+    return result
+
+def get_time_conversion(filepath, index):
     """
     Get conversion from index to time from snapshot_conversion.txt.
 
@@ -113,8 +114,6 @@ def get_time_conversion(filepath, index, phys=False):
         Path to the profile_x.dat file.
     index : int
         Snapshot index at which to get time
-    phys : bool
-        If True, get value in Gyr, otherwise in simulation units
 
     Returns
     -------
@@ -127,11 +126,8 @@ def get_time_conversion(filepath, index, phys=False):
     data = extract_snapshot_indices(model_dir)
 
     # Lookup time
-    idx = np.where(data['snapshot_index'] == index)[0][0]
-    if not phys:
-        t = data['t_t0'][idx]
-    else:
-        t = data['t_Gyr'][idx]
+    idx = np.where(data['index'] == index)[0][0]
+    t = data['time'][idx]
 
     return t
 

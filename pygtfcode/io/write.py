@@ -1,7 +1,7 @@
 import numpy as np
 import os
-from pygtfcode.parameters.constants import Constants as const
-from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2
+from pygtfcode.io.read import extract_time_evolution_data
+from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_zeta_local_fit_v2
 
 def make_dir(state):
     """
@@ -237,18 +237,17 @@ def append_snapshot_conversion(state):
         )
     index = state.snapshot_index
     
-    header = (f"{'index':>6}  {'time':>12}  {'time_Gyr':>12}  {'step':>10}\n")
+    header = (f"{'index':>6}  {'time':>12}  {'step':>10}\n")
 
     new_line = (
         f"{index:6d}  "
         f"{state.t:12.6e}  "
-        f"{state.t * state.char.t0 * const.sec_to_Gyr:12.6e}  "
         f"{state.step_count:10d}\n"
     )
 
     _update_file(filepath, header, new_line, index)
 
-def write_time_evolution(state):
+def write_time_evolution(state, last=False):
     """
     Append time evolution data to time_evolution.dat
 
@@ -256,6 +255,8 @@ def write_time_evolution(state):
     ---------
     state : State
         The current simulation state.
+    last : bool
+        If True, then also compute zeta profile
     """
     filepath = os.path.join(
         state.config.io.base_dir,
@@ -266,13 +267,15 @@ def write_time_evolution(state):
     t = state.t
     
     r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
+    Theta = state.Theta
 
-    r_c, rho_c, m_c, v2_c = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
-    r_m2, rho_m2, m_m2, v2_m2 = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
-    r_smfp, rho_smfp, m_smfp, v2_smfp = calc_smfp_r_rho_m_v2(r, rho,  v2, m, state.char.sigma_m_char)
+    r_c, rho_c, m_c, v2_c                   = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
+    r_m2, rho_m2, m_m2, v2_m2               = calc_rm2_rho_m_v2(r, rmid, rho, v2, m)
+    r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rho,  v2, m, state.char.sigma_m_char)
+    r_minTh, rho_minTh, m_minTh, v2_minTh   = calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta)
 
     maxvel      = np.max(np.sqrt(state.v2))
-    minTheta    = np.min(state.Theta)
+    minTheta    = np.min(Theta)
 
     columns = [
         ("step", step),
@@ -293,6 +296,10 @@ def write_time_evolution(state):
         ("rho_smfp", rho_smfp),
         ("m_smfp", m_smfp),
         ("v2_smfp", v2_smfp),
+        ("r_minTh", r_minTh),
+        ("rho_minTh", rho_minTh),
+        ("m_minTh", m_minTh),
+        ("v2_minTh", v2_minTh),
     ]
 
     # Build header
@@ -312,6 +319,13 @@ def write_time_evolution(state):
 
     if state.config.io.chatter and step == 0:
         print("Time evolution file initialized.")
+
+    if last:
+        tevol_data = extract_time_evolution_data(filepath)
+        zeta_c = calc_zeta_local_fit_v2(tevol_data['m_c'], tevol_data['v2_c'], 7)
+        _append_column_to_time_evolution_file(filepath, "zeta_c", zeta_c)
+        if state.config.io.chatter:
+            print("Time evolution file finalized.")
 
 def _update_file(filepath, header, new_line, index):
     """
@@ -349,3 +363,38 @@ def _update_file(filepath, header, new_line, index):
 
     with open(filepath, "w") as f:
         f.writelines(lines)
+
+def _append_column_to_time_evolution_file(filepath, colname, values):
+    """
+    Append a new column to an existing time evolution file.
+
+    Arguments
+    ---------
+    filepath : str
+        Path to the time evolution file.
+    colname : str
+        Name of the new column.
+    values : ndarray, shape (N,)
+        Values to append to each data row.
+    """
+    with open(filepath, "r") as f:
+        lines = f.readlines()
+
+    header = lines[0]
+    data_lines = lines[1:]
+
+    if len(data_lines) != values.shape[0]:
+        raise ValueError("Number of values does not match number of data rows")
+
+    # Add new column name to header
+    new_header = header.rstrip("\n") + f"  {colname:>12}\n"
+
+    # Add one new value to each data row
+    new_lines = [new_header]
+
+    for line, value in zip(data_lines, values):
+        new_line = line.rstrip("\n") + f"  {value:12.6e}\n"
+        new_lines.append(new_line)
+
+    with open(filepath, "w") as f:
+        f.writelines(new_lines)

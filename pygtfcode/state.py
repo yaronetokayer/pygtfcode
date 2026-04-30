@@ -500,7 +500,7 @@ class State:
 
         # Write final state to disk
         write_profile_snapshot(self)
-        write_time_evolution(self)
+        write_time_evolution(self, last=True)
         write_log_entry(self, start_step)
 
         end = _now()
