@@ -278,8 +278,7 @@ def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, 
 
 def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepath=None, base_dir=None, grid=False, fps=20):
     """
-    Animate rho and v2 profiles for a simulation with inset of rho0 time evolution.
-    By default, includes profiles 'rho' and 'v2'. 
+    Animate profiles wit constant scale and with inset for time evolution.
     Scale stays constant throughout.
 
     Arguments
@@ -461,6 +460,200 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
         output_movie_path = filepath
     else:
         output_movie_path = os.path.join(model_dir, f"movie_deluxe.mp4")
+
+    # Construct the ffmpeg command to create the movie
+    movie_command = [
+        "ffmpeg",
+        "-y",                                           # Overwrite output file if it exists
+        "-framerate", str(fps),                         # Set frames per second
+        "-i", os.path.join(temp_dir, "frame_%04d.png"), # Input image sequence
+        "-c:v", "libx264",                              # Use H.264 codec
+        "-pix_fmt", "yuv420p",                          # Set pixel format for compatibility
+        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",     # Ensure even dimensions
+        output_movie_path
+    ]
+
+    # Run the ffmpeg command
+    subprocess.run(movie_command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=True)
+
+    print("Deleting frames...")
+    # Clean up temporary images
+    shutil.rmtree(temp_dir, ignore_errors=True)
+
+    # Print the location of the saved movie
+    print(f"Movie saved to {output_movie_path}")
+
+def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
+    """
+    Animate profiles for comparison with Balberg study
+
+    Arguments
+    ---------
+    model : State object, Config object, or model_no
+        Each model can be a State, Config, or integer model number.
+    filepath : str, optional
+        Save the plot to this file.  Defaults to '/base_dir/ModelXXX/movie_{profiles}.mp4'
+    base_dir : str, optional
+        Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
+    grid : bool, optional
+        If True, shows grid on axes
+    fps : int, optional
+        Frames per second for the output movie. Default is 20
+
+    Returns
+    -------
+    None
+        Saves the movie as an MP4 file in the model directory.
+    """
+    # Collect profiles and insets
+    profiles = ['rho', 'v2']
+    insets = ['rho0', 'minTheta']
+    
+    # Validate radii
+    add_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']
+
+    # Get the model directory
+    if hasattr(model, 'config'):        # Passed state object
+        model_dir = os.path.join(model.config.io.base_dir, model.config.io.model_dir)
+    elif hasattr(model, 'io'):          # Passed config object
+        model_dir = os.path.join(model.io.base_dir, model.io.model_dir)
+    elif isinstance(model, int):        # Passed model number
+        if base_dir is None:
+            raise ValueError("'base_dir' (base directory) must be specified if using model numbers.")
+        model_dir = f"Model{model:03d}"
+        model_dir = os.path.join(base_dir, model_dir)
+    else:
+        raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
+    
+    # Load rhoc time evolution data
+    print(f"Getting time evolution data...")
+    time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
+    time_data = extract_time_evolution_data(time_evolution_path)
+    tevo_t = time_data['time']
+
+    # Load snapshot indices
+    snapshot_indices_data   = extract_snapshot_indices(model_dir)
+    indices                 = snapshot_indices_data['index']
+    index_t                 = snapshot_indices_data['time']
+
+    # Get axis limits
+    print(f"Getting axis limits...")
+
+    snapshot_data_list = []
+
+    for ind in indices:
+        snapshot_path = os.path.join(model_dir, f"profile_{ind}.dat")
+
+        if not os.path.isfile(snapshot_path):
+            continue
+
+        snapshot_data_list.append(extract_snapshot_data(snapshot_path))
+
+    axislims = {}
+
+    for profile in profiles:
+        xlim, ylim = get_profile_axis_limits(profile, snapshot_data_list)
+        axislims[profile] = (xlim, ylim)
+
+    # Create a temporary directory for storing images
+    temp_dir = os.path.join(model_dir, "temp_images")
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)             # Delete the directory and all its contents
+    os.makedirs(temp_dir)
+
+    image_paths = []                        # List to store paths of generated images
+
+    print(f"Generating {len(indices)} frames...")
+    for ind in tqdm(indices, desc="Frames", unit="frame"):
+        snapshot_path = os.path.join(model_dir, f"profile_{ind}.dat")
+        if not os.path.isfile(snapshot_path):
+            continue                        # Skip if the snapshot file does not exist
+
+        # Define the output image path for the current frame
+        image_path = os.path.join(temp_dir, f"frame_{ind:04d}.png")
+
+        # Extract data for current frame and initial frame
+        initial_snapshot_path   = os.path.join(model_dir, f"profile_0.dat")
+        data_list               = [
+            extract_snapshot_data(initial_snapshot_path), 
+            extract_snapshot_data(snapshot_path)
+            ]
+        
+        # Plot profile and initial profile
+        fig, axs = plt.subplots(2, 2, figsize=(6*2, 5*2))
+        axs = np.atleast_1d(axs)
+
+        # Top row
+        for i, ax in enumerate(axs[0]):
+            profile = profiles[i]
+            inset = insets[i]
+
+            legend = True if i == 0 else False
+            plot_profile(ax, profile, data_list, axislims=axislims[profile], legend=legend, legend_loc='lower left', grid=grid, for_movie=True)
+
+            if add_radii is not None:
+                for radius in add_radii:
+                    r = np.interp(index_t[ind], tevo_t, time_data[radius])
+                    # If r is outside the x-axis limits, skip plotting
+                    if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
+                        continue
+                    ax.axvline(r, color='red', ls='--', zorder=-10)
+                    ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+
+            if inset is not None:
+                tevo_y = time_data[inset]
+                axin = ax.inset_axes([0.55, 0.65, 0.45, 0.35])
+                axin.axvline(index_t[ind], color='grey')
+                axin.plot(tevo_t, tevo_y, color='black')
+                axin.scatter(index_t[ind], np.interp(index_t[ind], tevo_t, tevo_y),
+                            color='red', s=50)
+                axin.set_ylabel(inset, fontsize=12)
+                axin.set_xlabel('$t$', fontsize=12)
+                axin.set_yscale('log')
+                axin.tick_params(
+                    axis='both',
+                    which='both',
+                    labelbottom=False,
+                    labelleft=False,
+                    labeltop=False,
+                    labelright=False,
+                    top=True,
+                    bottom=True,
+                    left=True,
+                    right=True,
+                    direction='in'
+                )
+
+        # Bottom row
+        for i, ax in enumerate(axs[1]):
+            if i == 0:
+                yquant = time_data['m_c']
+                xquant = time_data['rho_c']
+                ax.loglog(xquant, yquant, color='black')
+                ax.set_ylabel('$M_\\mathrm{core}$/$M_\\mathrm{s}$', fontsize=16)
+                ax.set_xlabel('$\\rho_\\mathrm{core}$/$\\rho_\\mathrm{s}$', fontsize=16)
+            elif i == 1:
+                yquant = time_data['zeta_c']
+                xquant = time_data['v2_c']
+                ax.plot(xquant, yquant, color='black')
+                ax.set_xscale('log')
+                ax.set_ylabel('$\\zeta$', fontsize=16)
+                ax.set_xlabel('$v^2_\\mathrm{core}$/$v^2_\\mathrm{s}$', fontsize=16)
+            x = np.interp(index_t[ind], tevo_t, xquant)
+            y = np.interp(index_t[ind], tevo_t, yquant)
+            ax.scatter(x, y, color='red', s=50)
+            ax.tick_params(axis='both', labelsize=12)
+
+        fig.savefig(image_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        image_paths.append(image_path)  # Add the image path to the list
+
+    print("Compiling into a movie using ffmpeg...")
+
+    if filepath is not None:
+        output_movie_path = filepath
+    else:
+        output_movie_path = os.path.join(model_dir, f"movie_balberg.mp4")
 
     # Construct the ffmpeg command to create the movie
     movie_command = [
