@@ -2,6 +2,7 @@ import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_zeta_local_fit_v2
+from pygtfcode.parameters.constants import Constants as const
 
 def make_dir(state):
     """
@@ -263,8 +264,9 @@ def write_time_evolution(state, last=False):
         state.config.io.model_dir,
         "time_evolution.txt"
     )
-    step = state.step_count
-    t = state.t
+    step    = state.step_count
+    t       = state.t
+    t_Gyr   = t * state.char.t0 * const.sec_to_Gyr
     
     r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
     Theta = state.Theta
@@ -280,6 +282,7 @@ def write_time_evolution(state, last=False):
     columns = [
         ("step", step),
         ("time", t),
+        ("time_Gyr", t_Gyr),
         ("rho0", state.rho[0]),
         ("v_max", maxvel),
         ("Kn_min", state.minkn),
