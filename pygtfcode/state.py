@@ -303,7 +303,15 @@ class State:
         dr3 = r[1:]**3 - r[:-1]**3              # Volume difference per shell
 
         m = np.zeros_like(r, dtype=np.float64)
-        m[1:] = menc(r[1:], self)             # m[i] at shell edges
+        m[1:] = menc(r[1:], self)               # m[i] at shell edges
+
+        ### For Frank ###
+        if self.config.init.profile == 'truncated_nfw':
+            from pygtfcode.profiles.nfw import fNFW
+            # Calculate Mtot / M200
+            mtot = menc(self.rcut, self)
+            fc = fNFW(self.config.init.cvir)
+            self.char.mtot_m200 = mtot/fc
 
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
@@ -373,10 +381,10 @@ class State:
         if chatter:
             print("Ensuring initial hydrostatic equilibrium...")
 
-        r_new   = self.r.astype(np.float64, copy=True)
-        rho_new = self.rho.astype(np.float64, copy=True)
-        m       = self.m.astype(np.float64, copy=False)
-        p_new   = rho_new * self.v2.astype(np.float64, copy=True)
+        r_new   = self.r.astype(np.float64,             copy=True)
+        rho_new = self.rho.astype(np.float64,           copy=True)
+        m       = self.m.astype(np.float64,             copy=False)
+        p_new   = rho_new * self.v2.astype(np.float64,  copy=True)
 
         # Update pressure with backward sweep
         res_old, res_new = compute_he_pressures_with_resid(self.r, self.rho, p_new, m)
@@ -400,7 +408,7 @@ class State:
         while True:
             i += 1
             status, dr_max_new, he_res = revirialize_w_he_resid(r_new, rho_new, p_new, m,
-                                                                 a, b, c, y, x, vol_old, Np1)
+                                                                 a, b, c, y, x, vol_old)
             
             if status == STATUS_SHELL_CROSSING:
                 raise RuntimeError(f"Initial revir iter {i}: Shell crossing!")

@@ -491,8 +491,8 @@ def compute_he_resid_norm(r, rho, p, m):
 
     return np.linalg.norm(res_vec)
 
-@njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64), cache=True, fastmath=True,)
-def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, float, float]:
+@njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
+def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -510,8 +510,6 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, fl
         Memory allocation for working arrays
     vol_old : ndarray (N,)
         Memory allocation for working array
-    Np1 : float
-        Length of radial grid
 
     Returns
     -------
@@ -527,6 +525,7 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, fl
     density, pressure, and velocity dispersion accordingly. If any velocity dispersion
     becomes negative, the function returns None.
     """
+    Np1 = r.shape[0]
 
     # Solve for corrections to r
     build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)
@@ -543,8 +542,8 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, fl
     
     return STATUS_OK, dr_max
 
-@njit(types.Tuple((int64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64), cache=True, fastmath=True,)
-def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tuple[int, float, float]:
+@njit(types.Tuple((int64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
+def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -562,8 +561,6 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tu
         Memory allocation for working arrays
     vol_old : ndarray (N,)
         Memory allocation for working array
-    Np1 : float
-        Length of radial grid
 
     Returns
     -------
@@ -582,6 +579,7 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old, Np1)  -> tu
     density, pressure, and velocity dispersion accordingly. If any velocity dispersion
     becomes negative, the function returns None.
     """
+    Np1 = r.shape[0]
 
     # Solve for corrections to r
     build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)

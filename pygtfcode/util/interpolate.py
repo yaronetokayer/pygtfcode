@@ -1,4 +1,5 @@
 import numpy as np
+import math
 from numba import njit, float64
 
 @njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
@@ -33,3 +34,35 @@ def interp_linear_to_interfaces(r_edges_1d, q_cells_1d) -> np.ndarray:
     qL = q_cells_1d[:-1]                               # left cell value (i)
     qR = q_cells_1d[1:]                                # right cell value (i+1)
     return qL + fac * (qR - qL)                        # shape (N-1,)
+
+@njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def interp_powerlaw_edges_to_cells(r_edges_1d, q_edges_1d, r_cells_1d) -> np.ndarray:
+    """
+    Power-law interpolate edge values q_edges_1d to cell-center locations.
+    Assumes that within each cell, q(r) = q_L * (r / r_L)^a
+
+    Requires:
+        r_edges_1d > 0
+        q_edges_1d > 0
+        r_cells_1d[i] inside [r_edges_1d[i], r_edges_1d[i+1]]
+    """
+    N = r_cells_1d.shape[0]
+    out = np.empty(N, dtype=np.float64)
+
+    log_rL = math.log(r_edges_1d[0])
+    log_qL = math.log(q_edges_1d[0])
+
+    for i in range(N):
+        log_rC = math.log(r_cells_1d[i])
+
+        log_rR = math.log(r_edges_1d[i + 1])
+        log_qR = math.log(q_edges_1d[i + 1])
+
+        fac = (log_rC - log_rL) / (log_rR - log_rL)
+
+        out[i] = math.exp(log_qL + fac * (log_qR - log_qL))
+
+        log_rL = log_rR
+        log_qL = log_qR
+
+    return out

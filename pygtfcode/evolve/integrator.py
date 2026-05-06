@@ -74,7 +74,7 @@ def run_until_stop(state, start_step, **kwargs):
             # Otherwise, use last dt
 
         # Integrate time step
-        integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1)
+        integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -137,7 +137,11 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p, Np1):
+def integrate_time_step(state, config,                                      # State arrays
+                        dt_prop, small_kn_regime, step_count,               # Instantaneous variables
+                        dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,   # Memory allocations (N-1,)
+                        work, p,                                            # Memory allocations (N,)
+                        ):
     """
     Advance state by one time step.
     Applies conduction, revirialization, updates time, and checks stability diagnostics.
@@ -154,14 +158,10 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
         If True, use time-limited version of implicit conduction
     step_count : int
         Step count
-    lum : ndarray (N+1,)
-        Memory allocation for luminosity array
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
         Memory allocation for working arrays
     work, p : ndarray (N,)
         Memory allocation for working arrays
-    Np1 : float
-        Length of radial grid
     """
 
     # Store state attributes for fast access in loop and to pass into njit functions
@@ -203,7 +203,7 @@ def integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2
     iter_dr = 0
     while True:
         status, dr_max = revirialize(r, rho, p, m, 
-                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, Np1) # Modifies r, rho, p in place
+                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work) # Modifies r, rho, p in place
 
         # Shell crossing signaled by None
         if status == STATUS_SHELL_CROSSING:

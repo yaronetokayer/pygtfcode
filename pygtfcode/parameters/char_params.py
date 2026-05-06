@@ -20,6 +20,8 @@ class CharParams:
         Characteristic velocity scale [km/s].
     rho_s : float
         Characteristic density [Msun / Mpc^3].
+    mtot_m200 : float
+        Ratio of total mass to M200 for a truncated NFW.
     """
 
     def __init__(self):
@@ -32,6 +34,7 @@ class CharParams:
         self.v0 = None
         self.rho_s = None
         self.sigma_m_char = None
+        self.mtot_m200 = None
 
     def __repr__(self):
         attrs = ", ".join(

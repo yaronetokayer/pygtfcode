@@ -5,9 +5,13 @@ import subprocess
 from tqdm import tqdm
 import shutil
 from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, extract_time_evolution_data
+from pygtfcode.util.interpolate import interp_powerlaw_edges_to_cells
 
-def get_profile_axis_limits(profile, data_list):
-    xkey = 'log_r' if profile == 'm' else 'log_rmid'
+def get_profile_axis_limits(profile, data_list, xaxis='r'):
+    if xaxis == 'r':
+        xkey = 'log_r' if profile == 'm' else 'log_rmid'
+    elif xaxis == 'm':
+        xkey = 'm'
 
     xlim_lower = np.inf
     xlim_upper = -np.inf
@@ -15,7 +19,10 @@ def get_profile_axis_limits(profile, data_list):
     ylim_upper = -np.inf
 
     for data in data_list:
-        x = data[xkey]
+        if xaxis == 'r':
+            x = 10**data[xkey]
+        elif xaxis == 'm':
+            x = data[xkey]
         y = data[profile]
 
         positive_y = y[y > 0] # Guard against zero or negative profiles
@@ -24,15 +31,15 @@ def get_profile_axis_limits(profile, data_list):
 
         ylim_upper = max(ylim_upper, np.max(y) * 10)
 
-        xlim_lower = min(xlim_lower, 10**np.min(x) * 0.8)
-        xlim_upper = max(xlim_upper, 10**np.max(x) * 1.2)
+        xlim_lower = min(xlim_lower, np.min(x) * 0.8)
+        xlim_upper = max(xlim_upper, np.max(x) * 1.2)
 
     if profile in ['kn', 'Theta']:
         ylim_lower = min(ylim_lower, 0.1)
 
     return (xlim_lower, xlim_upper), (ylim_lower, ylim_upper)
 
-def plot_profile(ax, profile, data_list, axislims=None, legend=True, legend_loc=None, grid=False, for_movie=False):
+def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, legend_loc=None, grid=False, for_movie=False):
     """
     Plot specified profile on the passed axis object
 
@@ -44,6 +51,8 @@ def plot_profile(ax, profile, data_list, axislims=None, legend=True, legend_loc=
         Profile to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
     data_list : dict
         Dictionary returned by extract_snapshot_data()
+    xaxis : str, optional
+        X-axis to plot.  Default is 'r'.  Other option is 'm'.
     axislims : list of tuples or None
         [(xmin, xmax), (ymin, ymax)]
     legend : bool, optional
@@ -66,20 +75,30 @@ def plot_profile(ax, profile, data_list, axislims=None, legend=True, legend_loc=
     else:
         cmap = plt.get_cmap('tab20')
 
-    xkey = 'log_r' if profile == 'm' else 'log_rmid'
+    if xaxis == 'r':
+        xkey = 'log_r' if profile == 'm' else 'log_rmid'
+    elif xaxis == 'm':
+        xkey = 'm'
 
     # Get axis limits
     if axislims is None:
-        xlim, ylim = get_profile_axis_limits(profile, data_list)
+        xlim, ylim = get_profile_axis_limits(profile, data_list, xaxis=xaxis)
     else:
         xlim, ylim = axislims
 
     # Plot data
     for ind, data in enumerate(data_list):
-        x = data[xkey]
+        rmid = 10**data['log_rmid']
+        if xaxis == 'r':
+            x = 10**data[xkey] if profile == 'm' else rmid
+        elif xaxis == 'm':
+            m_edges = data[xkey]
+            r_edges = 10**data['log_r']
+            x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
+
         y = data[profile]
 
-        ax.plot( 10**x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
+        ax.plot( x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
         if profile in ['kn', 'Theta'] and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
@@ -93,7 +112,10 @@ def plot_profile(ax, profile, data_list, axislims=None, legend=True, legend_loc=
 
     ax.set_xscale('log')
     ax.set_yscale('log')
-    ax.set_xlabel(r'Radius [$r_\mathrm{s,0}$]', fontsize=14)
+    if xaxis == 'r':
+        ax.set_xlabel(r'Radius [$r_\mathrm{s,0}$]', fontsize=14)
+    elif xaxis == 'm':
+        ax.set_xlabel(r'$M_\mathrm{enc}$ [$M_\mathrm{s}$]', fontsize=14)
     ax.set_ylabel(profile, fontsize=14)
     ax.tick_params(axis='both', labelsize=12)
     if legend:
@@ -104,7 +126,7 @@ def plot_profile(ax, profile, data_list, axislims=None, legend=True, legend_loc=
     if grid:
         ax.grid(True, which="both", ls="--")
 
-def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
+def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
     """
     Plot up to three profiles at specified points in time for one simulation
 
@@ -116,6 +138,8 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
         Snapshot indices to plot
     profiles : str or list of str, optional
         Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
+    xaxis : list of str, optional
+        X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     filepath : str, optional
@@ -131,6 +155,11 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
 
     if type(snapshots) != list:
         snapshots = [snapshots]
+
+    if xaxis is None:
+        xaxis = ['r'] * len(profiles)
+    elif isinstance(xaxis, str):
+        xaxis = [xaxis]
 
     def _resolve_dir(model, ind):
         if hasattr(model, 'config'): # Passed state object
@@ -158,11 +187,11 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', base_dir=None, filepath
     fig, axs = plt.subplots(1, n, figsize=(6*n, 5))
 
     if n == 1:
-        plot_profile(axs, profiles, data_list, legend=True, grid=grid, for_movie=for_movie)
+        plot_profile(axs, profiles, data_list, xaxis=xaxis[0], legend=True, grid=grid, for_movie=for_movie)
     else:
         for ind, ax in enumerate(axs):
             legend = False if ind < len(axs) - 1 else True
-            plot_profile(ax, profiles[ind], data_list, legend=legend, grid=grid, for_movie=for_movie)
+            plot_profile(ax, profiles[ind], data_list, xaxis=xaxis[ind], legend=legend, grid=grid, for_movie=for_movie)
 
     if filepath:
         fig.savefig(filepath, dpi=300, bbox_inches='tight')
@@ -276,7 +305,7 @@ def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, 
     # Print the location of the saved movie
     print(f"Movie saved to {output_movie_path}")
 
-def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepath=None, base_dir=None, grid=False, fps=20):
+def make_movie_deluxe(model, profiles=None, insets=None, xaxis=None, add_radii=None, filepath=None, base_dir=None, grid=False, fps=20):
     """
     Animate profiles wit constant scale and with inset for time evolution.
     Scale stays constant throughout.
@@ -289,9 +318,11 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
         Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn', 'Theta'.
     insets : list of str or None, optional
         Inset plots to include.  Options are any quantity in time_evolution.txt
+    xaxis : list of str, optional
+        X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     add_radii : list, optional
         List of radii to add to profiles from time_evolution.txt
-        Options: 'r_c', 'r_m2', 'r_smfp', r_minTh
+        Options: 'r_c', 'r_m2', 'r_smfp', 'r_minTh'
     filepath : str, optional
         Save the plot to this file.  Defaults to '/base_dir/ModelXXX/movie_{profiles}.mp4'
     base_dir : str, optional
@@ -315,6 +346,10 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
         insets = ['rho0'] + [None] * (len(profiles) - 1)
     elif isinstance(insets, str) or insets is None:
         insets = [insets]
+    if xaxis is None:
+        xaxis = ['r'] * len(profiles)
+    elif isinstance(xaxis, str):
+        xaxis = [xaxis]
 
     # Validate profiles
     valid_profiles = ['rho', 'm', 'v2', 'trelax', 'kn', 'Theta']
@@ -328,6 +363,11 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
             add_radii = [add_radii]
         if any(radius not in valid_radii for radius in add_radii):
             raise ValueError(f"Invalid radius specified. Valid options are: {valid_radii}")
+        
+    # Validate xaxis
+    valid_xaxis = ['r', 'm']
+    if any(x not in valid_xaxis for x in xaxis):
+        raise ValueError(f"Invalid x-axis specified. Valid options are: {valid_xaxis}")
 
     # Number of panels
     n = len(profiles) 
@@ -378,8 +418,8 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
 
     axislims = {}
 
-    for profile in profiles:
-        xlim, ylim = get_profile_axis_limits(profile, snapshot_data_list)
+    for i, profile in enumerate(profiles):
+        xlim, ylim = get_profile_axis_limits(profile, snapshot_data_list, xaxis=xaxis[i])
         axislims[profile] = (xlim, ylim)
 
     # Create a temporary directory for storing images
@@ -412,19 +452,33 @@ def make_movie_deluxe(model, profiles=None, insets=None, add_radii=None, filepat
 
         for i, ax in enumerate(axs):
             profile = profiles[i]
-            inset = insets[i]
+            inset   = insets[i]
+            xax     = xaxis[i]
 
             legend = True if i == 0 else False
-            plot_profile(ax, profile, data_list, axislims=axislims[profile], legend=legend, legend_loc='lower left', grid=grid, for_movie=True)
+            plot_profile(ax, profile, data_list, xaxis=xax, axislims=axislims[profile], legend=legend, legend_loc='lower left', grid=grid, for_movie=True)
 
             if add_radii is not None:
                 for radius in add_radii:
                     r = np.interp(index_t[ind], tevo_t, time_data[radius])
+                    if xax == 'r':
+                        # If r is outside the x-axis limits, skip plotting
+                        if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
+                            continue
+                        ax.axvline(r, color='red', ls='--', zorder=-10)
+                        ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+                    elif xax == 'm':
+                        m = np.interp(r, 10**data_list[1]['log_r'], data_list[1]['m'])
+                        # If r is outside the x-axis limits, skip plotting
+                        if m < axislims[profile][0][0] or m > axislims[profile][0][1]:
+                            continue
+                        ax.axvline(m, color='red', ls='--', zorder=-10)
+                        ax.text(m, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
                     # If r is outside the x-axis limits, skip plotting
-                    if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
-                        continue
-                    ax.axvline(r, color='red', ls='--', zorder=-10)
-                    ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+                    # if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
+                    #     continue
+                    # ax.axvline(r, color='red', ls='--', zorder=-10)
+                    # ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
 
             if inset is not None:
                 tevo_y = time_data[inset]
