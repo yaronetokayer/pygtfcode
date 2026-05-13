@@ -22,7 +22,14 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
         if xaxis == 'r':
             x = 10**data[xkey]
         elif xaxis == 'm':
-            x = data[xkey]
+            if profile == 'm':
+                x = data['m']
+            else:
+                m_edges = data['m']
+                r_edges = 10**data['log_r']
+                rmid = 10**data['log_rmid']
+                x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
+
         y = data[profile]
 
         positive_y = y[y > 0] # Guard against zero or negative profiles
@@ -324,7 +331,7 @@ def make_movie_deluxe(model, profiles=None, insets=None, xaxis=None, add_radii=N
         List of radii to add to profiles from time_evolution.txt
         Options: 'r_c', 'r_m2', 'r_smfp', 'r_minTh'
     filepath : str, optional
-        Save the plot to this file.  Defaults to '/base_dir/ModelXXX/movie_{profiles}.mp4'
+        Save the plot to this file.  Defaults to '/base_dir/ModelXXX/movie_deluxe.mp4'
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
     grid : bool, optional

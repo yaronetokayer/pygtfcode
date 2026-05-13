@@ -61,7 +61,6 @@ class State:
     """
 
     def __init__(self, config, ic_filepath=None):
-        from pygtfcode.io.write import make_dir, write_metadata, write_profile_snapshot
 
         self.config = config
         self.char = self._set_param()
@@ -309,7 +308,7 @@ class State:
         if self.config.init.profile == 'truncated_nfw':
             from pygtfcode.profiles.nfw import fNFW
             # Calculate Mtot / M200
-            mtot = menc(self.rcut, self)
+            mtot = menc(self.rcut, self, chatter=False)
             fc = fNFW(self.config.init.cvir)
             self.char.mtot_m200 = mtot/fc
 
@@ -331,12 +330,13 @@ class State:
 
             v2[0] = p[0] / rho[0]
 
-        self.m = m
-        self.rmid = r_mid
-        self.rho = rho
-        self.v2 = v2
-        self.kn = kn
+        self.m      = m
+        self.rmid   = r_mid
+        self.rho    = rho
+        self.v2     = v2
+        self.kn     = kn
         self.trelax = trelax
+        self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
         """
@@ -350,7 +350,7 @@ class State:
         from pygtfcode.io.read import extract_snapshot_data
 
         if self.config.io.chatter:
-            print(f"Loading initial conditions from {ic_filepath}...")
+            print(f"Loading initial conditions from {ic_filepath} ...")
 
         data = extract_snapshot_data(ic_filepath, add_time=False)
 
@@ -369,6 +369,7 @@ class State:
         self.v2     = data['v2'].astype(np.float64)
         self.kn     = data['kn'].astype(np.float64)
         self.trelax = data['trelax'].astype(np.float64)
+        self.Theta  = data['Theta'].astype(np.float64)
 
     def _ensure_virial_equilibfrium(self):
         """
@@ -440,6 +441,10 @@ class State:
 
         self.r = self._setup_grid()
         if ic_filepath is not None:
+            # Check if filpath exists
+            if not Path(ic_filepath).is_file():
+                print(f"IC file {ic_filepath} not found. Creating IC file at that location...")
+                self.make_ic_file(config, ic_filepath=ic_filepath)
             self._load_ic(ic_filepath)
         else:
             self._initialize_grid()
@@ -461,8 +466,6 @@ class State:
         self.dr_max_cum         = 0.0
         self.du_max_cum         = 0.0
         self.dt_over_trelax_cum = 0.0
-
-        self.Theta              = np.zeros_like(self.rho, dtype=np.float64)
 
         if config.io.chatter:
             print("State initialized.")
