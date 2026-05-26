@@ -62,15 +62,19 @@ def run_until_stop(state, start_step, **kwargs):
         state.step_count += 1
         step_count = state.step_count
 
+        # Compute advection-time-limited dt
+        dt_prop = config.prec.eps_dt * state.mintavd
+        small_kn_regime = True # For now, always use time-limited version of implicit conduction.
+        
         # Compute relaxation-time-limited dt
         # In low-Kn regime, only set dt in conduction routine
-        small_kn_regime = False
-        if state.minkn > 0.1:
-            dt_prop = config.prec.eps_dt * state.mintrelax
-        else:
-            small_kn_regime = True
-            if step_count == 1:
-                dt_prop = 1.0
+        # small_kn_regime = False
+        # if state.minkn > 0.1:
+        #     dt_prop = config.prec.eps_dt * state.mintrelax
+        # else:
+        #     small_kn_regime = True
+        #     if step_count == 1:
+        #         dt_prop = 1.0
             # Otherwise, use last dt
 
         # Integrate time step
@@ -241,10 +245,16 @@ def integrate_time_step(state, config,                                      # St
     state.minkn = float(np.min(state.kn))
 
     # Update trelax without allocations
-    np.sqrt(state.v2, out=state.trelax)
-    state.trelax *= rho
-    np.reciprocal(state.trelax, out=state.trelax)
-    state.mintrelax = float(np.min(state.trelax))
+    # np.sqrt(state.v2, out=state.trelax)
+    # state.trelax *= rho
+    # np.reciprocal(state.trelax, out=state.trelax)
+    # state.mintrelax = float(np.min(state.trelax))
+
+    # tavd = Delta r / v = rho^(1/3) / v
+    np.cbrt(rho, out=state.tavd)
+    np.sqrt(state.v2, out=work)
+    np.divide(state.tavd, work, out=state.tavd)
+    state.mintavd = float(np.min(state.tavd))
 
     # Diagnostics
     state.n_iter_du += iter_du
@@ -253,7 +263,8 @@ def integrate_time_step(state, config,                                      # St
     if step_count != 1:
         state.dr_max_cum += float(dr_max)
     state.du_max_cum += float(du_max)
-    state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
+    # state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
+    state.dt_over_tavd_cum += float(dt_prop / state.mintavd)
 
     state.dt = float(dt_prop)
     state.t += float(dt_prop)

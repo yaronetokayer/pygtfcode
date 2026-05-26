@@ -137,7 +137,8 @@ def write_log_entry(state, start_step):
         elif ( step - start_step ) % nlog != 0:     # Final state
             nlog = ( step - start_step ) % nlog
 
-        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {minTheta:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        # new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {minTheta:12.6e}  {state.dt_over_trelax_cum / prec.eps_dt / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {minTheta:12.6e}  {state.dt_over_tadv_cum / prec.eps_dt / nlog:8.2e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 
@@ -146,7 +147,8 @@ def write_log_entry(state, start_step):
     state.dt_cum = 0.0
     state.du_max_cum = 0.0
     state.dr_max_cum = 0.0
-    state.dt_over_trelax_cum = 0.0
+    # state.dt_over_trelax_cum = 0.0
+    state.dt_over_tadv_cum = 0.0
 
     if chatter:
         if step == 0:
@@ -191,9 +193,13 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 os.remove(os.path.join(snapshot_dir, fname))
 
     with open(filename, "w") as f:
+        # header = (
+        #     f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
+        #     f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}  {'Theta':>12}\n"
+        # )
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'trelax':>12}  {'kn':>12}  {'Theta':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'tadv':>12}  {'kn':>12}  {'Theta':>12}\n"
         )
         f.write(header)
         for i in range(len(state.r) - 1):
@@ -204,7 +210,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{state.m[i+1]:12.6e}  "
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
-                f"{state.trelax[i]:12.6e}  "
+                # f"{state.trelax[i]:12.6e}  "
+                f"{state.tadv[i]:12.6e}  "
                 f"{state.kn[i]:12.6e}  "
                 f"{state.Theta[i]:12.6e}\n"
             )
