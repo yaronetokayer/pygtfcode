@@ -371,7 +371,8 @@ class State:
         self.v2     = data['v2'].astype(np.float64)
         self.kn     = data['kn'].astype(np.float64)
         # self.trelax = data['trelax'].astype(np.float64)
-        self.tadv   = data['tadv'].astype(np.float64)
+        # self.tadv   = data['tadv'].astype(np.float64)
+        self.tadv   = self.rho**( 1.0 / 3.0 ) / np.sqrt(self.v2) # TEMPORARY
         self.Theta  = data['Theta'].astype(np.float64)
 
     def _ensure_virial_equilibfrium(self):

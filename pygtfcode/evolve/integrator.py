@@ -63,7 +63,7 @@ def run_until_stop(state, start_step, **kwargs):
         step_count = state.step_count
 
         # Compute advection-time-limited dt
-        dt_prop = config.prec.eps_dt * state.mintavd
+        dt_prop = config.prec.eps_dt * state.mintadv
         small_kn_regime = True # For now, always use time-limited version of implicit conduction.
         
         # Compute relaxation-time-limited dt
@@ -250,11 +250,11 @@ def integrate_time_step(state, config,                                      # St
     # np.reciprocal(state.trelax, out=state.trelax)
     # state.mintrelax = float(np.min(state.trelax))
 
-    # tavd = Delta r / v = rho^(1/3) / v
-    np.cbrt(rho, out=state.tavd)
+    # tadv = Delta r / v = rho^(1/3) / v
+    np.cbrt(rho, out=state.tadv)
     np.sqrt(state.v2, out=work)
-    np.divide(state.tavd, work, out=state.tavd)
-    state.mintavd = float(np.min(state.tavd))
+    np.divide(state.tadv, work, out=state.tadv)
+    state.mintadv = float(np.min(state.tadv))
 
     # Diagnostics
     state.n_iter_du += iter_du
@@ -264,7 +264,7 @@ def integrate_time_step(state, config,                                      # St
         state.dr_max_cum += float(dr_max)
     state.du_max_cum += float(du_max)
     # state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
-    state.dt_over_tavd_cum += float(dt_prop / state.mintavd)
+    state.dt_over_tadv_cum += float(dt_prop / state.mintadv)
 
     state.dt = float(dt_prop)
     state.t += float(dt_prop)
