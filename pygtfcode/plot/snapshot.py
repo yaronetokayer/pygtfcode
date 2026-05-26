@@ -55,7 +55,7 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     ax : Axis
         Axis object on which to plot
     profile : str
-        Profile to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
+        Profile to plot.  Options are 'rho', 'm', 'v2', 'tadv', 'kn'
     data_list : dict
         Dictionary returned by extract_snapshot_data()
     xaxis : str, optional
@@ -144,7 +144,7 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=No
     snapshots : int or list of int
         Snapshot indices to plot
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'tadv', 'kn'
     xaxis : list of str, optional
         X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     base_dir : str, optional
@@ -222,7 +222,7 @@ def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, 
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXXXX subdirectories reside.
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn'
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'tadv', 'kn'
     grid : bool, optional
         If True, shows grid on axes
     fps : int, optional
@@ -322,7 +322,7 @@ def make_movie_deluxe(model, profiles=None, insets=None, xaxis=None, add_radii=N
     model : State object, Config object, or model_no
         Each model can be a State, Config, or integer model number.
     profiles : list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'trelax', 'kn', 'Theta'.
+        Profiles to plot.  Options are 'rho', 'm', 'v2', 'tadv', 'kn', 'Theta'.
     insets : list of str or None, optional
         Inset plots to include.  Options are any quantity in time_evolution.txt
     xaxis : list of str, optional
@@ -359,7 +359,7 @@ def make_movie_deluxe(model, profiles=None, insets=None, xaxis=None, add_radii=N
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'trelax', 'kn', 'Theta']
+    valid_profiles = ['rho', 'm', 'v2', 'tadv', 'kn', 'Theta']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     
