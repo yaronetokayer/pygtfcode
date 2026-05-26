@@ -21,7 +21,7 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
     filepath : str, optional
         If specified, saves the figure to this path.
     base_dir : str, optional
-        Required if any model is passed as an integer.  The directory in which all ModelXXX subdirectories reside.
+        Required if any model is passed as an integer.  The directory in which all ModelXXXXX subdirectories reside.
     show : bool, optional
         If True, show the plot even if saving.  Default is False.
     grid : bool, optional
@@ -38,7 +38,7 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
         elif isinstance(model, int): # Passed model number
             if base_dir is None:
                 raise ValueError("'base_dir' (base directory) must be specified if using model numbers.")
-            model_dir = f"Model{model:03d}"
+            model_dir = f"Model{model:05d}"
             return os.path.join(base_dir, model_dir, "time_evolution.txt")
         else:
             raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
@@ -49,7 +49,7 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
     cmap = plt.get_cmap('tab10')
 
     for i, data in enumerate(data_list):
-        label = f"{data['model_id']:03d}"
+        label = f"{data['model_id']:05d}"
         ax.plot(data['time'], data[quantity], lw=2, ls='solid', color=cmap(i % 10), label=label)
 
     ax.set_xlabel(r'Time [$t_\mathrm{char}$]', fontsize=16)

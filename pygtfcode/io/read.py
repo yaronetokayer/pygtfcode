@@ -120,7 +120,7 @@ def get_time_conversion(filepath, index):
     float
         Time value.
     """
-    # Find corresponding timestep.log in the same ModelXXX directory
+    # Find corresponding timestep.log in the same ModelXXXXX directory
     model_dir = os.path.dirname(filepath)
 
     data = extract_snapshot_indices(model_dir)
@@ -224,7 +224,7 @@ def import_metadata(model_dir: Union[Path, str]) -> Dict[str, Dict[str, Any]]:
             if set(line.strip()) == {"="}:  # e.g., "====="
                 continue
 
-            # Skip the header line like "Model 004 Metadata"
+            # Skip the header line like "Model 00004 Metadata"
             if line.startswith("Model ") and line.endswith(" Metadata"):
                 continue
 

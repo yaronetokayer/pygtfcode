@@ -50,7 +50,7 @@ def write_metadata(state):
         return lines
 
     with open(filename, "w") as f:
-        f.write(f"Model {io.model_no:03d} Metadata\n")
+        f.write(f"Model {io.model_no:05d} Metadata\n")
         f.write("=" * 40 + "\n\n")
         lines = dump_attrs(state.config)
         f.write("\n".join(lines) + "\n")
@@ -281,6 +281,7 @@ def write_time_evolution(state, last=False):
 
     columns = [
         ("step", step),
+        ("dt", state.dt),
         ("time", t),
         ("time_Gyr", t_Gyr),
         ("rho0", state.rho[0]),
