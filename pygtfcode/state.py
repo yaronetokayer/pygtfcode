@@ -459,6 +459,7 @@ class State:
         self.step_count = 0                 # Global integration step counter (never reset)
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
+        self.du_max = 0.0                   # Max du of most recent step (used for adaptive time stepping)
 
         # For diagnostics
         self.minkn = float(np.min(self.kn))

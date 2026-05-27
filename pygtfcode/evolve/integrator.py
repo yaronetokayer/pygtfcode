@@ -22,6 +22,7 @@ def run_until_stop(state, start_step, **kwargs):
     config = state.config
     io = config.io
     sim = config.sim
+    prec = config.prec
     t_evol = bool(io.t_evol); profiles = bool(io.profiles)
     chatter = bool(io.chatter)
     t_halt = float(sim.t_halt)
@@ -33,6 +34,12 @@ def run_until_stop(state, start_step, **kwargs):
         rho0_last_prof = float(state.rho[0])
         drho_prof = float(io.drho_prof)
     nlog = int(io.nlog); nupdate = int(io.nupdate)
+
+    # For adaptive time-stepping
+    safety = 0.95
+    pow = 0.5
+    max_growth = 1.25
+    kn_threshold = 0.1
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
@@ -66,16 +73,25 @@ def run_until_stop(state, start_step, **kwargs):
         # dt_prop = config.prec.eps_dt * state.mintadv
         # small_kn_regime = True # For now, always use time-limited version of implicit conduction.
         
+        # Estimate the du-limited dt
+        if step_count == 1:
+            dt_cond = 1.0 # We have no maxdu yet, so only the relaxation-time will limit in the first step.
+        else:
+            fac = safety * ( prec.eps_du / state.du_max )**pow
+            fac = min(max_growth, fac)
+            dt_cond = fac * state.dt
+
+        # If we are not in small Kn regime, estimate the relaxation-time-limited dt
+        dt_relax = prec.eps_dt * state.mintrelax
+
         # Compute relaxation-time-limited dt
         # In low-Kn regime, only set dt in conduction routine
         small_kn_regime = False
-        if state.minkn > 0.1:
-            dt_prop = config.prec.eps_dt * state.mintrelax
+        if state.minkn > kn_threshold:
+            dt_prop = min(dt_cond, dt_relax)
         else:
             small_kn_regime = True
-            if step_count == 1:
-                dt_prop = 1.0
-            # Otherwise, use last dt
+            dt_prop = dt_cond
 
         # Integrate time step
         integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p)
@@ -267,5 +283,6 @@ def integrate_time_step(state, config,                                      # St
     state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
     # state.dt_over_tadv_cum += float(dt_prop / state.mintadv)
 
-    state.dt = float(dt_prop)
-    state.t += float(dt_prop)
+    state.du_max    = float(du_max)
+    state.dt        = float(dt_prop)
+    state.t         += float(dt_prop)
