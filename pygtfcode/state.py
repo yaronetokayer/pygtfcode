@@ -316,7 +316,7 @@ class State:
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         kn = 1.0 / (self.char.sigma_m_char * np.sqrt(rho * v2))
         # trelax = 1.0 / (np.sqrt(v2) * rho)
-        tadv = rho**( 1.0 / 3.0 ) / np.sqrt(v2)
+        tadv = 1.0 / ( np.sqrt(v2) * rho**( 1.0 / 3.0 ) )
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
         # This helps reduce artificial gradients in innermost cell
@@ -372,7 +372,7 @@ class State:
         self.kn     = data['kn'].astype(np.float64)
         # self.trelax = data['trelax'].astype(np.float64)
         # self.tadv   = data['tadv'].astype(np.float64)
-        self.tadv   = self.rho**( 1.0 / 3.0 ) / np.sqrt(self.v2) # TEMPORARY
+        self.tadv   = 1.0 / ( np.sqrt(self.v2) * self.rho**( 1.0 / 3.0 ) ) # TEMPORARY
         self.Theta  = data['Theta'].astype(np.float64)
 
     def _ensure_virial_equilibfrium(self):
@@ -433,7 +433,7 @@ class State:
         self.rmid   = 0.5 * (r_new[1:] + r_new[:-1])
         self.kn     = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
         # self.trelax = 1.0 / (np.sqrt(v2_new) * rho_new)
-        self.tadv   = rho_new**(1.0 / 3.0) / np.sqrt(v2_new)
+        self.tadv   = 1.0 / ( np.sqrt(v2_new) * rho_new**( 1.0 / 3.0 ) )
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")

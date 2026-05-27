@@ -250,10 +250,11 @@ def integrate_time_step(state, config,                                      # St
     # np.reciprocal(state.trelax, out=state.trelax)
     # state.mintrelax = float(np.min(state.trelax))
 
-    # tadv = Delta r / v = rho^(1/3) / v
+    # tadv = Delta r / v = 1 / ( v * rho^(1/3) )
     np.cbrt(rho, out=state.tadv)
     np.sqrt(state.v2, out=work)
-    np.divide(state.tadv, work, out=state.tadv)
+    np.multiply(state.tadv, work, out=state.tadv)
+    np.reciprocal(state.tadv, out=state.tadv)
     state.mintadv = float(np.min(state.tadv))
 
     # Diagnostics

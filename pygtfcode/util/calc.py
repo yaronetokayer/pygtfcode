@@ -453,16 +453,18 @@ def calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta):
     return r_c, rho_c, m_c, v2_c
 
 @njit(float64[:](float64[:], float64[:], types.int64), fastmath=True, cache=True)
-def calc_zeta_local_fit_v2(m_c, v2_c, window):
+def calc_zeta_local_fit_v2(m_c, v2_c, window): 
     """
-    Computes zeta = dln(m_c) / dln(v2_c) using a local log-log fit.
+    Computes zeta = dln(v2_c) / dln(m_c) + 1 using a local log-log fit.
 
-    zeta is estimated as the local power-law slope between m_c and v2_c,
-    so that locally m_c is approximately proportional to v2_c**zeta.
+    zeta is estimated from the local power-law relation between v2_c and m_c,
+    so that locally v2_c is approximately proportional to
+
+        m_c**(zeta - 1).
 
     At each point i, zeta[i] is computed by fitting
 
-        ln(m_c) = a + zeta * ln(v2_c)
+        ln(v2_c) = a + (zeta - 1) * ln(m_c)
 
     over a window of neighboring points.
 
@@ -478,7 +480,7 @@ def calc_zeta_local_fit_v2(m_c, v2_c, window):
     Returns
     -------
     zeta : ndarray, shape (N,)
-        Local logarithmic slope dln(m_c) / dln(v2_c).
+        Local logarithmic slope dln(v2_c) / dln(m_c) + 1.
     """
     N = m_c.shape[0]
 
@@ -504,14 +506,14 @@ def calc_zeta_local_fit_v2(m_c, v2_c, window):
         if i0 < 0:
             i0 = 0
 
-        # First pass: compute mean log(v2_c) and mean log(m_c).
+        # First pass: compute mean log(m_c) and mean log(v2_c).
         xbar = 0.0
         ybar = 0.0
         count = 0
 
         for j in range(i0, i1):
-            xbar += math.log(v2_c[j])
-            ybar += math.log(m_c[j])
+            xbar += math.log(m_c[j])
+            ybar += math.log(v2_c[j])
             count += 1
 
         xbar /= count
@@ -522,8 +524,8 @@ def calc_zeta_local_fit_v2(m_c, v2_c, window):
         den = 0.0
 
         for j in range(i0, i1):
-            x = math.log(v2_c[j])
-            y = math.log(m_c[j])
+            x = math.log(m_c[j])
+            y = math.log(v2_c[j])
 
             dx = x - xbar
             dy = y - ybar
@@ -532,9 +534,9 @@ def calc_zeta_local_fit_v2(m_c, v2_c, window):
             den += dx * dx
 
         if den > 0.0:
-            zeta[i] = num / den
+            zeta[i] = num / den + 1.0
         else:
-            zeta[i] = 0.0
+            zeta[i] = 1.0
 
     return zeta
 
@@ -575,3 +577,90 @@ def solve_tridiagonal_thomas(a, b, c, y, x):
 
     for i in range(n - 2, -1, -1):
         x[i] -= gam[i+1] * x[i+1]
+
+# OLD INCORRECT ZETA DEFINITION:
+# @njit(float64[:](float64[:], float64[:], types.int64), fastmath=True, cache=True)
+# def calc_zeta_local_fit_v2(m_c, v2_c, window): 
+#     """
+#     Computes zeta = dln(m_c) / dln(v2_c) using a local log-log fit.
+
+#     zeta is estimated as the local power-law slope between m_c and v2_c,
+#     so that locally m_c is approximately proportional to v2_c**zeta.
+
+#     At each point i, zeta[i] is computed by fitting
+
+#         ln(m_c) = a + zeta * ln(v2_c)
+
+#     over a window of neighboring points.
+
+#     Arguments
+#     ---------
+#     m_c : ndarray, shape (N,)
+#         Core masses.
+#     v2_c : ndarray, shape (N,)
+#         Core square of 1D velocity dispersion.
+#     window : int
+#         Number of points used in each local fit. Must be odd.
+
+#     Returns
+#     -------
+#     zeta : ndarray, shape (N,)
+#         Local logarithmic slope dln(m_c) / dln(v2_c).
+#     """
+#     N = m_c.shape[0]
+
+#     zeta = np.empty(N, dtype=np.float64)
+
+#     half_window = window // 2
+
+#     for i in range(N):
+
+#         # Choose local fitting window centered on i.
+#         i0 = i - half_window
+#         i1 = i + half_window + 1
+
+#         # Shift the window back inside the valid index range near boundaries.
+#         if i0 < 0:
+#             i1 -= i0
+#             i0 = 0
+
+#         if i1 > N:
+#             i0 -= i1 - N
+#             i1 = N
+
+#         if i0 < 0:
+#             i0 = 0
+
+#         # First pass: compute mean log(v2_c) and mean log(m_c).
+#         xbar = 0.0
+#         ybar = 0.0
+#         count = 0
+
+#         for j in range(i0, i1):
+#             xbar += math.log(v2_c[j])
+#             ybar += math.log(m_c[j])
+#             count += 1
+
+#         xbar /= count
+#         ybar /= count
+
+#         # Second pass: compute least-squares slope in log-log space.
+#         num = 0.0
+#         den = 0.0
+
+#         for j in range(i0, i1):
+#             x = math.log(v2_c[j])
+#             y = math.log(m_c[j])
+
+#             dx = x - xbar
+#             dy = y - ybar
+
+#             num += dx * dy
+#             den += dx * dx
+
+#         if den > 0.0:
+#             zeta[i] = num / den
+#         else:
+#             zeta[i] = 0.0
+
+#     return zeta
