@@ -41,6 +41,8 @@ def interp_powerlaw_edges_to_cells(r_edges_1d, q_edges_1d, r_cells_1d) -> np.nda
     Power-law interpolate edge values q_edges_1d to cell-center locations.
     Assumes that within each cell, q(r) = q_L * (r / r_L)^a
 
+    All input arrays are the same length; implied left edge is (r,q) = (0,0).
+
     Requires:
         r_edges_1d > 0
         q_edges_1d > 0
@@ -49,6 +51,10 @@ def interp_powerlaw_edges_to_cells(r_edges_1d, q_edges_1d, r_cells_1d) -> np.nda
     N = r_cells_1d.shape[0]
     out = np.empty(N, dtype=np.float64)
 
+    # First cell: use linear interpolation from (0,0) to (r_edges_1d[0], q_edges_1d[0])
+    out[0] = q_edges_1d[0] * r_cells_1d[0] / r_edges_1d[0]
+
+    # Remaining cells: use power-law interpolation between edges
     log_rL = math.log(r_edges_1d[0])
     log_qL = math.log(q_edges_1d[0])
 

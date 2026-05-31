@@ -146,7 +146,7 @@ def extract_snapshot_data(filepath, add_time=True):
     -------
     dict
         Dictionary of numpy arrays with keys:
-        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'trel', 'kn', 'time'
+        'log_r', 'log_rmid', 'm', 'rho', 'v2', 'kn', 'time'
     """
     # Read first line
     with open(filepath, "r") as f:

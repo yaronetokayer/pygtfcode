@@ -711,6 +711,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
                 v2[i] += dv2i
             return du_max, dt_trial, j
 
-        dt_trial *= safety * eps_du / du_max
+        fac = safety * eps_du / du_max
+        dt_trial *= fac
 
     return du_max, dt_trial, -1

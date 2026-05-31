@@ -66,7 +66,7 @@ def rho(phi, config):
     
     return float(4.0 * np.pi * result)
 
-def generate_rho_lookup(config, n_points=10000, phi_min=1e-7):
+def generate_rho_lookup(config, phi_max=None, n_points=10000, phi_min=1e-7):
     """
     Generate an interpolated function for rho(phi) for use in later functions.
 
@@ -78,6 +78,8 @@ def generate_rho_lookup(config, n_points=10000, phi_min=1e-7):
         Maximum potential value to consider.
     n_points : int
         Number of points used to generate the interpolated function.
+    phi_min : float
+        Minimum potential value to consider (should be > 0 to avoid singularities).
 
     Returns
     -------
@@ -87,12 +89,16 @@ def generate_rho_lookup(config, n_points=10000, phi_min=1e-7):
     if config.io.chatter:
         print("Generating lookup for rho(phi)...")
 
-    phi_max = float(1.0 - config.init.Zt - 1e-4)
+    Zt = float(config.init.Zt)
+
+    if phi_max is None:
+        # Stay slightly below formal endpoint to avoid endpoint issues.
+        phi_max = 1.0 - Zt - 1e-8
 
     # Precompute rho over a grid of phi
-    phi_grid = np.linspace(float(phi_min), phi_max, n_points, dtype=np.float64)  # choose phi_max ~ initial phi0
+    phi_grid = np.linspace(float(phi_min), float(phi_max), int(n_points), dtype=np.float64)  # choose phi_max ~ initial phi0
     rho_grid = np.array([rho(phi, config) for phi in phi_grid], dtype=np.float64)
-    rho_interp = interp1d(phi_grid, rho_grid, bounds_error=False, fill_value=0.0)
+    rho_interp = interp1d(phi_grid, rho_grid, kind="linear", bounds_error=False, fill_value=(0.0, rho_grid[-1]))
 
     return rho_interp
 
@@ -125,97 +131,129 @@ def integrate_potential(config, rho_interp):
     config : Config
         Simulation configuration.
     rho_interp : interp1d
-        Interpolated function for rho(phi).
+        Interpolated function giving rho(phi).
 
     Returns
     -------
     rcut : float
-        Truncation radius (in units of r_s).
+        Truncation radius, in units of r_s.
     rmax_new : float
-        Updated value of grid.rmax (ensures rmax < rcut).
+        Updated grid.rmax, capped below rcut.
     pot_interp : interp1d
-        Interpolated potential function.
-    rad : ndarray
-        Radial grid points where potential was computed.
-    pot_vals : ndarray
-        Corresponding potential values at those radial points.
+        Interpolated potential profile phi(r).
+    rad_arr : ndarray
+        Radial grid points where the potential was computed.
+    pot_arr : ndarray
+        Potential values at those radial points.
     """
     chatter = config.io.chatter
     init = config.init
+    grid = config.grid
 
     if chatter:
         print("Computing potential profile for truncated NFW halo...")
-    r_min = float(config.grid.rmin) / 2.0
+
+    r_min = 0.5 * float(grid.rmin)
     eps = 1e-6  # A small number used for finite differences
     Zt = float(init.Zt)
-    deltaP = -50.0 * float(init.deltaP)
-    Nstep = 10
+    delta_phi = -50.0 * float(init.deltaP)
+    n_substeps = 10
 
-    # Step 1: Compute initial log-derivative of potential
+    # Step 1: Compute initial gradient of potential
     r_lo = (1.0 - eps) * r_min
     r_hi = (1.0 + eps) * r_min
-    pot_lo = potential(r_lo, Zt)
-    pot_hi = potential(r_hi, Zt)
-    pot_init = potential(r_min, Zt)
-    dpot_dlogr_init = (pot_hi - pot_lo) / (r_hi - r_lo)
+
+    pot_lo      = potential(r_lo, Zt)
+    pot_hi      = potential(r_hi, Zt)
+    pot_init    = potential(r_min, Zt)
+
+    if pot_init > rho_interp.x[-1]:
+        raise ValueError(
+            f"Initial potential phi={pot_init:.6e} exceeds rho lookup range "
+            f"phi_max={rho_interp.x[-1]:.6e}. Increase phi_max or decrease the cushion."
+        )
+
+    dpot_dr_init = (pot_hi - pot_lo) / (r_hi - r_lo)
 
     # Step 2: Prepare initial values for ODE integration, assuming linearity
-    y = np.array([pot_init, dpot_dlogr_init], dtype=np.float64)  # y = [phi, dphi/dlogr]
-    dr = deltaP / y[1]
-    r1 = r_min
+    y = np.array([pot_init, dpot_dr_init], dtype=np.float64)  # y = [phi, dphi/dr]
+    
+    r1 = float(r_min)
+    dr = delta_phi / y[1]
     r2 = r1 + dr
 
-    rad = [float(r1)]
+    rad = [r1]
     pot_vals = [float(y[0])]
 
     r_last_print = 0.0
+
+    def rhs(r, y):
+        phi, dphi_dr = y
+        rho = float(rho_interp(phi))
+        return [dphi_dr, -rho - 2.0 * dphi_dr / r]
 
     # Step 3: Integrate until potential crosses zero
     while y[0] > 0.0:
         # Only print if r has changed by at least 1.5 since last print
         if chatter and (len(rad) == 1 or abs(r1 - r_last_print) >= 1.5):
-                print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}", end='', flush=True)
-                r_last_print = r1
-        step_size = (r2 - r1) / Nstep
+            print(
+                f"\rIntegrating Poisson equation outward: "
+                f"r = {r1:.6f}, phi = {y[0]:.6f}",
+                end="",
+                flush=True,
+            )
+            r_last_print = r1
 
-        def dphi_dr(r, y):
-            phi, dphi_dr = y
-            Q = float(rho_interp(phi))
-            return [dphi_dr, -Q - 2.0 * dphi_dr / r]
+        step_size = (r2 - r1) / n_substeps
         
         sol = solve_ivp(
-            dphi_dr,
-            (float(r1), float(r2)),
+            rhs,
+            (r1, r2),
             y,
             method='RK45',
-            t_eval=[float(r2)],
-            max_step=float(step_size),
+            t_eval=[r2],
+            max_step=step_size,
             rtol=1e-5,
             atol=1e-8
         )
 
+        if not sol.success:
+            raise RuntimeError(f"Potential integration failed: {sol.message}")
+
         y = sol.y[:, -1].astype(np.float64, copy=False)
         r1 = float(r2)
+
         rad.append(r2)
         pot_vals.append(float(y[0]))
 
-        dr = deltaP / y[1]
-        if dr < 0.0:
-            raise RuntimeError("dr became negative during integration.")
+        dr = delta_phi / y[1]
+
+        if dr <= 0.0:
+            raise RuntimeError("Non-positive dr encountered during potential integration.")
 
         dr = min(dr, 0.01)
         r2 = r1 + dr
 
     if chatter:
-        print(f"\rIntegrating Poisson equation outward: r = {r1:.6f}, phi = {y[0]:.6f}")
+        print(
+            f"\rIntegrating Poisson equation outward: "
+            f"r = {r1:.6f}, phi = {y[0]:.6f}"
+        )
 
     # Step 4: truncate and return values
     rcut = float(r1)
-    rmax_new = float(min(config.grid.rmax, 0.99 * rcut))
+    rmax_new = float(min(grid.rmax, 0.99 * rcut))
 
     rad_arr = np.asarray(rad, dtype=np.float64)
     pot_arr = np.asarray(pot_vals, dtype=np.float64)
-    pot_interp = interp1d(rad, pot_vals, kind='cubic', fill_value=0.0, bounds_error=False)
+
+    pot_interp = interp1d(
+        rad_arr,
+        pot_arr,
+        kind="cubic",
+        fill_value=0.0,
+        bounds_error=False,
+    )
 
     return rcut, rmax_new, pot_interp, rad_arr, pot_arr
 
@@ -238,11 +276,18 @@ def _density_times_r2_trunc(r, state):
         Value of the integrand rho(r) * r^2.
     """
     r = float(r)
-    if r < float(state.pot_rad[0]): # the interpolated potential is not defined below the first radial point
-        density = 1.0 / (r * (1.0 + r)**2)
-    else:
-        pot = float(state.pot_interp(r))
-        density = float(state.rho_interp(pot))
+
+    if r <= 0.0:
+        return 0.0
+
+    if r < float(state.pot_rad[0]):
+        # NFW inner region:
+        # rho = 1 / [r (1 + r)^2]
+        # rho * r^2 = r / (1 + r)^2
+        return r / (1.0 + r)**2
+
+    pot = float(state.pot_interp(r))
+    density = float(state.rho_interp(pot))
 
     return density * r**2
 
@@ -308,7 +353,7 @@ def generate_sigr_integrand_lookup(state, n_points=1000):
     if state.config.io.chatter:
         print("Generating lookup for v2 integrand...")
     
-    r_lo = float(state.config.grid.rmin) / 2.0 - 1e-4
+    r_lo = max(0.5 * float(state.config.grid.rmin), 1e-10)
     rgrid = np.geomspace(r_lo, float(state.rcut), int(n_points), dtype=np.float64)
     
     pot = state.pot_interp(rgrid).astype(np.float64, copy=False)
@@ -348,6 +393,9 @@ def sigr_trunc(r, state):
 
     for i, ri in enumerate(r):
         if ri > float(state.rcut):
+            out[i] = 0.0
+            continue
+        if ri <= 0.0:
             out[i] = 0.0
             continue
         else:

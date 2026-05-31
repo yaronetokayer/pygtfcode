@@ -2,6 +2,7 @@ import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, compute_mass, STATUS_SHELL_CROSSING
+from pygtfcode.util.calc import low_kn_boost
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -12,21 +13,18 @@ def run_until_stop(state, start_step, **kwargs):
     ##################
 
     # User halting criteria
-    steps = kwargs.get('steps', None)
-    time_limit = kwargs.get('stoptime', None)
+    steps       = kwargs.get('steps', None)
+    time_limit  = kwargs.get('stoptime', None)
     rho_c_limit = kwargs.get('rho_c', None)
-    step_i = state.step_count if steps is not None else None
-    time_i = state.t if time_limit is not None else None
+    step_i      = state.step_count if steps is not None else None
+    time_i      = state.t if time_limit is not None else None
 
     # Locals for speed + type hardening
     config = state.config
-    io = config.io
-    sim = config.sim
-    prec = config.prec
-    t_evol = bool(io.t_evol); profiles = bool(io.profiles)
-    chatter = bool(io.chatter)
-    t_halt = float(sim.t_halt)
-    rho_c_halt = float(sim.rho_c_halt)
+    io = config.io; sim = config.sim; prec = config.prec
+    
+    t_evol = bool(io.t_evol); profiles = bool(io.profiles); chatter = bool(io.chatter)
+    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
         drho_tevol = float(io.drho_tevol)
@@ -36,10 +34,10 @@ def run_until_stop(state, start_step, **kwargs):
     nlog = int(io.nlog); nupdate = int(io.nupdate)
 
     # For adaptive time-stepping
-    safety = 0.95
-    pow = 0.5
-    max_growth = 1.25
-    kn_threshold = 0.1
+    safety = 0.99
+    kn_threshold = prec.kn_threshold
+    du_boost = prec.du_boost
+    kn_width = prec.kn_width
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
@@ -68,33 +66,19 @@ def run_until_stop(state, start_step, **kwargs):
         # Increment counter
         state.step_count += 1
         step_count = state.step_count
-
-        # Compute advection-time-limited dt
-        # dt_prop = config.prec.eps_dt * state.mintadv
-        # small_kn_regime = True # For now, always use time-limited version of implicit conduction.
         
-        # Estimate the du-limited dt
+        # Estimate the proposed du-limited dt using proportional control
+        eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
+        
         if step_count == 1:
-            dt_cond = 1.0 # We have no maxdu yet, so only the relaxation-time will limit in the first step.
+            dt_prop = 1.0 # We have no maxdu yet
         else:
-            fac = safety * ( prec.eps_du / state.du_max )**pow
-            fac = min(max_growth, fac)
-            dt_cond = fac * state.dt
-
-        # If we are not in small Kn regime, estimate the relaxation-time-limited dt
-        dt_relax = prec.eps_dt * state.mintrelax
-
-        # Compute relaxation-time-limited dt
-        # In low-Kn regime, only set dt in conduction routine
-        small_kn_regime = False
-        if state.minkn > kn_threshold:
-            dt_prop = min(dt_cond, dt_relax)
-        else:
-            small_kn_regime = True
-            dt_prop = dt_cond
+            err = eps_du_eff / state.du_max
+            fac = safety * err
+            dt_prop = fac * state.dt
 
         # Integrate time step
-        integrate_time_step(state, config, dt_prop, small_kn_regime, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p)
+        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -158,7 +142,7 @@ def run_until_stop(state, start_step, **kwargs):
             print("Simulation halted: max time exceeded")
 
 def integrate_time_step(state, config,                                      # State arrays
-                        dt_prop, small_kn_regime, step_count,               # Instantaneous variables
+                        dt_prop, eps_du_eff, step_count,                    # Instantaneous variables
                         dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,   # Memory allocations (N-1,)
                         work, p,                                            # Memory allocations (N,)
                         ):
@@ -172,10 +156,10 @@ def integrate_time_step(state, config,                                      # St
         The current simulation state.
     config : Config
         Configuration object for simulation.
+    eps_du_eff : float
+        Effective du criterion for adaptive time-stepping, which may be relaxed in low-kn regime.
     dt_prop : float
         Proposed dt value returned by compute_time_step
-    small_kn_regime : Boolean
-        If True, use time-limited version of implicit conduction
     step_count : int
         Step count
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
@@ -190,7 +174,7 @@ def integrate_time_step(state, config,                                      # St
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     sigma_m = float(char.sigma_m_char)
     alph = float(sim.alph)
-    eps_du = float(prec.eps_du); eps_dr = float(prec.eps_dr)
+    eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
     # Copy state arrays
@@ -208,12 +192,8 @@ def integrate_time_step(state, config,                                      # St
     ### Step 1: Energy transport ###
     # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
     # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
-    if small_kn_regime:
-        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
-        du_max, dt_prop, iter_du = conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph, eps_du, max_iter_du)
-    else:
-        # du_max, dt_prop, iter_du = conduct_implicit_nolim(v2, rho, r, m, dv2, dt_prop, a, b, c, sigma_m, alph)
-        du_max, dt_prop, iter_du = conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph)
+    du_max, dt_prop, iter_du = conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+    
     if iter_du == -1:
         raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
         
@@ -260,19 +240,6 @@ def integrate_time_step(state, config,                                      # St
     np.reciprocal(state.kn, out=state.kn)
     state.minkn = float(np.min(state.kn))
 
-    # Update trelax without allocations
-    np.sqrt(state.v2, out=state.trelax)
-    state.trelax *= rho
-    np.reciprocal(state.trelax, out=state.trelax)
-    state.mintrelax = float(np.min(state.trelax))
-
-    # tadv = Delta r / v = 1 / ( v * rho^(1/3) )
-    # np.cbrt(rho, out=state.tadv)
-    # np.sqrt(state.v2, out=work)
-    # np.multiply(state.tadv, work, out=state.tadv)
-    # np.reciprocal(state.tadv, out=state.tadv)
-    # state.mintadv = float(np.min(state.tadv))
-
     # Diagnostics
     state.n_iter_du += iter_du
     state.n_iter_dr += iter_dr
@@ -280,8 +247,6 @@ def integrate_time_step(state, config,                                      # St
     if step_count != 1:
         state.dr_max_cum += float(dr_max)
     state.du_max_cum += float(du_max)
-    state.dt_over_trelax_cum += float(dt_prop / state.mintrelax)
-    # state.dt_over_tadv_cum += float(dt_prop / state.mintadv)
 
     state.du_max    = float(du_max)
     state.dt        = float(dt_prop)

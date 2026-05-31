@@ -540,7 +540,7 @@ def calc_zeta_local_fit_v2(m_c, v2_c, window):
 
     return zeta
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True)
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
 def solve_tridiagonal_thomas(a, b, c, y, x):
     """
     Solve a tridiagonal system Ax = y using the Thomas algorithm.
@@ -577,6 +577,19 @@ def solve_tridiagonal_thomas(a, b, c, y, x):
 
     for i in range(n - 2, -1, -1):
         x[i] -= gam[i+1] * x[i+1]
+
+@njit(float64(float64, float64, float64, float64), fastmath=True, cache=True)
+def low_kn_boost(minkn, kn_threshold, boost, width):
+    """
+    Smooth multiplicative boost to eps_du in the low-Knudsen regime.
+
+    Returns ~1 when minkn >> kn_threshold,
+    ~boost when minkn << kn_threshold.
+    """
+    x = np.log10(minkn / kn_threshold)
+    S = 1.0 / (1.0 + np.exp(x / width))
+
+    return 1.0 + (boost - 1.0) * S
 
 # OLD INCORRECT ZETA DEFINITION:
 # @njit(float64[:](float64[:], float64[:], types.int64), fastmath=True, cache=True)

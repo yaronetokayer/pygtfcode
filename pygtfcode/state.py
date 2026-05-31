@@ -315,8 +315,6 @@ class State:
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         kn = 1.0 / (self.char.sigma_m_char * np.sqrt(rho * v2))
-        trelax = 1.0 / (np.sqrt(v2) * rho)
-        # tadv = 1.0 / ( np.sqrt(v2) * rho**( 1.0 / 3.0 ) )
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
         # This helps reduce artificial gradients in innermost cell
@@ -336,8 +334,6 @@ class State:
         self.rho    = rho
         self.v2     = v2
         self.kn     = kn
-        self.trelax = trelax
-        # self.tadv   = tadv
         self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
@@ -370,9 +366,6 @@ class State:
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
         self.kn     = data['kn'].astype(np.float64)
-        self.trelax = data['trelax'].astype(np.float64)
-        # self.tadv   = data['tadv'].astype(np.float64)
-        # self.tadv   = 1.0 / ( np.sqrt(self.v2) * self.rho**( 1.0 / 3.0 ) ) # TEMPORARY
         self.Theta  = data['Theta'].astype(np.float64)
 
     def _ensure_virial_equilibfrium(self):
@@ -432,8 +425,6 @@ class State:
 
         self.rmid   = 0.5 * (r_new[1:] + r_new[:-1])
         self.kn     = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
-        self.trelax = 1.0 / (np.sqrt(v2_new) * rho_new)
-        # self.tadv   = 1.0 / ( np.sqrt(v2_new) * rho_new**( 1.0 / 3.0 ) )
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
@@ -463,8 +454,6 @@ class State:
 
         # For diagnostics
         self.minkn = float(np.min(self.kn))
-        self.mintrelax = float(np.min(self.trelax))
-        # self.mintadv = float(np.min(self.tadv))
 
         self.n_iter_du          = 0
         self.n_iter_dr          = 0
@@ -472,8 +461,6 @@ class State:
         self.dt_cum             = 0.0
         self.dr_max_cum         = 0.0
         self.du_max_cum         = 0.0
-        self.dt_over_trelax_cum = 0.0
-        # self.dt_over_tadv_cum    = 0.0
 
         if config.io.chatter:
             print("State initialized.")
@@ -562,7 +549,7 @@ class State:
         quantity : str, optional
             Key from the time_evolution.txt file to plot on the y-axis.
             Default is 'rho_c'.
-            Options are 'rho0', 'v_max', 'kn_min', 'mintrel'
+            Options are 'rho0', 'v_max', 'kn_min'
         ylabel : str, optional
             Custom y-axis label. Defaults to quantity.
         logy : bool, optional
@@ -588,7 +575,7 @@ class State:
         snapshots : int or list of int, optional
             Snapshot indices to plot, default is the current state
         profiles : str or list of str, optional
-            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'kn'
         filepath : str, optional
             If provided, save the plot to this file.
         show : bool, optional
@@ -611,7 +598,7 @@ class State:
         filepath : str, optional
             Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_{profiles}.mp4'
         profiles : str or list of str, optional
-            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'trelax', 'kn'
+            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'kn'
         grid : bool, optional
             If True, shows grid on axes
         fps : int, optional
