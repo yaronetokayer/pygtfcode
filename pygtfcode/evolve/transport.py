@@ -8,8 +8,8 @@ _TINY64 = np.finfo(np.float64).tiny
 
 # cored = (init.profile == 'abg') and (float(init.gamma) < 1.0) # Leftover from integration loop when we used this function
 
-@njit(void(float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
-def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored): 
+@njit(void(float64, float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
+def compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, lum, cored): 
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
     e.g, Eq. (2) in Nishikawa et al. 2020.
@@ -24,6 +24,9 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored):
         Constant 'c' in the conductivity formula.
     sigma_m : float
         Interaction cross section in dimensionless units.
+    alph : float
+        Coefficient for interpolation scheme between lmfp and smfp regimes.
+        kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph)
     r : ndarray (N+1,)
         Radial grid points, including cell edges.
     v2 : ndarray (N,)
@@ -58,10 +61,10 @@ def compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored):
         coeff = -3.0 * np.sqrt(v2int[i]) * r[i+1]**2
         lmfp_term = 1.0 / ( c * rhoint[i] * v2int[i] )
 
-        lum[i + 1] = coeff * dTdr / ( smfp_term + lmfp_term )
+        lum[i + 1] = coeff * dTdr / ( smfp_term**alph + lmfp_term**alph )**(1.0 / alph)
 
-@njit(types.Tuple((float64, float64))(float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
-def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
+def conduct_heat(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float, float, int]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
@@ -78,6 +81,10 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
         Array of luminosities from compute_luminosities (length = len(state.r))
     dv2dt : np.ndarray (N,)
         Preallocated working array for storage of dv2dt
+    r : np.ndarray (N+1,)
+        Cell edges
+    Th : np.ndarray (N,)
+        Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
     dt_prop : float
         Current timestep duration
     eps_du : float
@@ -98,32 +105,44 @@ def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float]:
         dv2dt[i] = -(2.0 / 3.0) * (lum[i+1] - lum[i]) / dm
 
     # Find maximum relative proposed change
-    floor = _TINY64
+    tiny = _TINY64
     dv2max = 0.0
+    rR = r[0]
     for i in range(N):
         dv2 = dv2dt[i] * dt_prop
 
-        denom = abs(v2[i])
-        if denom < floor:
-            denom = floor
+        v2i = v2[i]
+        denom = v2i if v2i > tiny else tiny
 
         rat = abs(dv2) / denom
         if rat > dv2max:
             dv2max = rat
+
+        rL = rR
+        rR = r[i + 1]
+        dr = rR - rL
+
+        absdv2dt = abs(dv2dt[i])
+        if absdv2dt > tiny and dr > tiny and v2i > tiny:
+            Th[i] = v2i * math.sqrt(v2i) / (dr * absdv2dt)
+        else:
+            Th[i] = np.inf
 
     # Adaptive limiter
     if dv2max > eps_du:
         scale = 0.95 * (eps_du / dv2max)
         dv2max *= scale
         dt_eff = dt_prop * scale
+        iter_du = 1
     else:
         dt_eff = dt_prop
+        iter_du = 0
 
     # Apply update in place
     for i in range(N):
         v2[i] += dv2dt[i] * dt_eff
 
-    return float(dv2max), float(dt_eff)
+    return float(dv2max), float(dt_eff), int(iter_du)
 
 ### IMPLICIT SCHEME
 

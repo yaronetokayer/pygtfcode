@@ -44,14 +44,13 @@ def run_until_stop(state, start_step, **kwargs):
     Np1         = state.r.shape[0]
     N           = Np1 - 1
     n_int       = Np1 - 2
-    dv2         = np.empty(N,       dtype=np.float64)
     a_alloc     = np.empty(n_int,   dtype=np.float64)
     b_alloc     = np.empty(n_int,   dtype=np.float64)
     c_alloc     = np.empty(n_int,   dtype=np.float64)
     y_alloc     = np.empty(n_int,   dtype=np.float64)
     x_alloc     = np.empty(n_int,   dtype=np.float64)
-    work        = np.empty(N,       dtype=np.float64)
-    p           = np.empty(N,       dtype=np.float64)
+    work_n1     = np.empty(N,       dtype=np.float64)
+    work_n2     = np.empty(N,       dtype=np.float64)
 
     #################
     ### Main loop ###
@@ -69,7 +68,7 @@ def run_until_stop(state, start_step, **kwargs):
         
         # Estimate the proposed du-limited dt using proportional control
         eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
-        
+
         if step_count == 1:
             dt_prop = 1.0 # We have no maxdu yet
         else:
@@ -78,7 +77,7 @@ def run_until_stop(state, start_step, **kwargs):
             dt_prop = fac * state.dt
 
         # Integrate time step
-        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work, p)
+        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -141,10 +140,10 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def integrate_time_step(state, config,                                      # State arrays
-                        dt_prop, eps_du_eff, step_count,                    # Instantaneous variables
-                        dv2, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,   # Memory allocations (N-1,)
-                        work, p,                                            # Memory allocations (N,)
+def integrate_time_step(state, config,                                  # State arrays
+                        dt_prop, eps_du_eff, step_count,                # Instantaneous variables
+                        a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,    # Memory allocations (N-1,)
+                        work_n1, work_n2,                               # Memory allocations (N,)
                         ):
     """
     Advance state by one time step.
@@ -164,7 +163,7 @@ def integrate_time_step(state, config,                                      # St
         Step count
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
         Memory allocation for working arrays
-    work, p : ndarray (N,)
+    work_n1, work_n2 : ndarray (N,)
         Memory allocation for working arrays
     """
 
@@ -173,7 +172,7 @@ def integrate_time_step(state, config,                                      # St
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     sigma_m = float(char.sigma_m_char)
-    alph = float(sim.alph)
+    alph = float(sim.alph); implicit_conduct = bool(sim.implicit_conduct)
     eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
@@ -190,20 +189,26 @@ def integrate_time_step(state, config,                                      # St
     # m_tot = compute_mass(m)
 
     ### Step 1: Energy transport ###
-    # compute_luminosities(a, b, c, sigma_m, r, v2, rho, lum, cored)
-    # du_max, dt_prop = conduct_heat(v2, m, lum, work, dt_prop, eps_du)
-    du_max, dt_prop, iter_du = conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Theta, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+    if implicit_conduct:
+        # implicit: work_n1 used to store dv2
+        du_max, dt_prop, iter_du = conduct_implicit_Theta_dulim(v2, rho, r, m, work_n1, Theta, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+    else:
+        # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
+        init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+        compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, work_n2, cored)
+        du_max, dt_prop, iter_du = conduct_heat(v2, m, work_n2, work_n1, r, Theta, dt_prop, eps_du_eff)
     
     if iter_du == -1:
         raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
         
-    np.multiply(rho, v2, out=p) # p is used for revir and to set v2 later
+    np.multiply(rho, v2, out=work_n2) # work_n2 is used for p, needed for revir and to set v2 later
 
     ### Step 2: Reestablish hydrostatic equilibrium ###
     iter_dr = 0
     while True:
-        status, dr_max = revirialize(r, rho, p, m, 
-                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work) # Modifies r, rho, p in place
+        # work_n1 used to store old shell volumes; work_n2 is p
+        status, dr_max = revirialize(r, rho, work_n2, m, 
+                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1) # Modifies r, rho, p in place
 
         # Shell crossing signaled by None
         if status == STATUS_SHELL_CROSSING:
@@ -224,18 +229,17 @@ def integrate_time_step(state, config,                                      # St
         break
 
     ### Step 3: Update state variables ###
-    # m not updated in Lagrangian code
 
     # r, rho, and theta were modified in place already; no need to assign them
     # Still need to update v2 based on the new p and rho
-    np.divide(p, rho, out=state.v2)
+    np.divide(work_n2, rho, out=state.v2)
 
     # Update rmid without allocations
     np.add(r[1:], r[:-1], out=state.rmid)
     state.rmid *= 0.5
 
     # Update kn without allocations
-    np.sqrt(p, out=state.kn)
+    np.sqrt(work_n2, out=state.kn)
     state.kn *= sigma_m
     np.reciprocal(state.kn, out=state.kn)
     state.minkn = float(np.min(state.kn))

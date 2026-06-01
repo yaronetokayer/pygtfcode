@@ -13,6 +13,8 @@ class SimParams:
         Simulation halt time. Must be positive.
     rho_c_halt : float
         Central density at which to halt the simulation. Must be positive.
+    implicit_conduct : bool
+        Whether to use implicit method for conduction step. If False, uses explicit method.
     a : float
         Model parameter 'a'. Must be positive.
     b : float
@@ -22,18 +24,20 @@ class SimParams:
     """
     def __init__(
             self, 
-            sigma_m     : float = 10.0,
-            alph        : float = 1.0,
-            t_halt      : float = 1e3,
-            rho_c_halt  : float = 1500,
-            a           : float = 2.256758,
-            b           : float = 1.38,
-            c           : float = 0.75
+            sigma_m             : float = 10.0,
+            alph                : float = 1.0,
+            t_halt              : float = 1e3,
+            rho_c_halt          : float = 1500,
+            implicit_conduct    : bool = True,
+            a                   : float = 2.256758,
+            b                   : float = 1.38,
+            c                   : float = 0.75
     ):
         self._sigma_m = None
         self._alph = None
         self._t_halt = None
-        self.rho_c_halt = rho_c_halt
+        self._rho_c_halt = rho_c_halt
+        self._implicit_conduct = implicit_conduct
         self._a = None
         self._b = None
         self._c = None
@@ -42,6 +46,7 @@ class SimParams:
         self.alph = alph
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
+        self.implicit_conduct = implicit_conduct
         self.a = a
         self.b = b
         self.c = c
@@ -85,6 +90,16 @@ class SimParams:
         if value <= 0:
             raise ValueError("rho_c_halt must be positive")
         self._rho_c_halt = float(value)
+
+    @property
+    def implicit_conduct(self):
+        return self._implicit_conduct
+    
+    @implicit_conduct.setter
+    def implicit_conduct(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("implicit_conduct must be a boolean")
+        self._implicit_conduct = value
 
     @property
     def a(self):

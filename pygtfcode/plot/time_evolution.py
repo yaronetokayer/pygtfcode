@@ -54,7 +54,7 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
 
     ax.set_xlabel(r'Time [$t_\mathrm{char}$]', fontsize=16)
     ax.set_ylabel(ylabel if ylabel else quantity, fontsize=16)
-    ax.set_xscale('log') ###
+    # ax.set_xscale('log') ###
     if logy:
         ax.set_yscale('log')
     ax.tick_params(axis='both', labelsize=12)

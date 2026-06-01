@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
-from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_zeta_local_fit_v2
+from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_zeta_local_fit_v2, low_kn_boost
 from pygtfcode.parameters.constants import Constants as const
 
 def make_dir(state):
@@ -114,19 +114,20 @@ def write_log_entry(state, start_step):
     start_step : int
         The starting value of the current simulation run
     """
-    io = state.config.io
-    prec = state.config.prec
-    filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt")
-    chatter = io.chatter
+    io = state.config.io; prec = state.config.prec
+    filepath = os.path.join(io.base_dir, io.model_dir, f"logfile.txt"); chatter = io.chatter
+    kn_threshold = prec.kn_threshold; du_boost = prec.du_boost; kn_width = prec.kn_width
     step = state.step_count
 
     maxvel      = np.max(np.sqrt(state.v2))
     minTheta    = np.min(state.Theta)
 
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'Theta_min':>12}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
+
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'Theta_min':>9}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
 
     if step == start_step: # Restart
-        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}           N/A       N/A       N/A       N/A          N/A          N/A\n"
+        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}         N/A       N/A       N/A          N/A          N/A\n"
 
     else:
         nlog = io.nlog
@@ -137,7 +138,7 @@ def write_log_entry(state, start_step):
         elif ( step - start_step ) % nlog != 0:     # Final state
             nlog = ( step - start_step ) % nlog
 
-        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {minTheta:12.6e}  {state.du_max_cum / prec.eps_du / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {minTheta:9.3e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 
