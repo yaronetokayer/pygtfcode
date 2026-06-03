@@ -334,7 +334,7 @@ class State:
         self.rho    = rho
         self.v2     = v2
         self.kn     = kn
-        self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
+        # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
         """
@@ -366,7 +366,7 @@ class State:
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
         self.kn     = data['kn'].astype(np.float64)
-        self.Theta  = data['Theta'].astype(np.float64)
+        # self.Theta  = data['Theta'].astype(np.float64)
 
     def _ensure_virial_equilibfrium(self):
         """

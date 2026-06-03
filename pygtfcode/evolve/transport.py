@@ -63,8 +63,48 @@ def compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, lum, cored):
 
         lum[i + 1] = coeff * dTdr / ( smfp_term**alph + lmfp_term**alph )**(1.0 / alph)
 
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True,)
+def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float, int]:
+    """
+    Explicit heat conduction step without Theta update.
+    Updates v2 in place.
+    """
+    Np1 = m.shape[0]
+    N = Np1 - 1
+
+    for i in range(N):
+        dm = m[i + 1] - m[i]
+        dv2dt[i] = -(2.0 / 3.0) * (lum[i + 1] - lum[i]) / dm
+
+    tiny = _TINY64
+    dv2max = 0.0
+
+    for i in range(N):
+        dv2 = dv2dt[i] * dt_prop
+
+        v2i = v2[i]
+        denom = v2i if v2i > tiny else tiny
+
+        rat = abs(dv2) / denom
+        if rat > dv2max:
+            dv2max = rat
+
+    if dv2max > eps_du:
+        scale = 0.95 * (eps_du / dv2max)
+        dv2max *= scale
+        dt_eff = dt_prop * scale
+        iter_du = 1
+    else:
+        dt_eff = dt_prop
+        iter_du = 0
+
+    for i in range(N):
+        v2[i] += dv2dt[i] * dt_eff
+
+    return float(dv2max), float(dt_eff), int(iter_du)
+
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
-def conduct_heat(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float, float, int]:
+def conduct_heat_Theta(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float, float, int]:
     """
     Conduct heat and adjust internal energies accordingly.
     Ignores PdV work and assumes fixed density.
