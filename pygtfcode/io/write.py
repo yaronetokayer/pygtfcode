@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
-from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_zeta_local_fit_v2, low_kn_boost
+from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc
 from pygtfcode.parameters.constants import Constants as const
 
 def make_dir(state):
@@ -326,8 +326,13 @@ def write_time_evolution(state, last=False):
 
     if last:
         tevol_data = extract_time_evolution_data(filepath)
-        zeta_c = calc_zeta_local_fit_v2(tevol_data['m_c'], tevol_data['v2_c'], 7)
-        _append_column_to_time_evolution_file(filepath, "zeta_c", zeta_c)
+        dlnmc_dlnvc = calc_dlnmc_dlnvc(tevol_data['m_c'], tevol_data['v2_c'], 31)
+        _append_column_to_time_evolution_file(filepath, "dlnmc_dlnvc", dlnmc_dlnvc)
+        dlnrhoc_dlnvc = calc_dlnmc_dlnvc(tevol_data['rho_c'], tevol_data['v2_c'], 31)
+        _append_column_to_time_evolution_file(filepath, "dlnrhocdlnvc", dlnrhoc_dlnvc)
+        zeta_c = calc_balberg_zeta(tevol_data['m_c'], tevol_data['v2_c'], 31)
+        _append_column_to_time_evolution_file(filepath, "zeta_balb", zeta_c)
+        
         if state.config.io.chatter:
             print("Time evolution file finalized.")
 
