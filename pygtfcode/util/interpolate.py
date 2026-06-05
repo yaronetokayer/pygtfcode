@@ -38,37 +38,29 @@ def interp_linear_to_interfaces(r_edges_1d, q_cells_1d) -> np.ndarray:
 @njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
 def interp_powerlaw_edges_to_cells(r_edges_1d, q_edges_1d, r_cells_1d) -> np.ndarray:
     """
-    Power-law interpolate edge values q_edges_1d to cell-center locations.
-    Assumes that within each cell, q(r) = q_L * (r / r_L)^a
+    Interpolate edge values q to cell-center radii.
 
-    All input arrays are the same length; implied left edge is (r,q) = (0,0).
-
-    Requires:
-        r_edges_1d > 0
-        q_edges_1d > 0
-        r_cells_1d[i] inside [r_edges_1d[i], r_edges_1d[i+1]]
+    Arrays have length N and represent right edges.
+    The left edge of cell 0 is implicitly (r, q) = (0, 0).
+    Cell i > 0 lies between edges i-1 and i.
     """
     N = r_cells_1d.shape[0]
     out = np.empty(N, dtype=np.float64)
 
-    # First cell: use linear interpolation from (0,0) to (r_edges_1d[0], q_edges_1d[0])
+    # First cell: linear from implied origin to first stored edge
     out[0] = q_edges_1d[0] * r_cells_1d[0] / r_edges_1d[0]
 
-    # Remaining cells: use power-law interpolation between edges
-    log_rL = math.log(r_edges_1d[0])
-    log_qL = math.log(q_edges_1d[0])
+    # Remaining cells: power-law between stored edges i-1 and i
+    for i in range(1, N):
+        log_rL = math.log(r_edges_1d[i - 1])
+        log_qL = math.log(q_edges_1d[i - 1])
 
-    for i in range(N):
+        log_rR = math.log(r_edges_1d[i])
+        log_qR = math.log(q_edges_1d[i])
+
         log_rC = math.log(r_cells_1d[i])
 
-        log_rR = math.log(r_edges_1d[i + 1])
-        log_qR = math.log(q_edges_1d[i + 1])
-
         fac = (log_rC - log_rL) / (log_rR - log_rL)
-
         out[i] = math.exp(log_qL + fac * (log_qR - log_qL))
-
-        log_rL = log_rR
-        log_qL = log_qR
 
     return out

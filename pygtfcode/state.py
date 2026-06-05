@@ -336,6 +336,14 @@ class State:
         self.kn     = kn
         # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
+        ### Testing diagnostics ###
+        self.t_sc   = ((r[1:] - r[:-1]) / np.sqrt(v2)).astype(np.float64)
+        self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
+        self.t_cool = np.zeros_like(rho, dtype=np.float64)
+        self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
+        self.drfrac = (np.diff(r) / r_mid).astype(np.float64)
+        self.lum    = np.zeros_like(r, dtype=np.float64)
+
     def _load_ic(self, ic_filepath):
         """
         Loads initial conditions from a snapshot file.
@@ -362,11 +370,20 @@ class State:
             self.r[:] = r_loaded
             # raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
 
+        self.rmid   = (0.5 * self.r[1:] + self.r[:-1]).astype(np.float64)
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
         self.kn     = data['kn'].astype(np.float64)
         # self.Theta  = data['Theta'].astype(np.float64)
+
+        ### Testing diagnostics ###
+        self.t_sc   = ((self.r[1:] - self.r[:-1]) / np.sqrt(self.v2)).astype(np.float64)
+        self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
+        self.t_cool = np.empty_like(self.rho, dtype=np.float64)
+        self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
+        self.drfrac = (np.diff(self.r) / self.rmid).astype(np.float64)
+        self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
     def _ensure_virial_equilibfrium(self):
         """

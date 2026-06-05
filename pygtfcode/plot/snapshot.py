@@ -5,11 +5,11 @@ import subprocess
 from tqdm import tqdm
 import shutil
 from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, extract_time_evolution_data
-from pygtfcode.util.interpolate import interp_powerlaw_edges_to_cells
+# from pygtfcode.util.interpolate import interp_powerlaw_edges_to_cells
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
     if xaxis == 'r':
-        xkey = 'log_r' if profile == 'm' else 'log_rmid'
+        xkey = 'log_r' if profile in ['m','lum'] else 'log_rmid'
     elif xaxis == 'm':
         xkey = 'm'
 
@@ -22,24 +22,28 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
         if xaxis == 'r':
             x = 10**data[xkey]
         elif xaxis == 'm':
-            if profile == 'm':
+            if profile in ['m','lum']:
                 x = data['m']
             else:
                 m_edges = data['m']
-                r_edges = 10**data['log_r']
-                rmid = 10**data['log_rmid']
-                x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
+                x = np.empty_like(m_edges)
+                x[0] = 0.5 * m_edges[0]
+                x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
 
         y = data[profile]
 
-        positive_y = y[y > 0] # Guard against zero or negative profiles
-        if len(positive_y) > 0:
-            ylim_lower = min(ylim_lower, np.min(positive_y) * 0.5)
+        # Ignore NaNs when finding positive values
+        positive_y = y[(y > 0) & np.isfinite(y)]
 
-        ylim_upper = max(ylim_upper, np.max(y) * 10)
+        if positive_y.size > 0:
+            ylim_lower = min(ylim_lower, np.nanmin(positive_y) * 0.5)
 
-        xlim_lower = min(xlim_lower, np.min(x) * 0.8)
-        xlim_upper = max(xlim_upper, np.max(x) * 1.2)
+        if np.any(np.isfinite(y)):
+            ylim_upper = max(ylim_upper, np.nanmax(y) * 10)
+
+        if np.any(np.isfinite(x)):
+            xlim_lower = min(xlim_lower, np.nanmin(x) * 0.8)
+            xlim_upper = max(xlim_upper, np.nanmax(x) * 1.2)
 
     if profile in ['kn', 'Theta']:
         ylim_lower = min(ylim_lower, 0.1)
@@ -83,7 +87,7 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
         cmap = plt.get_cmap('tab20')
 
     if xaxis == 'r':
-        xkey = 'log_r' if profile == 'm' else 'log_rmid'
+        xkey = 'log_r' if profile in ['m', 'lum'] else 'log_rmid'
     elif xaxis == 'm':
         xkey = 'm'
 
@@ -97,21 +101,25 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     for ind, data in enumerate(data_list):
         rmid = 10**data['log_rmid']
         if xaxis == 'r':
-            x = 10**data[xkey] if profile == 'm' else rmid
+            x = 10**data[xkey] if profile in ['m','lum'] else rmid
         elif xaxis == 'm':
             m_edges = data[xkey]
-            r_edges = 10**data['log_r']
-            x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
+            x = np.empty_like(m_edges)
+            x[0] = 0.5 * m_edges[0]
+            x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
+            # m_edges = data[xkey]
+            # r_edges = 10**data['log_r']
+            # x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
 
         y = data[profile]
 
         ax.plot( x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
-        if profile in ['kn', 'Theta'] and ind == 0:
+        if profile in ['kn', 'dttcool', 'dttcoll', 'dttsc', 'dttdyn'] and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
             if profile == 'kn':
-                ax.text( 0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
-                ax.text( 0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
+                ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
+                ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
 
     # Cosmetics
     ax.set_xlim(xlim)
@@ -360,7 +368,7 @@ def make_movie_deluxe(model, profiles=None, insets=None, xaxis=None, add_radii=N
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'Theta']
+    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcoll', 'dttsc', 'dttcool', 'dttdyn', 'lum', 'drfrac']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     

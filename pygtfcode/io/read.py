@@ -159,6 +159,9 @@ def extract_snapshot_data(filepath, add_time=True):
     if data.ndim == 1:
         data = data[np.newaxis, :]
 
+    # Replace inf and -inf with nan
+    data = np.where(np.isinf(data), np.nan, data)
+
     # Build dictionary dynamically
     result = {col: data[:, i] for i, col in enumerate(header)}
 

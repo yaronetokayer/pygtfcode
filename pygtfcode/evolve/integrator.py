@@ -1,6 +1,6 @@
 import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim #, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim #, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
 from pygtfcode.util.calc import low_kn_boost
 
@@ -182,6 +182,7 @@ def integrate_time_step(state, config,                                  # State 
     v2      = np.asarray(state.v2,      dtype=np.float64)
     rho     = np.asarray(state.rho,     dtype=np.float64)
     # Theta   = np.asarray(state.Theta,   dtype=np.float64)
+    t_cool  = np.asarray(state.t_cool,  dtype=np.float64)
 
     # Compute total enclosed mass including baryons, perturbers, etc.
     # May need to move elsewhere depending on how m is updated
@@ -191,7 +192,8 @@ def integrate_time_step(state, config,                                  # State 
     ### Step 1: Energy transport ###
     if implicit_conduct:
         # implicit: work_n1 used to store dv2
-        du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
         init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
@@ -255,3 +257,25 @@ def integrate_time_step(state, config,                                  # State 
     state.du_max    = float(du_max)
     state.dt        = float(dt_prop)
     state.t         += float(dt_prop)
+
+    ### Time scales ###
+    # work_n1 to store sqrt(v2)
+    np.sqrt(state.v2, out=work_n1)
+
+    np.subtract(r[1:], r[:-1], out=state.t_sc)
+    np.divide(state.t_sc, work_n1, out=state.t_sc)
+
+    np.multiply(rho, work_n1, out=state.t_coll)
+    np.multiply(state.t_coll, sigma_m, out=state.t_coll)
+    np.reciprocal(state.t_coll, out=state.t_coll)
+
+    np.sqrt(rho, out=state.t_dyn)
+    np.reciprocal(state.t_dyn, out=state.t_dyn)
+
+    ### Other testing diagnostics ###
+    np.subtract(r[1:], r[:-1], out=state.drfrac)
+    np.divide(state.drfrac, state.rmid, out=state.drfrac)
+    
+    # Luminosity
+    init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+    compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, state.lum, cored)
