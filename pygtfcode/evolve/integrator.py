@@ -2,6 +2,7 @@ import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim #, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
+from pygtfcode.evolve.split import check_drfrac, split_grid, STATUS_SPLITS
 from pygtfcode.util.calc import low_kn_boost
 
 def run_until_stop(state, start_step, **kwargs):
@@ -24,7 +25,7 @@ def run_until_stop(state, start_step, **kwargs):
     io = config.io; sim = config.sim; prec = config.prec
     
     t_evol = bool(io.t_evol); profiles = bool(io.profiles); chatter = bool(io.chatter)
-    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt)
+    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt); grid_splitting = bool(sim.grid_splitting)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
         drho_tevol = float(io.drho_tevol)
@@ -32,6 +33,7 @@ def run_until_stop(state, start_step, **kwargs):
         rho0_last_prof = float(state.rho[0])
         drho_prof = float(io.drho_prof)
     nlog = int(io.nlog); nupdate = int(io.nupdate)
+    drfrac_max = float(prec.drfrac_max)
 
     # For adaptive time-stepping
     safety = 0.99
@@ -41,16 +43,7 @@ def run_until_stop(state, start_step, **kwargs):
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
-    Np1         = state.r.shape[0]
-    N           = Np1 - 1
-    n_int       = Np1 - 2
-    a_alloc     = np.empty(n_int,   dtype=np.float64)
-    b_alloc     = np.empty(n_int,   dtype=np.float64)
-    c_alloc     = np.empty(n_int,   dtype=np.float64)
-    y_alloc     = np.empty(n_int,   dtype=np.float64)
-    x_alloc     = np.empty(n_int,   dtype=np.float64)
-    work_n1     = np.empty(N,       dtype=np.float64)
-    work_n2     = np.empty(N,       dtype=np.float64)
+    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
     #################
     ### Main loop ###
@@ -62,11 +55,11 @@ def run_until_stop(state, start_step, **kwargs):
         ### 1. Integrate system ###
         ###########################
 
-        # Increment counter
+        #--- Increment counter
         state.step_count += 1
         step_count = state.step_count
         
-        # Estimate the proposed du-limited dt using proportional control
+        #--- Estimate the proposed du-limited dt using proportional control
         eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
 
         if step_count == 1:
@@ -76,17 +69,26 @@ def run_until_stop(state, start_step, **kwargs):
             fac = safety * err
             dt_prop = fac * state.dt
 
-        # Integrate time step
-        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
+        #--- Check for cell-splitting
+        if grid_splitting:
+            status = check_drfrac(state.r, work_nint, drfrac_max)
+            if status == STATUS_SPLITS:
+                split_grid(state, work_nint)
+                state.resize_state_arrays()
+                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
+
+        #--- Integrate time step
+        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, 
+                            a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
 
         if step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
 
-        rho0 = state.rho[0]
 
         ###########################
         ### 2. Halting criteria ###
         ###########################
+        rho0 = state.rho[0]
 
         # Check halting criteria
         if rho0 > rho_c_halt:
@@ -143,7 +145,7 @@ def run_until_stop(state, start_step, **kwargs):
 def integrate_time_step(state, config,                                  # State arrays
                         dt_prop, eps_du_eff, step_count,                # Instantaneous variables
                         a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,    # Memory allocations (N-1,)
-                        work_n1, work_n2,                               # Memory allocations (N,)
+                        work_n1, work_n2                                # Memory allocations (N,)
                         ):
     """
     Advance state by one time step.
@@ -176,7 +178,7 @@ def integrate_time_step(state, config,                                  # State 
     eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
-    # Copy state arrays
+    # Pointers to state arrays for easy access
     r       = np.asarray(state.r,       dtype=np.float64)
     m       = np.asarray(state.m,       dtype=np.float64)
     v2      = np.asarray(state.v2,      dtype=np.float64)
@@ -279,3 +281,18 @@ def integrate_time_step(state, config,                                  # State 
     # Luminosity
     init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
     compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, state.lum, cored)
+
+def allocate_work_arrays(n):
+    n_int = n - 1
+
+    a_alloc   = np.empty(n_int, dtype=np.float64)
+    b_alloc   = np.empty(n_int, dtype=np.float64)
+    c_alloc   = np.empty(n_int, dtype=np.float64)
+    y_alloc   = np.empty(n_int, dtype=np.float64)
+    x_alloc   = np.empty(n_int, dtype=np.float64)
+
+    work_n1   = np.empty(n, dtype=np.float64)
+    work_n2   = np.empty(n, dtype=np.float64)
+    work_nint = np.zeros(n, dtype=np.int64)
+
+    return a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint

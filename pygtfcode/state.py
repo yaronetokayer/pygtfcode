@@ -276,6 +276,8 @@ class State:
         r[0] = 0.0
         r[1:] = 10.0 ** np.linspace(xlgrmin, xlgrmax, ngrid, dtype=np.float64)
 
+        self.n = int(ngrid)
+
         return r
     
     def _initialize_grid(self):
@@ -629,6 +631,18 @@ class State:
         from pygtfcode.plot.snapshot import make_movie
 
         make_movie(self, **kwargs)
+
+    def resize_state_arrays(self):
+        n = self.n
+
+        self.rmid   = np.empty(n,   dtype=np.float64)
+        self.kn     = np.empty(n,   dtype=np.float64)
+        self.t_sc   = np.empty(n,   dtype=np.float64)
+        self.t_coll = np.empty(n,   dtype=np.float64)
+        self.t_dyn  = np.empty(n,   dtype=np.float64)
+        self.drfrac = np.empty(n,   dtype=np.float64)
+        self.lum    = np.empty(n+1, dtype=np.float64)
+        self.t_cool = np.empty(n,   dtype=np.float64)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key

@@ -29,6 +29,7 @@ class SimParams:
             t_halt              : float = 1e3,
             rho_c_halt          : float = 1500,
             implicit_conduct    : bool = True,
+            grid_splitting      : bool = True,
             a                   : float = 2.256758,
             b                   : float = 1.38,
             c                   : float = 0.75
@@ -38,6 +39,7 @@ class SimParams:
         self._t_halt = None
         self._rho_c_halt = rho_c_halt
         self._implicit_conduct = implicit_conduct
+        self._grid_splitting = grid_splitting
         self._a = None
         self._b = None
         self._c = None
@@ -47,6 +49,7 @@ class SimParams:
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
         self.implicit_conduct = implicit_conduct
+        self.grid_splitting = grid_splitting
         self.a = a
         self.b = b
         self.c = c
@@ -100,6 +103,16 @@ class SimParams:
         if not isinstance(value, bool):
             raise ValueError("implicit_conduct must be a boolean")
         self._implicit_conduct = value
+
+    @property
+    def grid_splitting(self):
+        return self._grid_splitting
+    
+    @grid_splitting.setter
+    def grid_splitting(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("grid_splitting must be a boolean")
+        self._grid_splitting = value
 
     @property
     def a(self):
