@@ -36,6 +36,7 @@ class PrecisionParams:
         max_iter_du : int = 10,
         max_iter_dr : int = 100,
         drfrac_max : float = 1e-1,
+        drfrac_min : float = 5e-3,
         epsabs : float = 1e-6,
         epsrel : float = 1e-6
     ):
@@ -47,6 +48,7 @@ class PrecisionParams:
         self._max_iter_du = None
         self._max_iter_dr = None
         self._drfrac_max = None
+        self._drfrac_min = None
         self._epsabs = None
         self._epsrel = None
 
@@ -58,6 +60,7 @@ class PrecisionParams:
         self.max_iter_du = max_iter_du
         self.max_iter_dr = max_iter_dr
         self.drfrac_max = drfrac_max
+        self.drfrac_min = drfrac_min
         self.epsabs = epsabs
         self.epsrel = epsrel
 
@@ -132,6 +135,15 @@ class PrecisionParams:
     def drfrac_max(self, value):
         self._validate_positive(value, "drfrac_max")
         self._drfrac_max = float(value)
+
+    @property
+    def drfrac_min(self):
+        return self._drfrac_min
+
+    @drfrac_min.setter
+    def drfrac_min(self, value):
+        self._validate_positive(value, "drfrac_min")
+        self._drfrac_min = float(value)
 
     @property
     def epsabs(self):

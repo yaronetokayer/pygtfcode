@@ -2,7 +2,7 @@ import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim #, conduct_implicit_nolim, conduct_implicit_Theta_dulim, conduct_implicit_Theta_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
-from pygtfcode.evolve.split import check_drfrac, split_grid, STATUS_SPLITS
+from pygtfcode.evolve.split import check_drfrac_split, check_drfrac_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
 from pygtfcode.util.calc import low_kn_boost
 
 def run_until_stop(state, start_step, **kwargs):
@@ -33,7 +33,7 @@ def run_until_stop(state, start_step, **kwargs):
         rho0_last_prof = float(state.rho[0])
         drho_prof = float(io.drho_prof)
     nlog = int(io.nlog); nupdate = int(io.nupdate)
-    drfrac_max = float(prec.drfrac_max)
+    drfrac_max = float(prec.drfrac_max); drfrac_min = float(prec.drfrac_min)
 
     # For adaptive time-stepping
     safety = 0.99
@@ -71,9 +71,17 @@ def run_until_stop(state, start_step, **kwargs):
 
         #--- Check for cell-splitting
         if grid_splitting:
-            status = check_drfrac(state.r, work_nint, drfrac_max)
+            # Check for splitting
+            status = check_drfrac_split(state.r, work_nint, drfrac_max)
             if status == STATUS_SPLITS:
                 split_grid(state, work_nint)
+                state.resize_state_arrays()
+                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
+
+            # Check for merging
+            status = check_drfrac_merge(state.r, work_nint, drfrac_min, drfrac_max)
+            if status == STATUS_MERGES:
+                merge_grid(state, work_nint)
                 state.resize_state_arrays()
                 a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
