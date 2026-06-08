@@ -582,6 +582,55 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt, 0
 
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64,), cache=True, fastmath=True,)
+def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m, alph,):
+    """
+    Implicit conduction step on v2.
+
+    The tridiagonal system is defined by:
+        a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
+    
+    v2 is updated in-place.
+    t_cool is updated in-place.
+
+    No du/u limiter: accepts the supplied dt and returns du_iter = 0.
+    """
+    N = v2.shape[0]
+    du_max = 0.0
+
+    a = np.empty(N, dtype=np.float64)
+    b = np.empty(N, dtype=np.float64)
+    c = np.empty(N, dtype=np.float64)
+    d = np.empty(N, dtype=np.float64)
+
+    Csmfp = a_param * sigma_m**2 / b_param
+    Clmfp = 1.0 / c_param
+
+    rho_int = interp_linear_to_interfaces(r, rho)
+
+    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
+    solve_tridiagonal_thomas(a, b, c, d, dv2)
+
+    tiny = _TINY64
+    for i in range(N):
+        v2_old = v2[i]
+        dv2i = dv2[i]
+
+        denom = v2_old if v2_old > tiny else tiny
+
+        rat = abs(dv2i) / denom
+        if rat > du_max:
+            du_max = rat
+
+        if abs(dv2i) > tiny:
+            t_cool[i] = denom * dt / abs(dv2i)
+        else:
+            t_cool[i] = np.inf
+
+        v2[i] = v2_old + dv2i
+
+    return du_max, dt, 0
+
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
 def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m, alph,):
     """

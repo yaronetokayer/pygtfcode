@@ -195,6 +195,7 @@ class State:
 
         state.r = state._setup_grid()
         state._initialize_grid()
+        state.dt = 1.0e-6
 
         write_profile_snapshot(state, initialize=True, ic_filename=ic_filepath)   # Write initial snapshot to disk
 
