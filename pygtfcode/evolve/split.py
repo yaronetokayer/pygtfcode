@@ -133,6 +133,135 @@ def _split_grid_kernel(r, m, v2, nsplit, r_new, m_new, v2_new, rho_new):
 
         j += npieces
 
+@njit((float64[:], float64[:], float64[:], int64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def _split_grid_kernel_pl(r, m, v2, nsplit, r_new, m_new, v2_new, rho_new):
+    """
+    Numba kernel to fill new split arrays.
+
+    New cell edges are even in log space in the old cell.
+    Mass is conserved.
+
+    v2 is reconstructed as a local power law in radius,
+    then renormalized so that dm*v2 is conserved inside
+    each parent cell.
+
+    rho is derived from mcell.
+    """
+    n_old = nsplit.size
+
+    j = 0
+
+    r_new[0] = r[0]; m_new[0] = m[0]
+
+    rR = r[0]; mR = m[0]
+
+    for i in range(n_old):
+        rL = rR; rR = r[i + 1]
+
+        mL = mR; mR = m[i + 1]
+
+        npieces = nsplit[i] + 1
+        inv_npieces = 1.0 / npieces
+
+        dm_parent = mR - mL
+        e_parent = dm_parent * v2[i]
+
+        # --------------------------------------------------
+        # Estimate local power-law slope:
+        #
+        #     v2(r) ~ r^alpha
+        #
+        # using neighboring cell-centered values.
+        # --------------------------------------------------
+
+        alpha = 0.0
+
+        if v2[i] > 0.0:
+            rci = 0.5 * (rL + rR)
+
+            if i > 0 and i < n_old - 1:
+                rc_minus = 0.5 * (r[i - 1] + r[i])
+                rc_plus  = 0.5 * (r[i + 1] + r[i + 2])
+
+                if (
+                    rc_minus > 0.0
+                    and rc_plus > rc_minus
+                    and v2[i - 1] > 0.0
+                    and v2[i + 1] > 0.0
+                ):
+                    alpha = math.log(v2[i + 1] / v2[i - 1]) / math.log(rc_plus / rc_minus)
+
+            elif i > 0:
+                rc_minus = 0.5 * (r[i - 1] + r[i])
+
+                if rc_minus > 0.0 and rci > rc_minus and v2[i - 1] > 0.0:
+                    alpha = math.log(v2[i] / v2[i - 1]) / math.log(rci / rc_minus)
+
+            elif i < n_old - 1:
+                rc_plus = 0.5 * (r[i + 1] + r[i + 2])
+
+                if rc_plus > rci and v2[i + 1] > 0.0:
+                    alpha = math.log(v2[i + 1] / v2[i]) / math.log(rc_plus / rci)
+
+        # --------------------------------------------------
+        # First child-cell pass:
+        # build r_new, m_new, rho_new, and provisional v2_new.
+        # Also accumulate provisional child energy.
+        # --------------------------------------------------
+
+        e_trial = 0.0
+
+        for k in range(1, npieces + 1):
+            frac = k * inv_npieces
+            j_edge = j + k
+
+            if rL > 0.0:
+                r_new[j_edge] = rL * (rR / rL) ** frac
+            else:
+                if npieces == 1:
+                    r_new[j_edge] = rR
+                else:
+                    raise RuntimeError("Encountered innermost cell split. This shouldn't happen.")
+
+            m_new[j_edge] = mL + frac * (mR - mL)
+
+            j_cell = j_edge - 1
+
+            r_edge = r_new[j_edge]
+            r_prev = r_new[j_edge - 1]
+
+            dm_cell = m_new[j_edge] - m_new[j_edge - 1]
+            dr3_cell = r_edge*r_edge*r_edge - r_prev*r_prev*r_prev
+
+            rho_new[j_cell] = 3.0 * dm_cell / dr3_cell
+
+            # Child cell center. Use arithmetic midpoint for consistency.
+            rc_child = 0.5 * (r_prev + r_edge)
+
+            if rci > 0.0 and rc_child > 0.0 and v2[i] > 0.0:
+                v2_trial = v2[i] * (rc_child / rci) ** alpha
+            else:
+                v2_trial = v2[i]
+
+            v2_new[j_cell] = v2_trial
+            e_trial += dm_cell * v2_trial
+
+        # --------------------------------------------------
+        # Second child-cell pass:
+        # renormalize v2_new so parent dm*v2 is conserved.
+        # --------------------------------------------------
+
+        if e_trial > 0.0:
+            fac = e_parent / e_trial
+
+            for k in range(npieces):
+                v2_new[j + k] *= fac
+        else:
+            for k in range(npieces):
+                v2_new[j + k] = v2[i]
+
+        j += npieces
+
 def split_grid(state, nsplit):
     """
     Master function to split the r grid and recompute m, v2, rho
@@ -152,7 +281,7 @@ def split_grid(state, nsplit):
     rho_new = np.empty(n_new, dtype=np.float64)
 
     # Remap function
-    _split_grid_kernel(
+    _split_grid_kernel_pl(
         state.r, state.m, state.v2, nsplit,
         r_new, m_new, v2_new, rho_new,
     )
