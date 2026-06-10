@@ -77,84 +77,30 @@ def check_drfrac_split(r, nsplit, drfrac_max):
 def _split_grid_kernel(r, m, v2, nsplit, r_new, m_new, v2_new, rho_new):
     """
     Numba kernel to fill new split arrays.
-    New cell edges are even in log space in the old cell.
-    Mass is conserved.
-    v2 is the same as the parent cell to conserve energy.
-    rho is derived from mcell.
+
+    Each parent cell is split into equal-mass child cells.
+
+    Local PL assumed for mass profile within each parent cell:
+        m(r) = A r^alpha
+    alpha is determined from the parent cell edges:
+        alpha = log(mR/mL) / log(rR/rL).
+
+    Child radial edges are obtained by inverting the local 
+    power-law relation.
+
+    v2 is copied from the parent cell into each child cell, 
+    conserving energy dm*v2 within the parent.
+
+    rho is recomputed from each child shell mass and shell volume.
     """
     n_old = nsplit.size
-
-    j = 0
 
     #--- Iterate through the new cells
 
-    r_new[0] = r[0]
-    m_new[0] = m[0]
-
-    rR = r[0]; mR = m[0]
-    for i in range(n_old):
-        rL = rR
-        rR = r[i + 1]
-
-        mL = mR
-        mR = m[i + 1]
-
-        npieces = nsplit[i] + 1
-        inv_npieces = 1.0 / npieces
-
-        # Fill the right edges of the new r and m subcells,
-        # and then cell-centered quantities
-        for k in range(1, npieces + 1):
-            frac = k * inv_npieces
-            j_edge = j + k
-
-            # Equal-log spacing.
-            if rL > 0.0:
-                r_new[j_edge] = rL * (rR / rL) ** frac
-            else:
-                if npieces == 1:
-                    r_new[j_edge] = rR
-                else:
-                    raise RuntimeError("Encountered innermost cell split. This shouldn't happen.")
-
-            # Linear interpolation of cumulative mass across the cell.
-            m_new[j_edge] = mL + frac * (mR - mL)
-
-            j_cell = j_edge - 1
-
-            r_edge = r_new[j_edge]
-            r_prev = r_new[j_edge - 1]
-
-            dm_cell     = m_new[j_edge] - m_new[j_edge - 1]
-            dr3_cell    = r_edge*r_edge*r_edge - r_prev*r_prev*r_prev
-
-            rho_new[j_cell] = 3.0 * dm_cell / dr3_cell
-            v2_new[j_cell]  = v2[i]
-
-        j += npieces
-
-@njit((float64[:], float64[:], float64[:], int64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def _split_grid_kernel_pl(r, m, v2, nsplit, r_new, m_new, v2_new, rho_new):
-    """
-    Numba kernel to fill new split arrays.
-
-    New cell edges are even in log space in the old cell.
-    Mass is conserved.
-
-    v2 is reconstructed as a local power law in radius,
-    then renormalized so that dm*v2 is conserved inside
-    each parent cell.
-
-    rho is derived from mcell.
-    """
-    n_old = nsplit.size
-
-    j = 0
+    j = 0 # cell index in the new grid
 
     r_new[0] = r[0]; m_new[0] = m[0]
-
-    rR = r[0]; mR = m[0]
-
+    rR = r[0]; mR = m[0] # rR, mR, rL, mL all from old grid
     for i in range(n_old):
         rL = rR; rR = r[i + 1]
 
@@ -163,103 +109,58 @@ def _split_grid_kernel_pl(r, m, v2, nsplit, r_new, m_new, v2_new, rho_new):
         npieces = nsplit[i] + 1
         inv_npieces = 1.0 / npieces
 
-        dm_parent = mR - mL
-        e_parent = dm_parent * v2[i]
+        # Local log-log slope of enclosed mass:
+        #     m(r) = A r^alpha
+        if rL > 0.0:
+            alpha = math.log(mR / mL) / math.log(rR / rL)
+            inv_alpha = 1.0 / alpha
+        else:
+            alpha = 0.0
+            inv_alpha = 0.0
 
-        # --------------------------------------------------
-        # Estimate local power-law slope:
-        #
-        #     v2(r) ~ r^alpha
-        #
-        # using neighboring cell-centered values.
-        # --------------------------------------------------
-
-        alpha = 0.0
-
-        if v2[i] > 0.0:
-            rci = 0.5 * (rL + rR)
-
-            if i > 0 and i < n_old - 1:
-                rc_minus = 0.5 * (r[i - 1] + r[i])
-                rc_plus  = 0.5 * (r[i + 1] + r[i + 2])
-
-                if (
-                    rc_minus > 0.0
-                    and rc_plus > rc_minus
-                    and v2[i - 1] > 0.0
-                    and v2[i + 1] > 0.0
-                ):
-                    alpha = math.log(v2[i + 1] / v2[i - 1]) / math.log(rc_plus / rc_minus)
-
-            elif i > 0:
-                rc_minus = 0.5 * (r[i - 1] + r[i])
-
-                if rc_minus > 0.0 and rci > rc_minus and v2[i - 1] > 0.0:
-                    alpha = math.log(v2[i] / v2[i - 1]) / math.log(rci / rc_minus)
-
-            elif i < n_old - 1:
-                rc_plus = 0.5 * (r[i + 1] + r[i + 2])
-
-                if rc_plus > rci and v2[i + 1] > 0.0:
-                    alpha = math.log(v2[i + 1] / v2[i]) / math.log(rc_plus / rci)
-
-        # --------------------------------------------------
-        # First child-cell pass:
-        # build r_new, m_new, rho_new, and provisional v2_new.
-        # Also accumulate provisional child energy.
-        # --------------------------------------------------
-
-        e_trial = 0.0
-
+        # Fill the right edges of the new r and m subcells,
+        # then compute the corresponding cell-centered quantities.
         for k in range(1, npieces + 1):
+
             frac = k * inv_npieces
             j_edge = j + k
 
+            # Equal-mass splitting:
+            m_new[j_edge] = mL + frac * (mR - mL)
+
+            # Invert the local power-law enclosed-mass relation:
+            #     r_child = rL * (m_child/mL)^(1/alpha).
             if rL > 0.0:
-                r_new[j_edge] = rL * (rR / rL) ** frac
+                r_new[j_edge] = rL * (m_new[j_edge] / mL) ** inv_alpha
             else:
                 if npieces == 1:
                     r_new[j_edge] = rR
                 else:
                     raise RuntimeError("Encountered innermost cell split. This shouldn't happen.")
-
-            m_new[j_edge] = mL + frac * (mR - mL)
-
+                
+            # The child cell is the region between the previous
+            # new edge and the current new edge.
             j_cell = j_edge - 1
 
             r_edge = r_new[j_edge]
             r_prev = r_new[j_edge - 1]
 
+            # Child shell mass and shell volume factor.
             dm_cell = m_new[j_edge] - m_new[j_edge - 1]
-            dr3_cell = r_edge*r_edge*r_edge - r_prev*r_prev*r_prev
+            dr3_cell = (
+                r_edge*r_edge*r_edge
+                - r_prev*r_prev*r_prev
+            )
 
+            # Recompute density from the child shell mass.
             rho_new[j_cell] = 3.0 * dm_cell / dr3_cell
 
-            # Child cell center. Use arithmetic midpoint for consistency.
-            rc_child = 0.5 * (r_prev + r_edge)
+            # Keep v2 piecewise constant inside the parent cell.
+            # This exactly conserves sum(dm*v2) over the children.
+            v2_new[j_cell] = v2[i]
 
-            if rci > 0.0 and rc_child > 0.0 and v2[i] > 0.0:
-                v2_trial = v2[i] * (rc_child / rci) ** alpha
-            else:
-                v2_trial = v2[i]
-
-            v2_new[j_cell] = v2_trial
-            e_trial += dm_cell * v2_trial
-
-        # --------------------------------------------------
-        # Second child-cell pass:
-        # renormalize v2_new so parent dm*v2 is conserved.
-        # --------------------------------------------------
-
-        if e_trial > 0.0:
-            fac = e_parent / e_trial
-
-            for k in range(npieces):
-                v2_new[j + k] *= fac
-        else:
-            for k in range(npieces):
-                v2_new[j + k] = v2[i]
-
+        # Advance the new-grid cell index by however many children
+        # were created from this old parent cell.
         j += npieces
 
 def split_grid(state, nsplit):
@@ -281,7 +182,7 @@ def split_grid(state, nsplit):
     rho_new = np.empty(n_new, dtype=np.float64)
 
     # Remap function
-    _split_grid_kernel_pl(
+    _split_grid_kernel(
         state.r, state.m, state.v2, nsplit,
         r_new, m_new, v2_new, rho_new,
     )
@@ -348,8 +249,7 @@ def check_drfrac_merge(r, merge_mask, drfrac_min, drfrac_max):
     return status
 
 @njit((float64[:], float64[:], float64[:], int64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def _merge_grid_kernel(r, m, v2, merge_mask,
-                       r_new, m_new, v2_new, rho_new):
+def _merge_grid_kernel(r, m, v2, merge_mask, r_new, m_new, v2_new, rho_new):
     """
     Numba kernel to merge adjacent cells.
 

@@ -45,9 +45,6 @@ def run_until_stop(state, start_step, **kwargs):
     # Found that preallocating for conduction tridiagonal solve does not save time
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
-    # For freezing dt
-    freeze_dt = False
-
     #################
     ### Main loop ###
     #################
@@ -69,12 +66,9 @@ def run_until_stop(state, start_step, **kwargs):
         if step_count == 1:
             dt_prop = 1.0 # We have no maxdu yet
         else:
-            if freeze_dt:
-                dt_prop = 3.0e-5 # state.dt
-            else:
-                err = eps_du_eff / state.du_max
-                fac = safety * err
-                dt_prop = fac * state.dt
+            err = eps_du_eff / state.du_max
+            fac = safety * err
+            dt_prop = fac * state.dt
 
         #--- Check for cell-splitting
         if grid_splitting:
@@ -93,7 +87,7 @@ def run_until_stop(state, start_step, **kwargs):
                 a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
         #--- Integrate time step
-        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count, freeze_dt,
+        integrate_time_step(state, config, dt_prop, eps_du_eff, step_count,
                             a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
 
         if step_count % nupdate == 0:
@@ -103,8 +97,6 @@ def run_until_stop(state, start_step, **kwargs):
         ### 2. Halting criteria ###
         ###########################
         rho0 = state.rho[0]
-        if rho0 > 1e13:
-            freeze_dt = True
 
         # Check halting criteria
         if rho0 > rho_c_halt:
@@ -159,7 +151,7 @@ def run_until_stop(state, start_step, **kwargs):
             print("Simulation halted: max time exceeded")
 
 def integrate_time_step(state, config,                                  # State arrays
-                        dt_prop, eps_du_eff, step_count, freeze_dt,     # Instantaneous variables
+                        dt_prop, eps_du_eff, step_count,                # Instantaneous variables
                         a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,    # Memory allocations (N-1,)
                         work_n1, work_n2                                # Memory allocations (N,)
                         ):
@@ -211,10 +203,7 @@ def integrate_time_step(state, config,                                  # State 
     if implicit_conduct:
         # implicit: work_n1 used to store dv2
         # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
-        if freeze_dt:
-            du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph,)
-        else:
-            du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
         init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
