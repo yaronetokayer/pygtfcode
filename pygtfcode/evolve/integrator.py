@@ -52,7 +52,7 @@ def run_until_stop(state, start_step, **kwargs):
     while state.t < t_halt:
 
         ###########################
-        ### 1. Integrate system ###
+        ### 1. Prepare timestep ###
         ###########################
 
         #--- Increment counter
@@ -70,7 +70,11 @@ def run_until_stop(state, start_step, **kwargs):
             fac = safety * err
             dt_prop = fac * state.dt
 
-        #--- Check for cell-splitting
+        ########################
+        ### 2. Adaptive grid ###
+        ########################
+
+        #--- Cell-splitting/merging
         if grid_splitting:
             # Check for splitting
             status = check_drfrac_split(state.r, work_nint, drfrac_max)
@@ -86,6 +90,10 @@ def run_until_stop(state, start_step, **kwargs):
                 state.resize_state_arrays()
                 a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
+        ####################
+        ### 3. Integrate ###
+        ####################
+
         #--- Integrate time step
         integrate_time_step(state, config, dt_prop, eps_du_eff, step_count,
                             a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
@@ -94,7 +102,7 @@ def run_until_stop(state, start_step, **kwargs):
             print(f"Completed step {step_count}", end='\r', flush=True)
 
         ###########################
-        ### 2. Halting criteria ###
+        ### 4. Halting criteria ###
         ###########################
         rho0 = state.rho[0]
 
@@ -120,7 +128,7 @@ def run_until_stop(state, start_step, **kwargs):
             break
 
         #########################
-        ### 3. Output to disk ###
+        ### 5. Output to disk ###
         #########################
 
         # Check I/O criteria
@@ -140,7 +148,7 @@ def run_until_stop(state, start_step, **kwargs):
                 write_time_evolution(state)
 
         ##############
-        ### 4. Log ###
+        ### 6. Log ###
         ##############
 
         if step_count % nlog == 0:
