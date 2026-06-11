@@ -364,7 +364,9 @@ class State:
         # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.zeros_like(rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
-        self.drfrac = (np.diff(r) / r_mid).astype(np.float64)
+        self.drfrac = np.zeros_like(rho, dtype=np.float64)
+        self.drfrac[0] = 2.0
+        self.drfrac[1:] = (r[2:]/r[1:-1] - 1.0) / np.sqrt(r[2:]/r[1:-1])
         self.lum    = np.zeros_like(r, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
@@ -405,7 +407,9 @@ class State:
         # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
-        self.drfrac = (np.diff(self.r) / self.rmid).astype(np.float64)
+        self.drfrac = np.zeros_like(self.rho, dtype=np.float64)
+        self.drfrac[0] = 2.0
+        self.drfrac[1:] = (self.r[2:]/self.r[1:-1] - 1.0) / np.sqrt(self.r[2:]/self.r[1:-1])
         self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
     def _ensure_virial_equilibfrium(self):

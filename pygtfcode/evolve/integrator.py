@@ -290,8 +290,11 @@ def integrate_time_step(state, config,                                  # State 
     np.reciprocal(state.t_dyn, out=state.t_dyn)
 
     ### Other testing diagnostics ###
-    np.subtract(r[1:], r[:-1], out=state.drfrac)
-    np.divide(state.drfrac, state.rmid, out=state.drfrac)
+    state.drfrac[0] = 2.0
+    np.divide(r[2:], r[1:-1], out=work_n1[1:])
+    np.subtract(work_n1[1:], 1.0, out=state.drfrac[1:])
+    np.sqrt(work_n1[1:], out=work_n1[1:])
+    np.divide(state.drfrac[1:], work_n1[1:], out=state.drfrac[1:])
     
     # Luminosity
     init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
