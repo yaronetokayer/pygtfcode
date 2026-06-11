@@ -13,18 +13,27 @@ class GridParams:
     """
 
     def __init__(
-            self, 
-            rmin: float = 1e-2,
-            rmax: float = 2e2,
-            ngrid: int = 200
-            ):
+        self, 
+        rmin: float = 1e-2,
+        rmax: float = 2e2,
+        ngrid: int = 200,
+        grid_splitting : bool = True,
+        drfrac_max : float = 1e-1,
+        drfrac_min : float = 1e-2,
+    ):
         self._rmin = None
         self._rmax = None
         self._ngrid = None
+        self._grid_splitting = None
+        self._drfrac_max = None
+        self._drfrac_min = None
 
         self.rmin = rmin
         self.rmax = rmax
         self.ngrid = ngrid
+        self.grid_splitting = grid_splitting
+        self.drfrac_max = drfrac_max
+        self.drfrac_min = drfrac_min
 
     @property
     def rmin(self):
@@ -56,6 +65,39 @@ class GridParams:
             raise ValueError("ngrid must be an integer greater than 1")
         self._ngrid = value
 
+    @property
+    def grid_splitting(self):
+        return self._grid_splitting
+    
+    @grid_splitting.setter
+    def grid_splitting(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("grid_splitting must be a boolean")
+        self._grid_splitting = value
+
+    @property
+    def drfrac_max(self):
+        return self._drfrac_max
+
+    @drfrac_max.setter
+    def drfrac_max(self, value):
+        self._validate_positive(value, "drfrac_max")
+        self._drfrac_max = float(value)
+
+    @property
+    def drfrac_min(self):
+        return self._drfrac_min
+
+    @drfrac_min.setter
+    def drfrac_min(self, value):
+        self._validate_positive(value, "drfrac_min")
+        self._drfrac_min = float(value)
+        
     def __repr__(self):
-        return f"GridParams(rmin={self.rmin}, rmax={self.rmax}, ngrid={self.ngrid})"
+        attrs = [
+            attr for attr in dir(self)
+            if not attr.startswith("_") and not callable(getattr(self, attr))
+        ]
+        attr_strs = [f"{attr}={getattr(self, attr)!r}" for attr in attrs]
+        return f"{self.__class__.__name__}({', '.join(attr_strs)})"
 

@@ -22,10 +22,10 @@ def run_until_stop(state, start_step, **kwargs):
 
     # Locals for speed + type hardening
     config = state.config
-    io = config.io; sim = config.sim; prec = config.prec
+    io = config.io; sim = config.sim; prec = config.prec; grid = config.grid
     
     t_evol = bool(io.t_evol); profiles = bool(io.profiles); chatter = bool(io.chatter)
-    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt); grid_splitting = bool(sim.grid_splitting)
+    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
         drho_tevol = float(io.drho_tevol)
@@ -33,7 +33,7 @@ def run_until_stop(state, start_step, **kwargs):
         rho0_last_prof = float(state.rho[0])
         drho_prof = float(io.drho_prof)
     nlog = int(io.nlog); nupdate = int(io.nupdate)
-    drfrac_max = float(prec.drfrac_max); drfrac_min = float(prec.drfrac_min)
+    grid_splitting = bool(grid.grid_splitting); drfrac_max = float(grid.drfrac_max); drfrac_min = float(grid.drfrac_min)
 
     # For adaptive time-stepping
     safety = 0.99
