@@ -280,12 +280,11 @@ def integrate_time_step(state, config,                                  # State 
     # work_n1 to store sqrt(v2)
     np.sqrt(state.v2, out=work_n1)
 
-    np.subtract(r[1:], r[:-1], out=state.t_sc)
-    np.divide(state.t_sc, work_n1, out=state.t_sc)
+    np.divide(state.rmid, work_n1, out=state.t_sc)
 
-    np.multiply(rho, work_n1, out=state.t_coll)
-    np.multiply(state.t_coll, sigma_m, out=state.t_coll)
-    np.reciprocal(state.t_coll, out=state.t_coll)
+    # np.multiply(rho, work_n1, out=state.t_coll)
+    # np.multiply(state.t_coll, sigma_m, out=state.t_coll)
+    # np.reciprocal(state.t_coll, out=state.t_coll)
 
     np.sqrt(rho, out=state.t_dyn)
     np.reciprocal(state.t_dyn, out=state.t_dyn)

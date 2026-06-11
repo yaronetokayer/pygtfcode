@@ -340,8 +340,8 @@ class State:
         # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
         ### Testing diagnostics ###
-        self.t_sc   = ((r[1:] - r[:-1]) / np.sqrt(v2)).astype(np.float64)
-        self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
+        self.t_sc   = (r_mid / np.sqrt(v2)).astype(np.float64)
+        # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.zeros_like(rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
         self.drfrac = (np.diff(r) / r_mid).astype(np.float64)
@@ -381,8 +381,8 @@ class State:
         # self.Theta  = data['Theta'].astype(np.float64)
 
         ### Testing diagnostics ###
-        self.t_sc   = ((self.r[1:] - self.r[:-1]) / np.sqrt(self.v2)).astype(np.float64)
-        self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
+        self.t_sc   = (self.rmid / np.sqrt(self.v2)).astype(np.float64)
+        # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
         self.drfrac = (np.diff(self.r) / self.rmid).astype(np.float64)
@@ -639,7 +639,7 @@ class State:
         self.rmid   = np.empty(n,   dtype=np.float64)
         self.kn     = np.empty(n,   dtype=np.float64)
         self.t_sc   = np.empty(n,   dtype=np.float64)
-        self.t_coll = np.empty(n,   dtype=np.float64)
+        # self.t_coll = np.empty(n,   dtype=np.float64)
         self.t_dyn  = np.empty(n,   dtype=np.float64)
         self.drfrac = np.empty(n,   dtype=np.float64)
         self.lum    = np.empty(n+1, dtype=np.float64)

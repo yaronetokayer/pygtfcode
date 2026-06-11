@@ -203,7 +203,7 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         # )
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  {'lum':>12}  {'dttcoll':>12}  {'dttsc':>12}  {'dttcool':>12}  {'dttdyn':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  {'lum':>12}  {'dttcool':>12}  {'tsctcool':>12}  {'tdyntcool':>12}  {'dttsc':>12}\n"
         )
         dt = state.dt ### for the timescales
 
@@ -220,10 +220,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 # f"{state.Theta[i]:12.6e}\n"
                 f"{state.drfrac[i]:12.6e}  "
                 f"{state.lum[i+1]:12.6e}  "
-                f"{dt/state.t_coll[i]:12.6e}  "
-                f"{dt/state.t_sc[i]:12.6e}  "
                 f"{dt/state.t_cool[i]:12.6e}  "
-                f"{dt/state.t_dyn[i]:12.6e}\n"
+                f"{state.t_sc[i]/state.t_cool[i]:12.6e}  "
+                f"{state.t_dyn[i]/state.t_cool[i]:12.6e}  "
+                f"{dt/state.t_sc[i]:12.6e}\n"
             )
     
     if ic_filename is None:

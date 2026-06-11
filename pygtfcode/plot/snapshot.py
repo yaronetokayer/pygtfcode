@@ -115,7 +115,7 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
 
         ax.plot( x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
-        if profile in ['kn', 'dttcool', 'dttcoll', 'dttsc', 'dttdyn'] and ind == 0:
+        if profile in ['kn', 'dttcool', 'tsctcool', 'dttsc', 'tdyntcool'] and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
             if profile == 'kn':
                 ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
@@ -460,7 +460,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcoll', 'dttsc', 'dttcool', 'dttdyn', 'lum', 'drfrac']
+    valid_profiles = ['rho', 'm', 'v2', 'kn', 'tsctcool', 'dttsc', 'dttcool', 'tdyntcool', 'lum', 'drfrac']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     
@@ -692,7 +692,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcoll', 'dttsc', 'dttcool', 'dttdyn', 'lum', 'drfrac']
+    valid_profiles = ['rho', 'm', 'v2', 'kn', 'tsctcool', 'dttsc', 'dttcool', 'tdyntcool', 'lum', 'drfrac']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     

@@ -92,7 +92,11 @@ class GridParams:
     def drfrac_min(self, value):
         self._validate_positive(value, "drfrac_min")
         self._drfrac_min = float(value)
-        
+
+    def _validate_positive(self, value, name):
+        if not (value > 0):
+            raise ValueError(f"{name} must be a positive float.")
+
     def __repr__(self):
         attrs = [
             attr for attr in dir(self)
