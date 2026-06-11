@@ -266,18 +266,38 @@ class State:
         if self.config.io.chatter:
             print("Setting up radial grid...")
 
-        rmin  = float(self.config.grid.rmin)
-        rmax  = float(self.config.grid.rmax)
-        ngrid = int(self.config.grid.ngrid)
+        # Compute ngrid
+        # drfrac = (q - 1) / sqrt(q), q = rR/rL for each cell
+        rmin = float(self.config.grid.rmin)
+        rmax = float(self.config.grid.rmax)
+        drfrac_init = float(self.config.grid.drfrac_init)
 
-        xlgrmin = float(np.log10(rmin))
-        xlgrmax = float(np.log10(rmax))
+        # x=sqrt(q)
+        x = 0.5 * (drfrac_init + np.sqrt(drfrac_init**2 + 4.0))
+        q_init = x**2
+
+        log_span = np.log(rmax / rmin)
+        log_q_init = np.log(q_init)
+
+        # Number of log-spaced cells between rmin and rmax.
+        nlog = int(np.ceil(log_span / log_q_init))
+        nlog = max(nlog, 1)
+        ngrid = nlog + 1
+
+        log_q_actual = log_span / nlog
+        q_actual = np.exp(log_q_actual)
+        drfrac_actual = (q_actual - 1.0) / np.sqrt(q_actual)
 
         r = np.empty(ngrid + 1, dtype=np.float64)
         r[0] = 0.0
-        r[1:] = 10.0 ** np.linspace(xlgrmin, xlgrmax, ngrid, dtype=np.float64)
+        r[1:] = np.exp(
+            np.linspace(np.log(rmin), np.log(rmax), ngrid, dtype=np.float64)
+        )
 
         self.n = int(ngrid)
+
+        if self.config.io.chatter:
+            print(f"\tRadial grid set up with {ngrid} cells and uniform dr/r = {drfrac_actual:.4e} outside the innermost bin.")
 
         return r
     

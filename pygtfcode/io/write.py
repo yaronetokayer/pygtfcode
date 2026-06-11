@@ -4,6 +4,9 @@ from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc
 from pygtfcode.parameters.constants import Constants as const
 
+def _safe_div(num, den):
+    return 0.0 if den == 0 else num / den
+
 def make_dir(state):
     """
     Create the model directory if it doesn't exist.
@@ -220,10 +223,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 # f"{state.Theta[i]:12.6e}\n"
                 f"{state.drfrac[i]:12.6e}  "
                 f"{state.lum[i+1]:12.6e}  "
-                f"{dt/state.t_cool[i]:12.6e}  "
-                f"{state.t_sc[i]/state.t_cool[i]:12.6e}  "
-                f"{state.t_dyn[i]/state.t_cool[i]:12.6e}  "
-                f"{dt/state.t_sc[i]:12.6e}\n"
+                f"{_safe_div(dt, state.t_cool[i]):12.6e}  "
+                f"{_safe_div(state.t_sc[i], state.t_cool[i]):12.6e}  "
+                f"{_safe_div(state.t_dyn[i], state.t_cool[i]):12.6e}  "
+                f"{_safe_div(dt, state.t_sc[i]):12.6e}\n"
             )
     
     if ic_filename is None:

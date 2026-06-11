@@ -16,21 +16,21 @@ class GridParams:
         self, 
         rmin: float = 1e-2,
         rmax: float = 2e2,
-        ngrid: int = 200,
+        drfrac_init: float = 5.0e-2,
         grid_splitting : bool = True,
-        drfrac_max : float = 1e-1,
-        drfrac_min : float = 1e-2,
+        drfrac_max : float = 1.0e-1,
+        drfrac_min : float = 1.0e-2,
     ):
         self._rmin = None
         self._rmax = None
-        self._ngrid = None
+        self._drfrac_init = None
         self._grid_splitting = None
         self._drfrac_max = None
         self._drfrac_min = None
 
         self.rmin = rmin
         self.rmax = rmax
-        self.ngrid = ngrid
+        self.drfrac_init = drfrac_init
         self.grid_splitting = grid_splitting
         self.drfrac_max = drfrac_max
         self.drfrac_min = drfrac_min
@@ -56,14 +56,13 @@ class GridParams:
         self._rmax = float(value)
 
     @property
-    def ngrid(self):
-        return self._ngrid
+    def drfrac_init(self):
+        return self._drfrac_init
 
-    @ngrid.setter
-    def ngrid(self, value):
-        if not isinstance(value, int) or value <= 1:
-            raise ValueError("ngrid must be an integer greater than 1")
-        self._ngrid = value
+    @drfrac_init.setter
+    def drfrac_init(self, value):
+        self._validate_positive(value, "drfrac_init")
+        self._drfrac_init = value
 
     @property
     def grid_splitting(self):

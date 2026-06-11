@@ -239,7 +239,7 @@ def import_metadata(model_dir: Union[Path, str]) -> Dict[str, Dict[str, Any]]:
                 out[current_section] = {}
                 continue
 
-            # Expect key-value inside a section, like "    _ngrid: 200"
+            # Expect key-value inside a section, like "    _rmin: 200"
             if current_section is None:
                 # If someone placed a key: value outside any section
                 raise ValueError(
