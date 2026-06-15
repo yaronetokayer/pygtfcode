@@ -29,6 +29,7 @@ class SimParams:
             t_halt              : float = 1e3,
             rho_c_halt          : float = 1500,
             implicit_conduct    : bool = True,
+            delayed_revir_mode  : bool = False,
             a                   : float = 2.256758,
             b                   : float = 1.38,
             c                   : float = 0.75
@@ -38,6 +39,7 @@ class SimParams:
         self._t_halt = None
         self._rho_c_halt = None
         self._implicit_conduct = None
+        self._delayed_revir_mode = None
         self._a = None
         self._b = None
         self._c = None
@@ -47,6 +49,7 @@ class SimParams:
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
         self.implicit_conduct = implicit_conduct
+        self.delayed_revir_mode = delayed_revir_mode
         self.a = a
         self.b = b
         self.c = c
@@ -100,6 +103,16 @@ class SimParams:
         if not isinstance(value, bool):
             raise ValueError("implicit_conduct must be a boolean")
         self._implicit_conduct = value
+
+    @property
+    def delayed_revir_mode(self):
+        return self._delayed_revir_mode
+    
+    @delayed_revir_mode.setter
+    def delayed_revir_mode(self, value):
+        if not isinstance(value, bool):
+            raise ValueError("delayed_revir_mode must be a boolean")
+        self._delayed_revir_mode = value
 
     @property
     def a(self):

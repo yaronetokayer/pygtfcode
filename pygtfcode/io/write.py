@@ -128,10 +128,10 @@ def write_log_entry(state, start_step):
     eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
 
     # header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'Theta_min':>9}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'n':>5}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'n':>5}  {'RDF':>5}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
 
     if step == start_step: # Restart
-        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}       N/A       N/A          N/A          N/A\n"
+        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.n:5d}  {state.revir_delay_fac:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}       N/A       N/A          N/A          N/A\n"
 
     else:
         nlog = io.nlog
@@ -143,12 +143,13 @@ def write_log_entry(state, start_step):
             nlog = ( step - start_step ) % nlog
 
         # new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {minTheta:9.3e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
-        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.n:5d}  {state.revir_delay_fac:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / state.n_revir_calls:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / state.n_revir_calls:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 
     state.n_iter_du = 0
     state.n_iter_dr = 0
+    state.n_revir_calls = 0
     state.dt_cum = 0.0
     state.du_max_cum = 0.0
     state.dr_max_cum = 0.0
