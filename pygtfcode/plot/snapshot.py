@@ -8,6 +8,8 @@ from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, e
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
+    linear_y_profiles = ['dsdr', 's']
+
     if xaxis == 'r':
         xkey = 'log_r' if profile in ['m'] else 'log_rmid'
     elif xaxis == 'm':
@@ -32,21 +34,43 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
 
         y = data[profile]
 
-        # Ignore NaNs when finding positive values
-        positive_y = y[(y > 0) & np.isfinite(y)]
+        if profile in linear_y_profiles:
+            finite_y = y[np.isfinite(y)]
 
-        if positive_y.size > 0:
-            ylim_lower = min(ylim_lower, np.nanmin(positive_y) * 0.5)
+            if finite_y.size > 0:
+                y_min = np.nanmin(finite_y)
+                y_max = np.nanmax(finite_y)
 
-        if np.any(np.isfinite(y)):
-            ylim_upper = max(ylim_upper, np.nanmax(y) * 10)
+                y_range = y_max - y_min
+
+                if y_range == 0:
+                    pad = 0.1 * abs(y_max) if y_max != 0 else 1.0
+                else:
+                    pad = 0.1 * y_range
+
+                ylim_lower = min(ylim_lower, y_min - pad)
+                ylim_upper = max(ylim_upper, y_max + pad)
+
+        else:
+            # Existing log-style y-limit behavior
+            positive_y = y[(y > 0) & np.isfinite(y)]
+
+            if positive_y.size > 0:
+                ylim_lower = min(ylim_lower, np.nanmin(positive_y) * 0.5)
+
+            if np.any(np.isfinite(y)):
+                ylim_upper = max(ylim_upper, np.nanmax(y) * 10)
 
         if np.any(np.isfinite(x)):
             xlim_lower = min(xlim_lower, np.nanmin(x) * 0.8)
             xlim_upper = max(xlim_upper, np.nanmax(x) * 1.2)
 
-    if profile in ['kn', 'Theta']:
-        ylim_lower = min(ylim_lower, 0.1)
+    if profile not in linear_y_profiles:
+        if profile in ['kn', 'Theta']:
+            ylim_lower = min(ylim_lower, 0.1)
+
+    if profile == 'dsdr':
+        ylim_lower, ylim_upper = (-100, 100)
 
     return (xlim_lower, xlim_upper), (ylim_lower, ylim_upper)
 
@@ -115,18 +139,23 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
 
         ax.plot( x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
-        if profile in ['kn', 'dttcool', 'tdyntcool'] and ind == 0:
+        if profile in ['kn', 'dttcool', 'tdyntcool', 'sc1', 'sc2'] and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
             if profile == 'kn':
                 ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
                 ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
+        if profile in ['dsdr'] and ind == 0:
+            ax.axhline(0.0, color='black', ls=':')
 
     # Cosmetics
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
     ax.set_xscale('log')
-    ax.set_yscale('log')
+    if profile in ['dsdr', 's']:
+        ax.set_yscale('linear')
+    else:
+        ax.set_yscale('log')
     if xaxis == 'r':
         ax.set_xlabel(r'Radius [$r_\mathrm{s,0}$]', fontsize=14)
     elif xaxis == 'm':
@@ -366,13 +395,16 @@ def _deluxe_frame(args):
         if add_radii is not None:
             for radius in add_radii:
                 r = np.interp(index_t[ind], tevo_t, time_data[radius])
-
+                if profile in ['s', 'dsdr']:
+                    text_y = ax.get_ylim()[0]
+                else:
+                    text_y = ax.get_ylim()[0] * 2.0
                 if xax == "r":
                     if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
                         continue
 
                     ax.axvline(r, color="red", ls="--", zorder=-10)
-                    ax.text(r, ax.get_ylim()[0] * 2.0, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
+                    ax.text(r, text_y, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
 
                 elif xax == "m":
                     m = np.interp(r, 10 ** data_list[1]["log_r"], data_list[1]["m"])
@@ -381,7 +413,7 @@ def _deluxe_frame(args):
                         continue
 
                     ax.axvline(m, color="red", ls="--", zorder=-10)
-                    ax.text(m, ax.get_ylim()[0] * 2.0, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
+                    ax.text(m, text_y, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
 
         if inset is not None:
             tevo_y = time_data[inset]
@@ -460,7 +492,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac']
+    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     
@@ -692,7 +724,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac']
+    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2']
     if any(profile not in valid_profiles for profile in profiles):
         raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
     

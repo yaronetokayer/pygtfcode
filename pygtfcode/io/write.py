@@ -1,7 +1,10 @@
 import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
-from pygtfcode.util.calc import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc
+from pygtfcode.util.calc import (
+    calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, 
+    calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2
+    )
 from pygtfcode.parameters.constants import Constants as const
 
 def _safe_div(num, den):
@@ -196,6 +199,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
             if idx > state.snapshot_index:
                 os.remove(os.path.join(snapshot_dir, fname))
 
+    # On the fly computations
+    s, dsdr = calc_s_dsdr(state.v2, state.rho, state.rmid)
+    sc1 = calc_sc1(state.v2, state.rho, state.rmid); sc2 = calc_sc2(state.v2, state.rho, state.rmid)
+
     with open(filename, "w") as f:
         # header = (
         #     f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
@@ -207,7 +214,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         # )
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  {'dttcool':>12}  {'tdyntcool':>12}\n"
+            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  "
+            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}\n"
         )
         dt = state.dt ### for the timescales
 
@@ -228,6 +236,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 # f"{_safe_div(state.t_sc[i], state.t_cool[i]):12.6e}  "
                 f"{_safe_div(state.t_dyn[i], state.t_cool[i]):12.6e}  "
                 # f"{_safe_div(dt, state.t_sc[i]):12.6e}\n"
+                f"{s[i]:12.6e}  "
+                f"{dsdr[i]:12.6e}  "
+                f"{sc1[i]:12.6e}  "
+                f"{sc2[i]:12.6e}\n"
             )
     
     if ic_filename is None:

@@ -794,6 +794,124 @@ def calc_dlnrhoc_dlnvc(rho_c, v2_c, window):
 
     return zeta
 
+@njit(types.Tuple((float64[:], float64[:]))(float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_s_dsdr(v2, rho, rmid):
+    """
+    s = ln(v^3 / rho) = 1.5 ln(v2) - ln(rho)
+    dsdr via finite differences on possibly nonuniform rmid.
+    """
+    n = v2.size
+    s = np.empty(n, dtype=np.float64)
+    dsdr = np.empty(n, dtype=np.float64)
+
+    for i in range(n):
+        s[i] = 1.5 * np.log(v2[i]) - np.log(rho[i])
+
+    if n == 1:
+        dsdr[0] = 0.0
+        return s, dsdr
+
+    dsdr[0] = (s[1] - s[0]) / (rmid[1] - rmid[0])
+
+    for i in range(1, n - 1):
+        dsdr[i] = (s[i + 1] - s[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+
+    dsdr[n - 1] = (s[n - 1] - s[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+
+    return s, dsdr
+
+GAMMA = 5.0 / 3.0
+
+@njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_sc1(v2, rho, rmid):
+    """
+    Schwarzschild criterion:
+
+        SC1 = ((rho/(gamma*p)) * dp/dr) / (drho/dr)
+
+    SC1 > 1 implies stability against convection.
+    """
+    n = v2.size
+
+    p = np.empty(n, dtype=np.float64)
+    dpdr = np.empty(n, dtype=np.float64)
+    drhodr = np.empty(n, dtype=np.float64)
+    sc1 = np.empty(n, dtype=np.float64)
+
+    # p = rho * v2
+    for i in range(n):
+        p[i] = rho[i] * v2[i]
+
+    if n == 1:
+        sc1[0] = 0.0
+        return sc1
+
+    # one-sided boundaries
+    dpdr[0] = (p[1] - p[0]) / (rmid[1] - rmid[0])
+    drhodr[0] = (rho[1] - rho[0]) / (rmid[1] - rmid[0])
+
+    # centered interior
+    for i in range(1, n - 1):
+        dpdr[i] = (p[i + 1] - p[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+        drhodr[i] = (rho[i + 1] - rho[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+
+    # one-sided boundaries
+    dpdr[n - 1] = (p[n - 1] - p[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+    drhodr[n - 1] = (rho[n - 1] - rho[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+
+    for i in range(n):
+        sc1[i] = rho[i] * dpdr[i] / (GAMMA * p[i] * drhodr[i])
+
+    return sc1
+
+@njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_sc2(v2, rho, rmid):
+    """
+    Schwarzschild criterion #2:
+
+        SC2 = ((1 - 1/gamma) * (v2/p) * abs(dp/dr)) / abs(dv2/dr)
+
+    Since p = rho * v2,
+
+        v2/p = 1/rho
+
+    so
+
+        SC2 = ((1 - 1/gamma) * abs(dp/dr)) / (rho * abs(dv2/dr))
+
+    SC2 > 1 implies stability against convection.
+    """
+    n = v2.size
+
+    p = np.empty(n, dtype=np.float64)
+    dpdr = np.empty(n, dtype=np.float64)
+    dv2dr = np.empty(n, dtype=np.float64)
+    sc2 = np.empty(n, dtype=np.float64)
+
+    for i in range(n):
+        p[i] = rho[i] * v2[i]
+
+    if n == 1:
+        sc2[0] = 0.0
+        return sc2
+
+    dpdr[0] = (p[1] - p[0]) / (rmid[1] - rmid[0])
+    dv2dr[0] = (v2[1] - v2[0]) / (rmid[1] - rmid[0])
+
+    for i in range(1, n - 1):
+        dpdr[i] = (p[i + 1] - p[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+        dv2dr[i] = (v2[i + 1] - v2[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+
+    dpdr[n - 1] = (p[n - 1] - p[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+    dv2dr[n - 1] = (v2[n - 1] - v2[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+
+    prefac = 1.0 - 1.0 / GAMMA
+
+    for i in range(n):
+        sc2[i] = prefac * np.abs(dpdr[i]) / (rho[i] * np.abs(dv2dr[i]))
+
+    return sc2
+
 # @njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
 # def calc_smfp_r_rho_m_v2(r, rho, v2, m, sigma_m):
 #     """

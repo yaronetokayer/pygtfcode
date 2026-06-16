@@ -187,7 +187,6 @@ class State:
         # Ensure double point precision
         Mvir  = float(init.Mvir)
         cvir  = float(init.cvir)
-        z     = float(cosmo.z)
 
         rvir = 0.169 * (Mvir / 1.0e12)**(1.0/3.0)
         rvir *= (float(cosmo.Delta_vir) / 178.0)**(-1.0/3.0)
@@ -199,7 +198,7 @@ class State:
         char.r_s = rvir / cvir
 
         if init.profile != 'abg':
-            char.m_s = Mvir / char.fc # Changed from Mvir_h - check this
+            char.m_s = Mvir_h / char.fc # Changed from Mvir_h - check this
             
         else:
             from pygtfcode.profiles.abg import chi
