@@ -1,38 +1,7 @@
 import numpy as np
-from pygtfcode.parameters.constants import Constants as const
 import pprint
 import warnings
 from pathlib import Path
-
-def _xH(z, const):
-    """
-    Returns H(z) in units of km/s/Mpc using cosmological parameters
-    defined in config.constants or config.init.
-
-    Parameters
-    ----------
-    z : float
-        Redshift.
-
-    const : Constants
-        Configuration object containing cosmological parameters.
-
-    Returns
-    -------
-    H_z : float
-        Hubble parameter at redshift z [km/s/Mpc].
-    """
-    Omega_m = float(const.Omega_m)
-    omega_lambda = 1 - Omega_m
-    xH_0 = 100 * float(const.xhubble)  # H_0 in km/s/Mpc
-
-    z = np.asarray(z, dtype=np.float64)
-
-    fac = omega_lambda + (1.0 - omega_lambda - Omega_m) * (1.0 + z)**2 + Omega_m * (1.0 + z)**3
-
-    H = xH_0 * np.sqrt(fac)
-
-    return H if H.ndim else float(H)
 
 def _print_time(start, end, funcname):
     """
@@ -205,25 +174,27 @@ class State:
         """
         from pygtfcode.parameters.char_params import CharParams
         from pygtfcode.profiles.nfw import fNFW
+        from pygtfcode.parameters.constants import Constants as const
 
         if self.config.io.chatter:
             print("Computing characteristic parameters for simulation...")
-        init = self.config.init # Access the InitParams object from config
-        sim = self.config.sim # Access the SimParams object from config
+        init    = self.config.init # Access the InitParams object from config
+        sim     = self.config.sim # Access the SimParams object from config
+        cosmo   = self.config.cosmo
 
         char = CharParams() # Instantiate CharParams object
 
         # Ensure double point precision
         Mvir  = float(init.Mvir)
         cvir  = float(init.cvir)
-        z     = float(init.z)
+        z     = float(cosmo.z)
 
         rvir = 0.169 * (Mvir / 1.0e12)**(1.0/3.0)
-        rvir *= (float(const.Delta_vir) / 178.0)**(-1.0/3.0)
-        rvir *= (_xH(z, const) / (100.0 * float(const.xhubble)))**(-2.0/3.0)
-        rvir /= float(const.xhubble)
+        rvir *= (float(cosmo.Delta_vir) / 178.0)**(-1.0/3.0)
+        rvir *= (cosmo.xH() / (100.0 * float(cosmo.xhubble)))**(-2.0/3.0)
+        rvir /= float(cosmo.xhubble)
 
-        Mvir_h = Mvir / float(const.xhubble)
+        Mvir_h = Mvir / float(cosmo.xhubble)
         char.fc = float(fNFW(cvir))
         char.r_s = rvir / cvir
 
@@ -360,14 +331,14 @@ class State:
         # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
         ### Testing diagnostics ###
-        self.t_sc   = (r_mid / np.sqrt(v2)).astype(np.float64)
+        # self.t_sc   = (r_mid / np.sqrt(v2)).astype(np.float64)
         # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.zeros_like(rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
         self.drfrac = np.zeros_like(rho, dtype=np.float64)
         self.drfrac[0] = 2.0
         self.drfrac[1:] = (r[2:]/r[1:-1] - 1.0) / np.sqrt(r[2:]/r[1:-1])
-        self.lum    = np.zeros_like(r, dtype=np.float64)
+        # self.lum    = np.zeros_like(r, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
         """
@@ -403,14 +374,14 @@ class State:
         # self.Theta  = data['Theta'].astype(np.float64)
 
         ### Testing diagnostics ###
-        self.t_sc   = (self.rmid / np.sqrt(self.v2)).astype(np.float64)
+        # self.t_sc   = (self.rmid / np.sqrt(self.v2)).astype(np.float64)
         # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
         self.drfrac = np.zeros_like(self.rho, dtype=np.float64)
         self.drfrac[0] = 2.0
         self.drfrac[1:] = (self.r[2:]/self.r[1:-1] - 1.0) / np.sqrt(self.r[2:]/self.r[1:-1])
-        self.lum    = np.zeros_like(self.r, dtype=np.float64)
+        # self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
     def _ensure_virial_equilibfrium(self):
         """
@@ -563,18 +534,21 @@ class State:
         Method to print characteristic quantities in physical units
         """
         from pygtfcode.profiles.profile_routines import menc
+        from pygtfcode.parameters.constants import Constants as const
+
         char = self.char
         init = self.config.init
+        cosmo = self.config.cosmo
 
         Mtot = menc(self.config.grid.rmax, self, chatter=False) * char.m_s
         rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
-        rvir *= (const.Delta_vir / 178.0)**(-1.0/3.0)
-        rvir *= (_xH(init.z, const) / (100 * const.xhubble))**(-2/3)
-        rvir /= const.xhubble
-        vvir = np.sqrt(const.gee * init.Mvir / const.xhubble / rvir)
+        rvir *= (cosmo.Delta_vir / 178.0)**(-1.0/3.0)
+        rvir *= (cosmo.xH() / (100 * cosmo.xhubble))**(-2/3)
+        rvir /= cosmo.xhubble
+        vvir = np.sqrt(cosmo.gee * init.Mvir / cosmo.xhubble / rvir)
 
         params_dict = {
-            'log[Mvir/Msun]'            : np.log10(init.Mvir / const.xhubble),
+            'log[Mvir/Msun]'            : np.log10(init.Mvir / cosmo.xhubble),
             'log[Mtot/Msun]'            : np.log10(Mtot),
             'Vvir [km/s]'               : vvir,
             'v_0 [km/s]'                : char.v0,
@@ -664,11 +638,11 @@ class State:
 
         self.rmid   = np.empty(n,   dtype=np.float64)
         self.kn     = np.empty(n,   dtype=np.float64)
-        self.t_sc   = np.empty(n,   dtype=np.float64)
+        # self.t_sc   = np.empty(n,   dtype=np.float64)
         # self.t_coll = np.empty(n,   dtype=np.float64)
         self.t_dyn  = np.empty(n,   dtype=np.float64)
         self.drfrac = np.empty(n,   dtype=np.float64)
-        self.lum    = np.empty(n+1, dtype=np.float64)
+        # self.lum    = np.empty(n+1, dtype=np.float64)
         self.t_cool = np.empty(n,   dtype=np.float64)
 
     def __repr__(self):

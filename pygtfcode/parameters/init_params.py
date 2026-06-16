@@ -8,8 +8,6 @@ class InitParams:
         Virial mass in units of Msun/h.
     cvir : float
         Concentration parameter.
-    z : float
-        Redshift (must be non-negative).
     profile : str or None
         String identifier for the profile type ('nfw', 'truncated_nfw', 'abg').
     """
@@ -17,12 +15,10 @@ class InitParams:
     def __init__(self, Mvir: float = 3.0e9, cvir: float = 20.0, z: float = 0.0):
         self._Mvir = None
         self._cvir = None
-        self._z = None
         self.profile = None  # To be set by subclass
 
         self.Mvir = Mvir
         self.cvir = cvir
-        self.z = z
 
     @property
     def Mvir(self):
@@ -44,18 +40,8 @@ class InitParams:
             raise ValueError("cvir must be positive.")
         self._cvir = float(value)
 
-    @property
-    def z(self):
-        return self._z
-
-    @z.setter
-    def z(self, value):
-        if value < 0:
-            raise ValueError("Redshift z must be non-negative.")
-        self._z = float(value)
-
     def __repr__(self):
-        return f"{self.__class__.__name__}(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z})"
+        return f"{self.__class__.__name__}(Mvir={self.Mvir}, cvir={self.cvir})"
 
 
 class NFWParams(InitParams):
@@ -159,7 +145,7 @@ class ABGParams(InitParams):
         self._gamma = float(value)
 
     def __repr__(self):
-        return (f"ABGParams(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z}, "
+        return (f"ABGParams(Mvir={self.Mvir}, cvir={self.cvir}, "
                 f"alpha={self.alpha}, beta={self.beta}, gamma={self.gamma})")
 
 

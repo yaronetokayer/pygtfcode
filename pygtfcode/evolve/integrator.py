@@ -306,9 +306,9 @@ def integrate_time_step(state, config,                                  # State 
 
     ### Time scales ###
     # work_n1 to store sqrt(v2)
-    np.sqrt(state.v2, out=work_n1)
+    # np.sqrt(state.v2, out=work_n1)
 
-    np.divide(state.rmid, work_n1, out=state.t_sc)
+    # np.divide(state.rmid, work_n1, out=state.t_sc)
 
     # np.multiply(rho, work_n1, out=state.t_coll)
     # np.multiply(state.t_coll, sigma_m, out=state.t_coll)
@@ -325,8 +325,8 @@ def integrate_time_step(state, config,                                  # State 
     np.divide(state.drfrac[1:], work_n1[1:], out=state.drfrac[1:])
     
     # Luminosity
-    init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-    compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, state.lum, cored)
+    # init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
+    # compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, state.lum, cored)
 
 def allocate_work_arrays(n):
     n_int = n - 1

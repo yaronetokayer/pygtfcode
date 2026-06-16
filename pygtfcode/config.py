@@ -8,6 +8,7 @@ from pygtfcode.parameters.init_params import (
 )
 from pygtfcode.parameters.prec_params import PrecisionParams
 from pygtfcode.parameters.sim_params import SimParams
+from pygtfcode.parameters.cosmo_params import CosmoParams
 
 def _init_param(param_class, arg):
     if arg is None:
@@ -19,18 +20,18 @@ def _init_param(param_class, arg):
     else:
         raise TypeError(f"Expected {param_class.__name__}, dict, or None")
 
-
 class Config:
     """
     Central container for all static simulation parameters.
 
     Attributes
     ----------
-    io : IOParams
-    grid : GridParams
-    init : InitParams subclass (e.g., NFWParams, ABGParams)
-    sim : SimParams
-    prec : PrecisionParams
+    io      : IOParams
+    grid    : GridParams
+    init    : InitParams subclass (e.g., NFWParams, ABGParams)
+    sim     : SimParams
+    prec    : PrecisionParams
+    cosmo   : CosmoParams
 
     You can modify the initial profile like:
         config.init = "abg"
@@ -45,13 +46,15 @@ class Config:
         init=None,
         sim=None,
         prec=None,
+        cosmo=None,
     ):
-        self.io = _init_param(IOParams, io)
-        self.grid = _init_param(GridParams, grid)
-        self._init = None
-        self.init = init  # goes through the setter
-        self.sim = _init_param(SimParams, sim)
-        self.prec = _init_param(PrecisionParams, prec)
+        self.io     = _init_param(IOParams, io)
+        self.grid   = _init_param(GridParams, grid)
+        self._init  = None
+        self.init   = init  # goes through the setter
+        self.sim    = _init_param(SimParams, sim)
+        self.prec   = _init_param(PrecisionParams, prec)
+        self.cosmo  = _init_param(CosmoParams, cosmo)
 
     @classmethod
     def from_dict(cls, meta: Dict[str, Dict[str, Any]]) -> "Config":
@@ -83,12 +86,14 @@ class Config:
         _io_raw   = get_section("io")
         _prec_raw = get_section("prec")
         _sim_raw  = get_section("sim")
+        _cosmo_raw = get_section("cosmo")
 
         init_raw = norm(_init_raw)
         grid_raw = norm(_grid_raw)
         io_raw   = norm(_io_raw)
         prec_raw = norm(_prec_raw)
         sim_raw  = norm(_sim_raw)
+        cosmo_raw = norm(_cosmo_raw)
 
         # Build InitParams via existing factory
         profile = init_raw.pop("profile", "nfw")
@@ -99,9 +104,10 @@ class Config:
         grid_params = GridParams(**grid_raw)
         prec_params = PrecisionParams(**prec_raw)
         sim_params  = SimParams(**sim_raw)
+        cosmo_params = CosmoParams(**cosmo_raw)
 
         return cls(io=io_params, grid=grid_params, init=init_params,
-                   sim=sim_params, prec=prec_params)
+                   sim=sim_params, prec=prec_params, cosmo=cosmo_params)
 
     @property
     def init(self):
@@ -132,6 +138,7 @@ class Config:
             f"  init={self.init},\n"
             f"  sim={self.sim},\n"
             f"  prec={self.prec}\n"
+            f"  cosmo={self.cosmo}\n"
             f")"
         )
 
