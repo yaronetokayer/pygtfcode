@@ -7,11 +7,14 @@ import shutil
 from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, extract_time_evolution_data
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-def get_profile_axis_limits(profile, data_list, xaxis='r'):
-    linear_y_profiles = ['dsdr', 's']
+VALID_PROFILES = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2', 'dlnrhodlnp', 'tsctcool']
+EDGE_QUANTITIES = ['m']
+LINEAR_Y_PROFILES = ['s']
+SYMLOG_Y_PROFILES = ['dsdr', 'dlnrhodlnp']
 
+def get_profile_axis_limits(profile, data_list, xaxis='r'):
     if xaxis == 'r':
-        xkey = 'log_r' if profile in ['m'] else 'log_rmid'
+        xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
     elif xaxis == 'm':
         xkey = 'm'
 
@@ -24,7 +27,7 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
         if xaxis == 'r':
             x = 10**data[xkey]
         elif xaxis == 'm':
-            if profile in ['m']:
+            if profile in EDGE_QUANTITIES:
                 x = data['m']
             else:
                 m_edges = data['m']
@@ -34,7 +37,7 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
 
         y = data[profile]
 
-        if profile in linear_y_profiles:
+        if profile in LINEAR_Y_PROFILES or profile in SYMLOG_Y_PROFILES:
             finite_y = y[np.isfinite(y)]
 
             if finite_y.size > 0:
@@ -65,12 +68,8 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
             xlim_lower = min(xlim_lower, np.nanmin(x) * 0.8)
             xlim_upper = max(xlim_upper, np.nanmax(x) * 1.2)
 
-    if profile not in linear_y_profiles:
-        if profile in ['kn', 'Theta']:
-            ylim_lower = min(ylim_lower, 0.1)
-
-    if profile == 'dsdr':
-        ylim_lower, ylim_upper = (-100, 100)
+    if profile in ['kn', 'Theta']:
+        ylim_lower = min(ylim_lower, 0.1)
 
     return (xlim_lower, xlim_upper), (ylim_lower, ylim_upper)
 
@@ -111,7 +110,7 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
         cmap = plt.get_cmap('tab20')
 
     if xaxis == 'r':
-        xkey = 'log_r' if profile in ['m'] else 'log_rmid'
+        xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
     elif xaxis == 'm':
         xkey = 'm'
 
@@ -131,9 +130,6 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
             x = np.empty_like(m_edges)
             x[0] = 0.5 * m_edges[0]
             x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
-            # m_edges = data[xkey]
-            # r_edges = 10**data['log_r']
-            # x = interp_powerlaw_edges_to_cells(r_edges, m_edges, rmid)
 
         y = data[profile]
 
@@ -146,21 +142,30 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
                 ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
         if profile in ['dsdr'] and ind == 0:
             ax.axhline(0.0, color='black', ls=':')
+        if profile in ['dlnrhodlnp'] and ind == 0:
+            ax.axhline(0.6, color='black', ls=':')
 
     # Cosmetics
     ax.set_xlim(xlim)
     ax.set_ylim(ylim)
 
     ax.set_xscale('log')
-    if profile in ['dsdr', 's']:
+    if profile in LINEAR_Y_PROFILES:
         ax.set_yscale('linear')
+    elif profile in SYMLOG_Y_PROFILES:
+        ax.set_yscale('symlog')
+        ax.axhline(2.0, color='grey', ls='--', lw=1.0)
+        ax.axhline(-2.0, color='grey', ls='--', lw=1.0)
     else:
         ax.set_yscale('log')
     if xaxis == 'r':
         ax.set_xlabel(r'Radius [$r_\mathrm{s,0}$]', fontsize=14)
     elif xaxis == 'm':
         ax.set_xlabel(r'$M_\mathrm{enc}$ [$M_\mathrm{s}$]', fontsize=14)
-    ax.set_ylabel(profile, fontsize=14)
+    if profile == 's':
+        ax.set_ylabel(r'$s=\log(v^3/\rho)$', fontsize=14)
+    else:
+        ax.set_ylabel(profile, fontsize=14)
     ax.tick_params(axis='both', labelsize=12)
     if legend:
         if legend_loc is None:
@@ -492,9 +497,8 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2']
-    if any(profile not in valid_profiles for profile in profiles):
-        raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
+    if any(profile not in VALID_PROFILES for profile in profiles):
+        raise ValueError(f"Invalid profile specified. Valid options are: {VALID_PROFILES}")
     
     # Validate radii
     valid_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']
@@ -724,9 +728,8 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         xaxis = [xaxis]
 
     # Validate profiles
-    valid_profiles = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2']
-    if any(profile not in valid_profiles for profile in profiles):
-        raise ValueError(f"Invalid profile specified. Valid options are: {valid_profiles}")
+    if any(profile not in VALID_PROFILES for profile in profiles):
+        raise ValueError(f"Invalid profile specified. Valid options are: {VALID_PROFILES}")
     
     # Validate radii
     valid_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']

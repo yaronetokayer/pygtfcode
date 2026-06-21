@@ -515,7 +515,19 @@ def calc_balberg_zeta(m_c, v2_c, window):
 
     zeta = np.empty(N, dtype=np.float64)
 
+    # Precompute logs once.
+    log_m = np.empty(N, dtype=np.float64)
+    log_v2 = np.empty(N, dtype=np.float64)
+
+    for i in range(N):
+        log_m[i] = math.log(m_c[i])
+        log_v2[i] = math.log(v2_c[i])
+
     half_window = window // 2
+
+    # Minimum allowed local variance in log(m_c).
+    # Since den = sum((x - xbar)**2), compare against count * min variance.
+    min_logm_var = 1.0e-24
 
     for i in range(N):
 
@@ -541,8 +553,8 @@ def calc_balberg_zeta(m_c, v2_c, window):
         count = 0
 
         for j in range(i0, i1):
-            xbar += math.log(m_c[j])
-            ybar += math.log(v2_c[j])
+            xbar += log_m[j]
+            ybar += log_v2[j]
             count += 1
 
         xbar /= count
@@ -553,16 +565,13 @@ def calc_balberg_zeta(m_c, v2_c, window):
         den = 0.0
 
         for j in range(i0, i1):
-            x = math.log(m_c[j])
-            y = math.log(v2_c[j])
-
-            dx = x - xbar
-            dy = y - ybar
+            dx = log_m[j] - xbar
+            dy = log_v2[j] - ybar
 
             num += dx * dy
             den += dx * dx
 
-        if den > 0.0:
+        if den > min_logm_var * count:
             zeta[i] = num / den + 1.0
         else:
             zeta[i] = 1.0
@@ -653,7 +662,19 @@ def calc_dlnmc_dlnvc(m_c, v2_c, window):
 
     zeta = np.empty(N, dtype=np.float64)
 
+    # Precompute logs once.
+    log_m = np.empty(N, dtype=np.float64)
+    log_v2 = np.empty(N, dtype=np.float64)
+
+    for i in range(N):
+        log_m[i] = math.log(m_c[i])
+        log_v2[i] = math.log(v2_c[i])
+
     half_window = window // 2
+
+    # Minimum allowed local variance in log(v2_c).
+    # Since den = sum((x - xbar)**2), compare against count * min variance.
+    min_logv2_var = 1.0e-24
 
     for i in range(N):
 
@@ -679,8 +700,8 @@ def calc_dlnmc_dlnvc(m_c, v2_c, window):
         count = 0
 
         for j in range(i0, i1):
-            xbar += math.log(v2_c[j])
-            ybar += math.log(m_c[j])
+            xbar += log_v2[j]
+            ybar += log_m[j]
             count += 1
 
         xbar /= count
@@ -691,16 +712,13 @@ def calc_dlnmc_dlnvc(m_c, v2_c, window):
         den = 0.0
 
         for j in range(i0, i1):
-            x = math.log(v2_c[j])
-            y = math.log(m_c[j])
-
-            dx = x - xbar
-            dy = y - ybar
+            dx = log_v2[j] - xbar
+            dy = log_m[j] - ybar
 
             num += dx * dy
             den += dx * dx
 
-        if den > 0.0:
+        if den > min_logv2_var * count:
             zeta[i] = 2.0 * num / den
         else:
             zeta[i] = 0.0
@@ -740,7 +758,19 @@ def calc_dlnrhoc_dlnvc(rho_c, v2_c, window):
 
     zeta = np.empty(N, dtype=np.float64)
 
+    # Precompute logs once.
+    log_rho = np.empty(N, dtype=np.float64)
+    log_v2 = np.empty(N, dtype=np.float64)
+
+    for i in range(N):
+        log_rho[i] = math.log(rho_c[i])
+        log_v2[i] = math.log(v2_c[i])
+
     half_window = window // 2
+
+    # Minimum allowed local variance in log(v2_c).
+    # Since den = sum((x - xbar)**2), compare against count * min variance.
+    min_logv2_var = 1.0e-24
 
     for i in range(N):
 
@@ -766,8 +796,8 @@ def calc_dlnrhoc_dlnvc(rho_c, v2_c, window):
         count = 0
 
         for j in range(i0, i1):
-            xbar += math.log(v2_c[j])
-            ybar += math.log(rho_c[j])
+            xbar += log_v2[j]
+            ybar += log_rho[j]
             count += 1
 
         xbar /= count
@@ -778,17 +808,110 @@ def calc_dlnrhoc_dlnvc(rho_c, v2_c, window):
         den = 0.0
 
         for j in range(i0, i1):
-            x = math.log(v2_c[j])
-            y = math.log(rho_c[j])
-
-            dx = x - xbar
-            dy = y - ybar
+            dx = log_v2[j] - xbar
+            dy = log_rho[j] - ybar
 
             num += dx * dy
             den += dx * dx
 
-        if den > 0.0:
+        if den > min_logv2_var * count:
             zeta[i] = 2.0 * num / den
+        else:
+            zeta[i] = 0.0
+
+    return zeta
+
+@njit(float64[:](float64[:], float64[:], types.int64), fastmath=True, cache=True)
+def calc_dlnmc_dlnrhoc(m_c, rho_c, window): 
+    """
+    Computes zeta = dln(m_c) / dln(rho_c) using a local log-log fit.
+
+    zeta is estimated as the local power-law slope between m_c and rho_c,
+    so that locally m_c is approximately proportional to rho_c**zeta.
+
+    At each point i, zeta[i] is computed by fitting
+
+        ln(m_c) = a + zeta * ln(rho_c)
+
+    over a window of neighboring points.
+
+    Arguments
+    ---------
+    m_c : ndarray, shape (N,)
+        Core masses.
+    rho_c : ndarray, shape (N,)
+        Core densities.
+    window : int
+        Number of points used in each local fit.
+        If even, then the effective window size is window + 1.
+
+    Returns
+    -------
+    zeta : ndarray, shape (N,)
+        Local logarithmic slope dln(m_c) / dln(rho_c).
+    """
+    N = m_c.shape[0]
+
+    zeta = np.empty(N, dtype=np.float64)
+
+    # Precompute logs once.
+    log_m = np.empty(N, dtype=np.float64)
+    log_rho = np.empty(N, dtype=np.float64)
+
+    for i in range(N):
+        log_m[i] = math.log(m_c[i])
+        log_rho[i] = math.log(rho_c[i])
+
+    half_window = window // 2
+
+    # Minimum allowed local variance in log(rho_c).
+    # Since den = sum((x - xbar)**2), compare against count * min variance.
+    min_logrho_var = 1.0e-24
+
+    for i in range(N):
+
+        # Choose local fitting window centered on i.
+        i0 = i - half_window
+        i1 = i + half_window + 1
+
+        # Shift the window back inside the valid index range near boundaries.
+        if i0 < 0:
+            i1 -= i0
+            i0 = 0
+
+        if i1 > N:
+            i0 -= i1 - N
+            i1 = N
+
+        if i0 < 0:
+            i0 = 0
+
+        # First pass: compute mean log(rho_c) and mean log(m_c).
+        xbar = 0.0
+        ybar = 0.0
+        count = 0
+
+        for j in range(i0, i1):
+            xbar += log_rho[j]
+            ybar += log_m[j]
+            count += 1
+
+        xbar /= count
+        ybar /= count
+
+        # Second pass: compute least-squares slope in log-log space.
+        num = 0.0
+        den = 0.0
+
+        for j in range(i0, i1):
+            dx = log_rho[j] - xbar
+            dy = log_m[j] - ybar
+
+            num += dx * dy
+            den += dx * dx
+
+        if den > min_logrho_var * count:
+            zeta[i] = num / den
         else:
             zeta[i] = 0.0
 
@@ -811,9 +934,10 @@ def calc_s_dsdr(v2, rho, rmid):
         dsdr[0] = 0.0
         return s, dsdr
 
-    dsdr[0] = (s[1] - s[0]) / (rmid[1] - rmid[0])
+    dsdr[0] = np.nan
+    dsdr[1] = np.nan
 
-    for i in range(1, n - 1):
+    for i in range(2, n - 1):
         dsdr[i] = (s[i + 1] - s[i - 1]) / (rmid[i + 1] - rmid[i - 1])
 
     dsdr[n - 1] = (s[n - 1] - s[n - 2]) / (rmid[n - 1] - rmid[n - 2])
@@ -843,24 +967,44 @@ def calc_sc1(v2, rho, rmid):
         p[i] = rho[i] * v2[i]
 
     if n == 1:
-        sc1[0] = 0.0
+        sc1[0] = np.nan
         return sc1
 
-    # one-sided boundaries
-    dpdr[0] = (p[1] - p[0]) / (rmid[1] - rmid[0])
-    drhodr[0] = (rho[1] - rho[0]) / (rmid[1] - rmid[0])
+    # one-sided lower boundary
+    dr = rmid[1] - rmid[0]
+    if dr == 0.0:
+        dpdr[0] = np.nan
+        drhodr[0] = np.nan
+    else:
+        dpdr[0] = (p[1] - p[0]) / dr
+        drhodr[0] = (rho[1] - rho[0]) / dr
 
     # centered interior
     for i in range(1, n - 1):
-        dpdr[i] = (p[i + 1] - p[i - 1]) / (rmid[i + 1] - rmid[i - 1])
-        drhodr[i] = (rho[i + 1] - rho[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+        dr = rmid[i + 1] - rmid[i - 1]
+        if dr == 0.0:
+            dpdr[i] = np.nan
+            drhodr[i] = np.nan
+        else:
+            dpdr[i] = (p[i + 1] - p[i - 1]) / dr
+            drhodr[i] = (rho[i + 1] - rho[i - 1]) / dr
 
-    # one-sided boundaries
-    dpdr[n - 1] = (p[n - 1] - p[n - 2]) / (rmid[n - 1] - rmid[n - 2])
-    drhodr[n - 1] = (rho[n - 1] - rho[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+    # one-sided upper boundary
+    dr = rmid[n - 1] - rmid[n - 2]
+    if dr == 0.0:
+        dpdr[n - 1] = np.nan
+        drhodr[n - 1] = np.nan
+    else:
+        dpdr[n - 1] = (p[n - 1] - p[n - 2]) / dr
+        drhodr[n - 1] = (rho[n - 1] - rho[n - 2]) / dr
 
     for i in range(n):
-        sc1[i] = rho[i] * dpdr[i] / (GAMMA * p[i] * drhodr[i])
+        denom = GAMMA * p[i] * drhodr[i]
+
+        if denom == 0.0:
+            sc1[i] = np.nan
+        else:
+            sc1[i] = rho[i] * dpdr[i] / denom
 
     return sc1
 
@@ -892,25 +1036,98 @@ def calc_sc2(v2, rho, rmid):
         p[i] = rho[i] * v2[i]
 
     if n == 1:
-        sc2[0] = 0.0
+        sc2[0] = np.nan
         return sc2
 
-    dpdr[0] = (p[1] - p[0]) / (rmid[1] - rmid[0])
-    dv2dr[0] = (v2[1] - v2[0]) / (rmid[1] - rmid[0])
+    sc2[0] = np.nan
+    sc2[1] = np.nan
 
-    for i in range(1, n - 1):
-        dpdr[i] = (p[i + 1] - p[i - 1]) / (rmid[i + 1] - rmid[i - 1])
-        dv2dr[i] = (v2[i + 1] - v2[i - 1]) / (rmid[i + 1] - rmid[i - 1])
+    if n == 2:
+        return sc2
 
-    dpdr[n - 1] = (p[n - 1] - p[n - 2]) / (rmid[n - 1] - rmid[n - 2])
-    dv2dr[n - 1] = (v2[n - 1] - v2[n - 2]) / (rmid[n - 1] - rmid[n - 2])
+    # centered interior
+    for i in range(2, n - 1):
+        dr = rmid[i + 1] - rmid[i - 1]
+        if dr == 0.0:
+            dpdr[i] = np.nan
+            dv2dr[i] = np.nan
+        else:
+            dpdr[i] = (p[i + 1] - p[i - 1]) / dr
+            dv2dr[i] = (v2[i + 1] - v2[i - 1]) / dr
+
+    # one-sided upper boundary
+    dr = rmid[n - 1] - rmid[n - 2]
+    if dr == 0.0:
+        dpdr[n - 1] = np.nan
+        dv2dr[n - 1] = np.nan
+    else:
+        dpdr[n - 1] = (p[n - 1] - p[n - 2]) / dr
+        dv2dr[n - 1] = (v2[n - 1] - v2[n - 2]) / dr
 
     prefac = 1.0 - 1.0 / GAMMA
 
-    for i in range(n):
-        sc2[i] = prefac * np.abs(dpdr[i]) / (rho[i] * np.abs(dv2dr[i]))
+    for i in range(2, n):
+        denom = rho[i] * np.abs(dv2dr[i])
+
+        if denom == 0.0:
+            sc2[i] = np.nan
+        else:
+            sc2[i] = prefac * np.abs(dpdr[i]) / denom
 
     return sc2
+
+
+@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+def calc_dlogrho_dlogp(v2, rho):
+    """
+    Return
+
+        dlog(rho) / dlog(P)
+
+    using P = rho * v2.
+
+    This is computed as
+
+        (dlog(rho)/dr) / (dlog(P)/dr)
+      = (P/rho) * (drho/dr) / (dP/dr)
+      = v2 * (drho/dr) / (dP/dr)
+
+    using one-sided boundary and centered interior stencil style.
+
+    The first two cells are set to NaN because they fluctuate.
+    """
+    n = v2.size
+    out = np.empty(n, dtype=np.float64)
+
+    if n == 0:
+        return out
+
+    out[0] = np.nan
+
+    if n == 1:
+        return out
+
+    out[1] = np.nan
+
+    if n == 2:
+        return out
+
+    # centered interior
+    for i in range(2, n - 1):
+        out[i] = (
+            v2[i]
+            * (rho[i + 1] - rho[i - 1])
+            / (rho[i + 1] * v2[i + 1] - rho[i - 1] * v2[i - 1])
+        )
+
+    # one-sided upper boundary
+    out[n - 1] = (
+        v2[n - 1]
+        * (rho[n - 1] - rho[n - 2])
+        / (rho[n - 1] * v2[n - 1] - rho[n - 2] * v2[n - 2])
+    )
+
+    return out
 
 # @njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
 # def calc_smfp_r_rho_m_v2(r, rho, v2, m, sigma_m):

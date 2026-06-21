@@ -3,7 +3,8 @@ import os
 from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc import (
     calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, 
-    calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2
+    calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2,
+    calc_dlogrho_dlogp
     )
 from pygtfcode.parameters.constants import Constants as const
 
@@ -202,6 +203,7 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     # On the fly computations
     s, dsdr = calc_s_dsdr(state.v2, state.rho, state.rmid)
     sc1 = calc_sc1(state.v2, state.rho, state.rmid); sc2 = calc_sc2(state.v2, state.rho, state.rmid)
+    dlnrhodlnp = calc_dlogrho_dlogp(state.v2, state.rho)
 
     with open(filename, "w") as f:
         # header = (
@@ -215,9 +217,11 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
             f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  "
-            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}\n"
+            f"{'dttcool':>12}  {'dttsc':>12}  {'tdyntcool':>12}  {'tsctcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}  {'dlnrhodlnp':>12}\n"
         )
         dt = state.dt ### for the timescales
+
+
 
         f.write(header)
         for i in range(len(state.r) - 1):
@@ -239,7 +243,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{s[i]:12.6e}  "
                 f"{dsdr[i]:12.6e}  "
                 f"{sc1[i]:12.6e}  "
-                f"{sc2[i]:12.6e}\n"
+                f"{sc2[i]:12.6e}  "
+                f"{dlnrhodlnp[i]:12.6e}\n"
             )
     
     if ic_filename is None:
@@ -308,6 +313,7 @@ def write_time_evolution(state, last=False):
     r_m2, rho_m2, m_m2, v2_m2               = calc_rm2_rho_m_v2(r, rmid, rho, v2, m)
     r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rmid, state.kn, rho,  v2, m)
     # r_minTh, rho_minTh, m_minTh, v2_minTh   = calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta)
+    drfrac_max                              = np.max(np.diff(r[1:]) / np.sqrt(r[1:-1] * r[2:]))
 
     maxvel      = np.max(np.sqrt(state.v2))
     # minTheta    = np.min(Theta)
@@ -337,6 +343,7 @@ def write_time_evolution(state, last=False):
         # ("rho_minTh", rho_minTh),
         # ("m_minTh", m_minTh),
         # ("v2_minTh", v2_minTh),
+        ("drfrac_max", drfrac_max)
     ]
 
     # Build header
@@ -361,7 +368,7 @@ def write_time_evolution(state, last=False):
         tevol_data = extract_time_evolution_data(filepath)
         dlnmc_dlnvc = calc_dlnmc_dlnvc(tevol_data['m_c'], tevol_data['v2_c'], 31)
         _append_column_to_time_evolution_file(filepath, "dlnmc_dlnvc", dlnmc_dlnvc)
-        dlnrhoc_dlnvc = calc_dlnmc_dlnvc(tevol_data['rho_c'], tevol_data['v2_c'], 31)
+        dlnrhoc_dlnvc = calc_dlnrhoc_dlnvc(tevol_data['rho_c'], tevol_data['v2_c'], 31)
         _append_column_to_time_evolution_file(filepath, "dlnrhocdlnvc", dlnrhoc_dlnvc)
         zeta_c = calc_balberg_zeta(tevol_data['m_c'], tevol_data['v2_c'], 31)
         _append_column_to_time_evolution_file(filepath, "zeta_balb", zeta_c)
