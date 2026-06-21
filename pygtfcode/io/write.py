@@ -217,7 +217,7 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
             f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  "
-            f"{'dttcool':>12}  {'dttsc':>12}  {'tdyntcool':>12}  {'tsctcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}  {'dlnrhodlnp':>12}\n"
+            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}  {'dlnrhodlnp':>12}\n"
         )
         dt = state.dt ### for the timescales
 
