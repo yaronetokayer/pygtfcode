@@ -286,6 +286,7 @@ class State:
             - minkn: minimum Knudsen number
         """
         from pygtfcode.profiles.profile_routines import menc, sigr
+        from pygtfcode.util.calc import calc_ltemp
 
         if self.config.io.chatter:
             print("Initializing profiles...")
@@ -308,6 +309,7 @@ class State:
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
         kn = 1.0 / (self.char.sigma_m_char * np.sqrt(rho * v2))
+        mfp = 1.0 / (self.char.sigma_m_char * rho)
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
         # This helps reduce artificial gradients in innermost cell
@@ -322,11 +324,20 @@ class State:
 
             v2[0] = p[0] / rho[0]
 
+        # State arrays
         self.m      = m
         self.rmid   = r_mid
         self.rho    = rho
         self.v2     = v2
-        self.kn     = kn
+
+        # Derived quantities
+        self.kn         = kn
+        self.drfrac     = np.zeros_like(rho, dtype=np.float64)
+        self.drfrac[0]  = np.nan
+        self.drfrac[1:] = (r[2:]/r[1:-1] - 1.0) / np.sqrt(r[2:]/r[1:-1])
+        self.ltemp      = np.zeros_like(rho, dtype=np.float64)
+        calc_ltemp(self.ltemp, v2, r_mid)
+        self.mfp        = np.asarray(mfp, dtype=np.float64)
         # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
         ### Testing diagnostics ###
@@ -334,9 +345,6 @@ class State:
         # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.zeros_like(rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
-        self.drfrac = np.zeros_like(rho, dtype=np.float64)
-        self.drfrac[0] = 2.0
-        self.drfrac[1:] = (r[2:]/r[1:-1] - 1.0) / np.sqrt(r[2:]/r[1:-1])
         # self.lum    = np.zeros_like(r, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
@@ -349,6 +357,7 @@ class State:
             Path to the snapshot file containing initial conditions.
         """
         from pygtfcode.io.read import extract_snapshot_data
+        from pygtfcode.util.calc import calc_ltemp
 
         if self.config.io.chatter:
             print(f"Loading initial conditions from {ic_filepath} ...")
@@ -369,7 +378,16 @@ class State:
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
-        self.kn     = data['kn'].astype(np.float64)
+
+        # Derived quantities
+        self.kn         = np.asarray(1.0 / (self.char.sigma_m_char * np.sqrt(self.rho * self.v2)), dtype=np.float64)
+        self.drfrac     = np.zeros_like(self.rho, dtype=np.float64)
+        self.drfrac[0]  = np.nan
+        self.drfrac[1:] = (self.r[2:]/self.r[1:-1] - 1.0) / np.sqrt(self.r[2:]/self.r[1:-1])
+        self.ltemp      = np.zeros_like(self.rho, dtype=np.float64)
+        calc_ltemp(self.ltemp, self.v2, self.rmid)
+        self.mfp        = np.asarray( 1.0 / (self.char.sigma_m_char * self.rho), dtype=np.float64)
+
         # self.Theta  = data['Theta'].astype(np.float64)
 
         ### Testing diagnostics ###
@@ -377,17 +395,15 @@ class State:
         # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
         self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
-        self.drfrac = np.zeros_like(self.rho, dtype=np.float64)
-        self.drfrac[0] = 2.0
-        self.drfrac[1:] = (self.r[2:]/self.r[1:-1] - 1.0) / np.sqrt(self.r[2:]/self.r[1:-1])
         # self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
-    def _ensure_virial_equilibfrium(self):
+    def _ensure_virial_equilibrium(self):
         """
         Fine-tunes initial profile to ensure hydrostatic equilibrium.
         Iteratively runs revirialize() until max |dr/r| < eps_dr.
         """
         from pygtfcode.evolve.hydrostatic import revirialize_w_he_resid, compute_he_pressures_with_resid, STATUS_SHELL_CROSSING
+        from pygtfcode.util.calc import calc_ltemp
         chatter = self.config.io.chatter
 
         if chatter:
@@ -437,8 +453,10 @@ class State:
         self.rho = rho_new
         self.v2 = v2_new
 
-        self.rmid   = 0.5 * (r_new[1:] + r_new[:-1])
-        self.kn     = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
+        self.rmid[:]    = 0.5 * (r_new[1:] + r_new[:-1])
+        self.kn[:]      = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
+        calc_ltemp(self.ltemp, self.v2, self.rmid)
+        self.mfp[:]     = 1.0 / (self.char.sigma_m_char * self.rho)
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
@@ -458,7 +476,7 @@ class State:
             self._load_ic(ic_filepath)
         else:
             self._initialize_grid()
-        self._ensure_virial_equilibfrium()
+        self._ensure_virial_equilibrium()
 
         self.t = 0.0                        # Current time in simulation units
         self.step_count = 0                 # Global integration step counter (never reset)
@@ -635,6 +653,8 @@ class State:
 
         self.rmid   = np.empty(n,   dtype=np.float64)
         self.kn     = np.empty(n,   dtype=np.float64)
+        self.ltemp  = np.empty(n,   dtype=np.float64)
+        self.mfp    = np.empty(n,   dtype=np.float64)
         # self.t_sc   = np.empty(n,   dtype=np.float64)
         # self.t_coll = np.empty(n,   dtype=np.float64)
         self.t_dyn  = np.empty(n,   dtype=np.float64)

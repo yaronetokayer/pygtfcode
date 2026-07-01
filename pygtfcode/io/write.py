@@ -203,6 +203,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     s, dsdr = calc_s_dsdr(state.v2, state.rho, state.rmid)
     sc1 = calc_sc1(state.v2, state.rho, state.rmid); sc2 = calc_sc2(state.v2, state.rho, state.rmid)
     dlnrhodlnp = calc_dlogrho_dlogp(state.v2, state.rho)
+    drltemp = np.empty_like(state.rho)
+    drltemp[0] = np.nan
+    drltemp[1:] = (state.r[2:] - state.r[1:-1]) / state.ltemp[1:]
+    mfpltemp = state.mfp / state.ltemp
 
     with open(filename, "w") as f:
         # header = (
@@ -215,7 +219,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         # )
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'drfrac':>12}  "
+            f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'ltemp':>12}  {'mfp':>12}  {'drfrac':>12}  "
+            f"{'drltemp':>12}  {'mfpltemp':>12}  "
             f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}  {'dlnrhodlnp':>12}\n"
         )
         dt = state.dt ### for the timescales
@@ -230,8 +235,12 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{state.rho[i]:12.6e}  "
                 f"{state.v2[i]:12.6e}  "
                 f"{state.kn[i]:12.6e}  "
+                f"{state.ltemp[i]:12.6e}  "
+                f"{state.mfp[i]:12.6e}  "
                 # f"{state.Theta[i]:12.6e}\n"
                 f"{state.drfrac[i]:12.6e}  "
+                f"{drltemp[i]:12.6e}  "
+                f"{mfpltemp[i]:12.6e}  "
                 # f"{state.lum[i+1]:12.6e}  "
                 f"{_safe_div(dt, state.t_cool[i]):12.6e}  "
                 # f"{_safe_div(state.t_sc[i], state.t_cool[i]):12.6e}  "

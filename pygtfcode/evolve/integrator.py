@@ -4,7 +4,7 @@ from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_ti
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim, conduct_implicit_tcool_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
 from pygtfcode.evolve.split import check_drfrac_split, check_drfrac_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
-from pygtfcode.util.calc import low_kn_boost
+from pygtfcode.util.calc import low_kn_boost, calc_ltemp
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -255,15 +255,29 @@ def integrate_time_step(state, config,                                  # State 
     # Still need to update v2 based on the new p and rho
     np.divide(work_n2, rho, out=state.v2)
 
-    # Update rmid without allocations
+    ### Derived quantities ###
+
+    # rmid
     np.add(r[1:], r[:-1], out=state.rmid)
     state.rmid *= 0.5
 
-    # Update kn without allocations
+    # kn
     np.sqrt(work_n2, out=state.kn)
     state.kn *= sigma_m
     np.reciprocal(state.kn, out=state.kn)
     state.minkn = float(np.min(state.kn))
+
+    # drfrac
+    state.drfrac[0] = np.nan
+    np.divide(r[2:], r[1:-1], out=work_n1[1:])
+    np.subtract(work_n1[1:], 1.0, out=state.drfrac[1:])
+    np.sqrt(work_n1[1:], out=work_n1[1:])
+    np.divide(state.drfrac[1:], work_n1[1:], out=state.drfrac[1:])
+
+    # ltemp and mfp
+    calc_ltemp(state.ltemp, state.v2, state.rmid)
+    np.multiply(sigma_m, state.rho, out=state.mfp)
+    np.reciprocal(state.mfp, out=state.mfp)
 
     # Diagnostics
     state.n_iter_du += iter_du
@@ -289,13 +303,6 @@ def integrate_time_step(state, config,                                  # State 
 
     np.sqrt(rho, out=state.t_dyn)
     np.reciprocal(state.t_dyn, out=state.t_dyn)
-
-    ### Other testing diagnostics ###
-    state.drfrac[0] = 2.0
-    np.divide(r[2:], r[1:-1], out=work_n1[1:])
-    np.subtract(work_n1[1:], 1.0, out=state.drfrac[1:])
-    np.sqrt(work_n1[1:], out=work_n1[1:])
-    np.divide(state.drfrac[1:], work_n1[1:], out=state.drfrac[1:])
     
     # Luminosity
     # init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
