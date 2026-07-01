@@ -26,7 +26,7 @@ def run_until_stop(state, start_step, **kwargs):
     io = config.io; sim = config.sim; prec = config.prec; grid = config.grid
     
     t_evol = bool(io.t_evol); profiles = bool(io.profiles); chatter = bool(io.chatter)
-    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt); delayed_revir_mode = bool(sim.delayed_revir_mode)
+    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
         drho_tevol = float(io.drho_tevol)
@@ -41,10 +41,6 @@ def run_until_stop(state, start_step, **kwargs):
     kn_threshold = prec.kn_threshold
     du_boost = prec.du_boost
     kn_width = prec.kn_width
-
-    # For delayed revir mode
-    skip_revir = False
-    revir_delay = 0.0; t_since_revir = 0.0
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
@@ -75,21 +71,6 @@ def run_until_stop(state, start_step, **kwargs):
             fac = safety * err
             dt_prop = fac * state.dt
 
-        #--- Check for delayed_revir
-        if delayed_revir_mode and step_count > 1:
-            revir_delay_fac = math.ceil(np.max(state.t_dyn / state.t_cool))
-            state.revir_delay_fac = revir_delay_fac
-
-            if not skip_revir and revir_delay_fac > 1.0:
-                skip_revir = True
-                revir_delay = revir_delay_fac * dt_prop
-                t_since_revir = 0.0
-
-            if skip_revir:
-                t_since_revir += state.dt
-                if t_since_revir >= revir_delay:
-                    skip_revir = False
-
         ########################
         ### 2. Adaptive grid ###
         ########################
@@ -116,7 +97,6 @@ def run_until_stop(state, start_step, **kwargs):
 
         #--- Integrate time step
         integrate_time_step(state, config, dt_prop, eps_du_eff, step_count,
-                            skip_revir,
                             a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
 
         if step_count % nupdate == 0:
@@ -181,7 +161,6 @@ def run_until_stop(state, start_step, **kwargs):
 
 def integrate_time_step(state, config,                                  # State arrays
                         dt_prop, eps_du_eff, step_count,                # Instantaneous variables
-                        skip_revir,                                     # For delayed_revir_mode
                         a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,    # Memory allocations (N-1,)
                         work_n1, work_n2                                # Memory allocations (N,)
                         ):
@@ -201,8 +180,6 @@ def integrate_time_step(state, config,                                  # State 
         Proposed dt value returned by compute_time_step
     step_count : int
         Step count
-    skip_revir : bool
-        Whether or not to skip revirialization, for delayed_revir mode
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
         Memory allocation for working arrays
     work_n1, work_n2 : ndarray (N,)
@@ -249,41 +226,38 @@ def integrate_time_step(state, config,                                  # State 
     
     ### Step 2: Reestablish hydrostatic equilibrium ###
     iter_dr = 0
-    if skip_revir:
-        dr_max = 0.0
-    else:
-        while True:
-            # work_n1 used to store old shell volumes; work_n2 is p
-            status, dr_max = revirialize(r, rho, work_n2, m, 
-                                        a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1) # Modifies r, rho, p in place
+    while True:
+        # work_n1 used to store old shell volumes; work_n2 is p
+        status, dr_max = revirialize(r, rho, work_n2, m, 
+                                    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1) # Modifies r, rho, p in place
 
-            # Shell crossing signaled by None
-            if status == STATUS_SHELL_CROSSING:
-                raise RuntimeError(f"Step {step_count}: Shell crossing in revirialization step")
-            
-            # Check dr criterion
-            """
-            With new step to ensure equilibrium in initialization, no longer a need to accept larger dr in first time step.
-            If needed, can reintroduce with 'and (step_count != 1):' in the if statement below.
-            """
-            if dr_max > eps_dr:
-                if iter_dr >= max_iter_dr:
-                    raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
-                iter_dr += 1
-                continue # Go to top of loop, repeat revirialize with new values
+        # Shell crossing signaled by None
+        if status == STATUS_SHELL_CROSSING:
+            raise RuntimeError(f"Step {step_count}: Shell crossing in revirialization step")
+        
+        # Check dr criterion
+        """
+        With new step to ensure equilibrium in initialization, no longer a need to accept larger dr in first time step.
+        If needed, can reintroduce with 'and (step_count != 1):' in the if statement below.
+        """
+        if dr_max > eps_dr:
+            if iter_dr >= max_iter_dr:
+                raise RuntimeWarning("Max iterations exceeded for dr in revirialization step")
+            iter_dr += 1
+            continue # Go to top of loop, repeat revirialize with new values
 
-            # Break out of loop
-            break
+        # Break out of loop
+        break
 
-        ### Step 3: Update state variables ###
+    ### Step 3: Update state variables ###
 
-        # r, rho, and theta were modified in place already; no need to assign them
-        # Still need to update v2 based on the new p and rho
-        np.divide(work_n2, rho, out=state.v2)
+    # r, rho, and theta were modified in place already; no need to assign them
+    # Still need to update v2 based on the new p and rho
+    np.divide(work_n2, rho, out=state.v2)
 
-        # Update rmid without allocations
-        np.add(r[1:], r[:-1], out=state.rmid)
-        state.rmid *= 0.5
+    # Update rmid without allocations
+    np.add(r[1:], r[:-1], out=state.rmid)
+    state.rmid *= 0.5
 
     # Update kn without allocations
     np.sqrt(work_n2, out=state.kn)
@@ -292,7 +266,6 @@ def integrate_time_step(state, config,                                  # State 
     state.minkn = float(np.min(state.kn))
 
     # Diagnostics
-    state.n_revir_calls += int(not skip_revir)
     state.n_iter_du += iter_du
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)

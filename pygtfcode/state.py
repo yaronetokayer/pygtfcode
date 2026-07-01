@@ -465,12 +465,10 @@ class State:
         self.snapshot_index = 0             # Counts profile output snapshots
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
         self.du_max = 0.0                   # Max du of most recent step (used for adaptive time stepping)
-        self.revir_delay_fac = 1            # Conductions per revirializations when delayed_revir_mode = True
 
         # For diagnostics
         self.minkn = float(np.min(self.kn))
 
-        self.n_revir_calls      = 0
         self.n_iter_du          = 0
         self.n_iter_dr          = 0
 
