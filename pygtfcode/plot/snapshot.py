@@ -7,12 +7,17 @@ import shutil
 from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, extract_time_evolution_data
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-VALID_PROFILES = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'drltemp', 'ltemp', 'mfp', 'dlnrhodlnr', 'dlnvdlnr']
+VALID_PROFILES = [
+    'rho', 'm', 'v2', 'kn', 'mfp', 
+    'dttcool', 'tdyntcool', 'drfrac', 'drltemp', 'ltemp', 
+    's', 'dsdr', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'dlnrhodlnr', 'dlnvdlnr', 
+    'k_sc', 'k_lc', 'k_totc', 'k_se', 'k_le', 'k_tote', 'krat_c', 'krat_e'
+    ]
 PLUMMER_PROFILES = ['rho', 'v2']
-EDGE_QUANTITIES = ['m']
+EDGE_QUANTITIES = ['m', 'k_se', 'k_le', 'k_tote']
 LINEAR_Y_PROFILES = ['s', 'dlnrhodlnr', 'dlnvdlnr']
 SYMLOG_Y_PROFILES = ['dsdr', 'dlnrhodlnp']
-LINE_AT_1_PROFILES = ['kn', 'dttcool', 'tdyntcool', 'sc1', 'sc2', 'mfpltemp', 'drltemp', 'mfp']
+LINE_AT_1_PROFILES = ['kn', 'dttcool', 'tdyntcool', 'mfpltemp', 'drltemp', 'mfp']
 VALID_RADII = ['r_c', 'r_smfp', 'r_minTh', 'r_m25']
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):

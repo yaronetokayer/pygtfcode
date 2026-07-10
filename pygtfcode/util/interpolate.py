@@ -35,32 +35,141 @@ def interp_linear_to_interfaces(r_edges_1d, q_cells_1d) -> np.ndarray:
     qR = q_cells_1d[1:]                                # right cell value (i+1)
     return qL + fac * (qR - qL)                        # shape (N-1,)
 
-# @njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
-# def interp_powerlaw_edges_to_cells(r_edges_1d, q_edges_1d, r_cells_1d) -> np.ndarray:
-#     """
-#     Interpolate edge values q to cell-center radii.
+@njit(float64(float64[:], float64[:], float64), cache=True,)
+def interp_pl_to_r(x, y, x_eval):
+    """
+    Interpolate y to x_eval assuming a local power law.
 
-#     Arrays have length N and represent right edges.
-#     The left edge of cell 0 is implicitly (r, q) = (0, 0).
-#     Cell i > 0 lies between edges i-1 and i.
-#     """
-#     N = r_cells_1d.shape[0]
-#     out = np.empty(N, dtype=np.float64)
+    The local relation is
 
-#     # First cell: linear from implied origin to first stored edge
-#     out[0] = q_edges_1d[0] * r_cells_1d[0] / r_edges_1d[0]
+        y(x) = y0 * (x / x0)**p,
 
-#     # Remaining cells: power-law between stored edges i-1 and i
-#     for i in range(1, N):
-#         log_rL = math.log(r_edges_1d[i - 1])
-#         log_qL = math.log(q_edges_1d[i - 1])
+    where p is determined from the two neighboring data points.
 
-#         log_rR = math.log(r_edges_1d[i])
-#         log_qR = math.log(q_edges_1d[i])
+    This function can be used for either edge quantities or
+    shell-centered quantities:
 
-#         log_rC = math.log(r_cells_1d[i])
+        interp_pl_to_r(r, m, r_eval)
+        interp_pl_to_r(rmid, rho, r_eval)
 
-#         fac = (log_rC - log_rL) / (log_rR - log_rL)
-#         out[i] = math.exp(log_qL + fac * (log_qR - log_qL))
+    Interpolation is performed within the grid. Outside the grid, the
+    nearest pair of points is used for power-law extrapolation.
 
-#     return out
+    A special case is included for enclosed quantities satisfying
+
+        x[0] = 0
+        y[0] = 0.
+
+    Since log-log interpolation through the origin is undefined, the
+    first two strictly positive points are used to extrapolate inward.
+
+    Parameters
+    ----------
+    x : ndarray, shape (N,)
+        Coordinates at which y is defined. Must be strictly increasing.
+    y : ndarray, shape (N,)
+        Values to interpolate. The two points defining the local power
+        law must be strictly positive, except that x[0] = y[0] = 0 is
+        supported.
+    x_eval : float
+        Coordinate at which to evaluate the interpolated quantity.
+
+    Returns
+    -------
+    y_eval : float
+        Interpolated value.
+    """
+    N = y.shape[0]
+
+    if N == 1:
+        return y[0]
+
+    # Preserve exact endpoint values, including a possible (0, 0).
+    if x_eval == x[0]:
+        return y[0]
+
+    if x_eval == x[N - 1]:
+        return y[N - 1]
+
+    # Locate the pair surrounding x_eval. The first or last pair is
+    # used when extrapolating.
+    if x_eval < x[0]:
+        i = 0
+
+    elif x_eval > x[N - 1]:
+        i = N - 2
+
+    else:
+        lo = 0
+        hi = N - 1
+
+        while hi - lo > 1:
+            mid = (lo + hi) // 2
+
+            if x_eval < x[mid]:
+                hi = mid
+            else:
+                lo = mid
+
+        i = lo
+
+    x0 = x[i]
+    x1 = x[i + 1]
+    y0 = y[i]
+    y1 = y[i + 1]
+
+    if x_eval == x0:
+        return y0
+
+    if x_eval == x1:
+        return y1
+
+    # Standard local power-law interpolation.
+    if (
+        x_eval > 0.0
+        and x0 > 0.0
+        and x1 > 0.0
+        and y0 > 0.0
+        and y1 > 0.0
+    ):
+        power = math.log(y1 / y0) / math.log(x1 / x0)
+        return y0 * math.exp(power * math.log(x_eval / x0))
+
+    # A power law cannot be inferred directly between (0, 0) and the
+    # first positive point. Infer the inner slope from the first two
+    # positive points and extrapolate inward.
+    if (
+        i == 0
+        and x[0] == 0.0
+        and y[0] == 0.0
+        and x_eval > 0.0
+    ):
+        j0 = 1
+
+        while j0 < N and (x[j0] <= 0.0 or y[j0] <= 0.0):
+            j0 += 1
+
+        j1 = j0 + 1
+
+        while j1 < N and (x[j1] <= 0.0 or y[j1] <= 0.0):
+            j1 += 1
+
+        if j1 >= N:
+            raise ValueError(
+                "At least two positive points are required to "
+                "infer a power law near the origin."
+            )
+
+        power = (
+            math.log(y[j1] / y[j0])
+            / math.log(x[j1] / x[j0])
+        )
+
+        return y[j0] * math.exp(
+            power * math.log(x_eval / x[j0])
+        )
+
+    raise ValueError(
+        "Power-law interpolation requires positive coordinates and "
+        "positive values."
+    )

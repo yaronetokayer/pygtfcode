@@ -1,3 +1,7 @@
+"""
+Helpers for linear algebraic operations
+"""
+
 import numpy as np
 from numba import njit, void, float64
 

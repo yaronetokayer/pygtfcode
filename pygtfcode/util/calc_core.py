@@ -1,391 +1,475 @@
+"""
+Helpers to compute quantities related to the core
+"""
+
 import math
 from numba import njit, float64, types
+from pygtfcode.util.interpolate import interp_pl_to_r
 
-@njit(types.Tuple((float64, float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
-def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
+### CORE DEFINITIONS
+
+@njit(float64(float64[:], float64[:], float64[:]), fastmath=True, cache=True,)
+def calc_core_r(r, rmid, rho):
     """
-    Computes core radius, core average density, core mass, and core v2.
+    Find the radius at which rho falls to half its central value.
 
-    Core radius is defined as r_c such that rho(r_c) = 0.5 * rho_0,
-    where rho_0 is the central density.
+    The crossing is calculated by assuming rho is a local power law
+    between adjacent shell midpoint radii.
 
-    r_c is estimated by log-log interpolation in rho(r).
-    m_c is estimated by taking the shell that contains r_c and using
-    a constant-density-within-shell volume fraction.
-    v2_c is estimated as a shell-mass-weighted average of v2 inside r_c.
-
-    Arguments
-    ---------
+    Parameters
+    ----------
     r : ndarray, shape (N+1,)
-        Shell edge radii.
+        Shell-edge radii.
     rmid : ndarray, shape (N,)
-        Midpoint radii.
+        Shell midpoint radii.
     rho : ndarray, shape (N,)
-        Shell densities.
-    v2 : ndarray, shape (N,)
-        Shell square of 1D velocity dispersion.
-    m : ndarray, shape (N+1,)
-        Enclosed mass at shell edges.
+        Density evaluated at shell midpoints.
 
     Returns
     -------
     r_c : float
-        Core radius
-    rho_c : float
-        Mean density in the core
-    m_c : float
-        Core mass
-    v2_c : float
-        Core v2
+        Radius at which rho(r_c) = 0.5 * rho[0]. If no crossing is
+        found, the outermost shell-edge radius is returned.
+    """
+    N = rho.shape[0]
+
+    rho_target = 0.5 * rho[0]
+    log_rho_target = math.log(rho_target)
+
+    log_r_prev = math.log(rmid[0])
+    log_rho_prev = math.log(rho[0])
+
+    for j in range(1, N):
+        if rho[j] <= rho_target:
+            log_r_cur = math.log(rmid[j])
+            log_rho_cur = math.log(rho[j])
+
+            slope = (
+                (log_rho_cur - log_rho_prev)
+                / (log_r_cur - log_r_prev)
+            )
+
+            log_r_c = (
+                log_r_prev
+                + (log_rho_target - log_rho_prev) / slope
+            )
+
+            return math.exp(log_r_c)
+
+        log_r_prev = math.log(rmid[j])
+        log_rho_prev = math.log(rho[j])
+
+    return r[N]
+
+@njit(float64(float64[:], float64[:], float64[:], float64,), fastmath=True, cache=True,)
+def calc_r_mn(r, rmid, rho, n):
+    """
+    Compute the radius r_mn where the logarithmic density slope first
+    crosses -n:
+
+        d(ln rho) / d(ln r) = -n.
+
+    Density slopes are calculated between adjacent shell-midpoint
+    values and assigned to the geometric midpoint of each interval.
+    The crossing radius is found by linearly interpolating the slope
+    in log-radius.
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Shell-edge radii.
+    rmid : ndarray, shape (N,)
+        Shell midpoint radii.
+    rho : ndarray, shape (N,)
+        Density evaluated at the shell midpoints. Values must be
+        strictly positive.
+    n : float
+        Positive magnitude of the target logarithmic slope.
+
+    Returns
+    -------
+    r_mn : float
+        First radius where the density slope crosses from above -n
+        to at or below -n. If no crossing is found, the outermost
+        shell-edge radius is returned.
     """
     N = rmid.shape[0]
 
-    rho0        = rho[0]
-    halfrho0    = 0.5 * rho0
-    loghalfrho0 = math.log(halfrho0)
+    if N < 2:
+        return r[N]
 
-    # Numerator for mass-weighted v2 average
-    numv_full = 0.0
+    target = -n
 
-    log_r_prev      = math.log(rmid[0])
-    log_rho_prev    = math.log(rho0)
+    log_r_prev = math.log(rmid[0])
+    log_rho_prev = math.log(rho[0])
+
+    log_r_cur = math.log(rmid[1])
+    log_rho_cur = math.log(rho[1])
+
+    slope_prev = (
+        (log_rho_cur - log_rho_prev)
+        / (log_r_cur - log_r_prev)
+    )
+    log_rslope_prev = 0.5 * (log_r_prev + log_r_cur)
+
+    for j in range(2, N):
+        log_r_next = math.log(rmid[j])
+        log_rho_next = math.log(rho[j])
+
+        slope_cur = (
+            (log_rho_next - log_rho_cur)
+            / (log_r_next - log_r_cur)
+        )
+        log_rslope_cur = 0.5 * (log_r_cur + log_r_next)
+
+        # Find the first downward crossing of the target slope.
+        if slope_prev > target and slope_cur <= target:
+            dslope = slope_cur - slope_prev
+
+            if dslope != 0.0:
+                log_r_mn = log_rslope_prev + (
+                    (target - slope_prev)
+                    * (log_rslope_cur - log_rslope_prev)
+                    / dslope
+                )
+            else:
+                log_r_mn = log_rslope_cur
+
+            return math.exp(log_r_mn)
+
+        log_r_cur = log_r_next
+        log_rho_cur = log_rho_next
+        slope_prev = slope_cur
+        log_rslope_prev = log_rslope_cur
+
+    return r[N]
+
+@njit(float64(float64[:], float64[:], float64[:],), fastmath=True, cache=True,)
+def calc_r_smfp(r, rmid, kn):
+    """
+    Compute the SMFP radius, defined as the first radius where the
+    Knudsen number crosses unity:
+
+        Kn(r_smfp) = 1.
+
+    The crossing radius is estimated by assuming Kn is a local power
+    law between adjacent shell midpoint radii, equivalent to linear
+    interpolation in log(Kn) versus log(r).
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Shell-edge radii. Used to return the outermost edge if no
+        crossing is found.
+
+    rmid : ndarray, shape (N,)
+        Shell midpoint radii.
+
+    kn : ndarray, shape (N,)
+        Knudsen number evaluated at the shell midpoints. Values must
+        be strictly positive.
+
+    Returns
+    -------
+    r_smfp : float
+        First radius where Kn crosses 1. If no crossing is found,
+        the outermost shell-edge radius is returned.
+    """
+    N = rmid.shape[0]
+
+    if N < 2:
+        return r[N]
+
+    log_r_prev = math.log(rmid[0])
+    log_kn_prev = math.log(kn[0])
 
     for j in range(1, N):
-        rho_cur = rho[j]
+        kn_prev = kn[j - 1]
+        kn_cur = kn[j]
 
-        # Find the first shell outside r_c
-        if rho_cur <= halfrho0:
-            # Log-log interpolation for rc
-            log_r_cur   = math.log(rmid[j])
-            log_rho_cur = math.log(rho_cur)
+        # Find the first crossing of Kn = 1 in either direction.
+        if (kn_prev - 1.0) * (kn_cur - 1.0) <= 0.0:
+            log_r_cur = math.log(rmid[j])
+            log_kn_cur = math.log(kn_cur)
 
-            logslope    = (log_rho_cur - log_rho_prev) / (log_r_cur - log_r_prev)
-            log_rc      = log_r_prev + (loghalfrho0 - log_rho_prev) / logslope
-            r_c         = math.exp(log_rc)
+            dlog_kn = log_kn_cur - log_kn_prev
 
-            # Accumulate m and v2 until r_c
-            if r_c <= r[j]:
-                k = j - 1
-                numv = numv_full
-            else:
-                k = j
-                dm_prev = m[j] - m[j - 1]
-                numv = numv_full + dm_prev * v2[j - 1]
+            if dlog_kn != 0.0:
+                # log(Kn_target) = log(1) = 0.
+                log_r_smfp = (
+                    log_r_prev
+                    - log_kn_prev
+                    * (log_r_cur - log_r_prev)
+                    / dlog_kn
+                )
 
-            rk0 = r[k]
-            rk1 = r[k + 1]
-            mk0 = m[k]
-            mk1 = m[k + 1]
+                return math.exp(log_r_smfp)
 
-            # Find m_c assuming constant densities
-            if r_c <= rk0:
-                frac = 0.0
-            elif r_c >= rk1:
-                frac = 1.0
-            else:
-                rc3 = r_c * r_c * r_c
-                rk03 = rk0 * rk0 * rk0
-                rk13 = rk1 * rk1 * rk1
-                frac = (rc3 - rk03) / (rk13 - rk03)
+            # Both points have the same Kn value. This can only define
+            # a crossing unambiguously when both values equal one.
+            return rmid[j - 1]
 
-            m_c = mk0 + frac * (mk1 - mk0)
+        log_r_prev = math.log(rmid[j])
+        log_kn_prev = math.log(kn_cur)
 
-            # Complete v2_c computation with last partial shell
-            dm_partial = m_c - mk0
-            numv += dm_partial * v2[k]
+    return r[N]
 
-            if m_c > 0.0:
-                v2_c = numv / m_c
-            else:
-                v2_c = v2[0]
+### CORE AVERAGES
 
-            if r_c > 0.0:
-                rho_c = 3.0 * m_c / (r_c * r_c * r_c)
-            else:
-                rho_c = rho[0]
+@njit(float64(float64[:], float64[:], float64[:], float64,), fastmath=True, cache=True,)
+def calc_logmean_within_r(r, m, q, r_max):
+    """
+    Compute the mass-weighted geometric mean of q inside r_max.
 
-            return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
+    The returned quantity is
 
-        # No crossing yet; shell j-1 is fully inside for future crossings
-        dm_prev = m[j] - m[j - 1]
-        numv_full += dm_prev * v2[j - 1]
+        exp[sum(dm * log(q)) / sum(dm)].
 
-        log_r_prev      = math.log(rmid[j])
-        log_rho_prev    = math.log(rho_cur)
+    q is treated as constant within each shell. If r_max lies within
+    a shell, the enclosed mass at r_max is found with
+    interp_pl_to_r(r, m, r_max).
 
-    # If no crossing is found, return outermost values.
-    r_c = r[N]
-    m_c = m[N]
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Shell-edge radii.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    q : ndarray, shape (N,)
+        Shell quantity to average. Every included value with nonzero
+        shell mass must be strictly positive.
 
-    dm_last = m[N] - m[N - 1]
-    numv_full += dm_last * v2[N - 1]
+    r_max : float
+        Outer radius of the averaging region.
 
-    if m_c > 0.0:
-        v2_c = numv_full / m_c
-    else:
-        v2_c = v2[0]
+    Returns
+    -------
+    q_mean : float
+        Mass-weighted geometric mean of q.
+    """
+    N = q.shape[0]
+
+    if r_max <= r[0]:
+        return q[0]
+
+    weighted_sum = 0.0
+    included_mass = 0.0
+
+    for k in range(N):
+        # Entire shell lies inside r_max.
+        if r_max >= r[k + 1]:
+            dm = m[k + 1] - m[k]
+
+        # r_max lies inside this shell.
+        elif r_max > r[k]:
+            m_at_rmax = interp_pl_to_r(r, m, r_max)
+            dm = m_at_rmax - m[k]
+
+        # No part of this or any subsequent shell is included.
+        else:
+            break
+
+        if dm > 0.0:
+            if q[k] <= 0.0:
+                raise ValueError(
+                    "The logarithmic mean requires q > 0."
+                )
+
+            weighted_sum += dm * math.log(q[k])
+            included_mass += dm
+
+        # Stop after including the partial outer shell.
+        if r_max < r[k + 1]:
+            break
+
+    if included_mass > 0.0:
+        return math.exp(weighted_sum / included_mass)
+
+    return q[0]
+
+@njit(float64(float64[:], float64[:], float64[:], float64,), fastmath=True, cache=True,)
+def calc_mean_within_r(r, m, q, r_max):
+    """
+    Compute the arithmetic mass-weighted mean of q inside r_max.
+
+    The returned quantity is
+
+        sum(dm * q) / sum(dm).
+
+    q is treated as constant within each shell. If r_max lies within
+    a shell, the enclosed mass at r_max is found with
+    interp_pl_to_r(r, m, r_max).
+
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Shell-edge radii.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    q : ndarray, shape (N,)
+        Shell quantity to average.
+    r_max : float
+        Outer radius of the averaging region.
+
+    Returns
+    -------
+    q_mean : float
+        Arithmetic mass-weighted mean of q.
+    """
+    N = q.shape[0]
+
+    if r_max <= r[0]:
+        return q[0]
+
+    weighted_sum = 0.0
+    included_mass = 0.0
+
+    for k in range(N):
+        # Entire shell lies inside r_max.
+        if r_max >= r[k + 1]:
+            dm = m[k + 1] - m[k]
+
+        # r_max lies inside this shell.
+        elif r_max > r[k]:
+            m_at_rmax = interp_pl_to_r(r, m, r_max)
+            dm = m_at_rmax - m[k]
+
+        # No part of this or any subsequent shell is included.
+        else:
+            break
+
+        if dm > 0.0:
+            weighted_sum += dm * q[k]
+            included_mass += dm
+
+        # Stop after including the partial outer shell.
+        if r_max < r[k + 1]:
+            break
+
+    if included_mass > 0.0:
+        return weighted_sum / included_mass
+
+    return q[0]
+
+### COMBINATIONS FOR ACCESSIBILITY
+
+@njit(types.Tuple((float64, float64, float64, float64, float64,))(float64[:], float64[:], float64[:], float64[:], float64[:],), fastmath=True, cache=True,)
+def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
+    """
+    Compute core properties using the reusable interpolation and
+    averaging functions.
+    """
+    r_c = calc_core_r(r, rmid, rho)
+
+    # m is an edge quantity, so use r as its coordinate array.
+    m_c = interp_pl_to_r(r, m, r_c)
+
+    # v2 is a shell quantity, but its average is weighted by shell
+    # masses, so r and m define the integration shells.
+    v2_c = calc_mean_within_r(r, m, v2, r_c)
 
     if r_c > 0.0:
         rho_c = 3.0 * m_c / (r_c * r_c * r_c)
     else:
         rho_c = rho[0]
 
-    return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
+    if v2_c > 0.0:
+        crossing_time = r_c / math.sqrt(v2_c)
+    else:
+        crossing_time = 0.0
 
-@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
+    return r_c, rho_c, m_c, v2_c, crossing_time
+
+@njit(types.Tuple((float64, float64, float64, float64,))(float64[:], float64[:], float64[:], float64[:], float64[:], float64,), fastmath=True, cache=True,)
 def calc_rmn_rho_m_v2(r, rmid, rho, v2, m, n):
     """
-    Computes r_m2, average density inside r_m2, enclosed mass, and core v2.
+    Compute r_mn, average density inside r_mn, enclosed mass, and
+    mass-weighted mean v2.
 
-    r_m2 is defined such that
+    r_mn is defined by
 
         d(ln rho) / d(ln r) = -n.
 
-    r_m2 is estimated by finding the first place where the log-log
-    density slope crosses -2. Slopes are measured between adjacent rmid
-    values and assigned to the geometric midpoint of each interval.
-    The crossing location is then found by linear interpolation of the
-    slope in log-radius.
+    Parameters
+    ----------
+    r : ndarray, shape (N+1,)
+        Shell-edge radii.
+    rmid : ndarray, shape (N,)
+        Shell midpoint radii.
+    rho : ndarray, shape (N,)
+        Density evaluated at shell midpoints.
+    v2 : ndarray, shape (N,)
+        Shell square of the 1D velocity dispersion.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    n : float
+        Positive magnitude of the target logarithmic density slope.
 
-    m_m2 is estimated by taking the shell that contains r_m2 and using
-    a constant-density-within-shell volume fraction.
-    v2_m2 is estimated as a shell-mass-weighted average of v2 inside r_m2.
+    Returns
+    -------
+    r_mn : float
+        Radius where the logarithmic density slope first crosses -n.
+    rho_mn : float
+        Average density inside r_mn.
+    m_mn : float
+        Enclosed mass at r_mn.
+    v2_mn : float
+        Mass-weighted arithmetic mean of v2 inside r_mn.
     """
-    N = rmid.shape[0]
+    r_mn = calc_r_mn(r, rmid, rho, n)
 
-    target = -n
+    m_mn = interp_pl_to_r(r, m, r_mn)
 
-    numv_full = 0.0
+    v2_mn = calc_mean_within_r(r, m, v2, r_mn,)
 
-    log_r_im2   = math.log(rmid[0])
-    log_rho_im2 = math.log(rho[0])
-
-    log_r_im1   = math.log(rmid[1])
-    log_rho_im1 = math.log(rho[1])
-
-    slope_prev = (log_rho_im1 - log_rho_im2) / (log_r_im1 - log_r_im2)
-    log_rslope_prev = 0.5 * (log_r_im2 + log_r_im1)
-
-    # Shell 0 is fully inside for any later crossing
-    dm_prev = m[1] - m[0]
-    numv_full += dm_prev * v2[0]
-
-    for j in range(2, N):
-        log_r_cur   = math.log(rmid[j])
-        log_rho_cur = math.log(rho[j])
-
-        slope_cur = (log_rho_cur - log_rho_im1) / (log_r_cur - log_r_im1)
-        log_rslope_cur = 0.5 * (log_r_im1 + log_r_cur)
-
-        # Find the first place where the slope crosses -2
-        if slope_prev > target and slope_cur <= target:
-            dslope = slope_cur - slope_prev
-
-            if dslope != 0.0:
-                log_r_m2 = log_rslope_prev + (target - slope_prev) * (
-                    log_rslope_cur - log_rslope_prev
-                ) / dslope
-                r_m2 = math.exp(log_r_m2)
-            else:
-                r_m2 = math.exp(log_rslope_cur)
-
-            # Accumulate m and v2 until r_m2
-            if r_m2 <= r[j]:
-                k = j - 1
-                numv = numv_full
-            else:
-                k = j
-                dm_prev = m[j] - m[j - 1]
-                numv = numv_full + dm_prev * v2[j - 1]
-
-            rk0 = r[k]
-            rk1 = r[k + 1]
-            mk0 = m[k]
-            mk1 = m[k + 1]
-
-            # Find m_m2 assuming constant densities
-            if r_m2 <= rk0:
-                frac = 0.0
-            elif r_m2 >= rk1:
-                frac = 1.0
-            else:
-                rm23 = r_m2 * r_m2 * r_m2
-                rk03 = rk0 * rk0 * rk0
-                rk13 = rk1 * rk1 * rk1
-                frac = (rm23 - rk03) / (rk13 - rk03)
-
-            m_m2 = mk0 + frac * (mk1 - mk0)
-
-            # Complete v2_m2 computation with last partial shell
-            dm_partial = m_m2 - mk0
-            numv += dm_partial * v2[k]
-
-            if m_m2 > 0.0:
-                v2_m2 = numv / m_m2
-            else:
-                v2_m2 = v2[0]
-
-            if r_m2 > 0.0:
-                rho_m2 = 3.0 * m_m2 / (r_m2 * r_m2 * r_m2)
-            else:
-                rho_m2 = rho[0]
-
-            return r_m2, rho_m2, m_m2, v2_m2
-
-        # No crossing yet; shell j-1 is fully inside for future crossings
-        dm_prev = m[j] - m[j - 1]
-        numv_full += dm_prev * v2[j - 1]
-
-        log_r_im1 = log_r_cur
-        log_rho_im1 = log_rho_cur
-        slope_prev = slope_cur
-        log_rslope_prev = log_rslope_cur
-
-    # If no crossing is found, return outermost values.
-    r_m2 = r[N]
-    m_m2 = m[N]
-
-    dm_last = m[N] - m[N - 1]
-    numv_full += dm_last * v2[N - 1]
-
-    if m_m2 > 0.0:
-        v2_m2 = numv_full / m_m2
+    if r_mn > 0.0:
+        rho_mn = 3.0 * m_mn / (r_mn * r_mn * r_mn)
     else:
-        v2_m2 = v2[0]
+        rho_mn = rho[0]
 
-    if r_m2 > 0.0:
-        rho_m2 = 3.0 * m_m2 / (r_m2 * r_m2 * r_m2)
-    else:
-        rho_m2 = rho[0]
+    return r_mn, rho_mn, m_mn, v2_mn
 
-    return r_m2, rho_m2, m_m2, v2_m2
-
-@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(types.Tuple((float64, float64, float64, float64,))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:],), fastmath=True, cache=True,)
 def calc_smfp_r_rho_m_v2(r, rmid, kn, rho, v2, m):
     """
-    Computes SMFP radius, SMFP average density, SMFP mass, and SMFP v2.
+    Compute the SMFP radius, average density inside it, enclosed mass,
+    and mass-weighted mean v2.
 
-    SMFP radius is defined as r_smfp where Kn crosses 1.0.
+    The SMFP radius is defined by
 
-    r_smfp is estimated by log-log interpolation in Kn(r).
-    m_smfp is estimated by taking the shell that contains r_smfp and using
-    a constant-density-within-shell volume fraction.
-    v2_smfp is estimated as a shell-mass-weighted average of v2 inside r_smfp.
+        Kn(r_smfp) = 1.
 
-    Arguments
-    ---------
+    Parameters
+    ----------
     r : ndarray, shape (N+1,)
-        Shell edge radii.
+        Shell-edge radii.
     rmid : ndarray, shape (N,)
-        Midpoint radii.
+        Shell midpoint radii.
     kn : ndarray, shape (N,)
-        Knudsen number at rmid.
+        Knudsen number evaluated at shell midpoints.
     rho : ndarray, shape (N,)
-        Shell densities.
+        Density evaluated at shell midpoints.
     v2 : ndarray, shape (N,)
-        Shell square of 1D velocity dispersion.
+        Shell square of the 1D velocity dispersion.
     m : ndarray, shape (N+1,)
         Enclosed mass at shell edges.
 
     Returns
     -------
     r_smfp : float
-        SMFP radius
+        First radius where Kn crosses unity.
     rho_smfp : float
-        Average density within r_smfp
+        Average density inside r_smfp.
     m_smfp : float
-        Enclosed mass at r_smfp
+        Enclosed mass at r_smfp.
     v2_smfp : float
-        Mass-weighted v2 within r_smfp
+        Mass-weighted arithmetic mean of v2 inside r_smfp.
     """
-    N = rmid.shape[0]
+    r_smfp = calc_r_smfp(r, rmid, kn)
 
-    target_kn = 1.0
-    log_target_kn = 0.0
+    m_smfp = interp_pl_to_r(r, m, r_smfp)
 
-    numv_full = 0.0
-
-    log_r_prev  = math.log(rmid[0])
-    log_kn_prev = math.log(kn[0])
-
-    for j in range(1, N):
-        kn_cur = kn[j]
-
-        # Find the first shell where Kn crosses 1.0
-        if (kn_cur - target_kn) * (kn[j - 1] - target_kn) <= 0.0:
-            # Log-log interpolation for r_smfp
-            log_r_cur  = math.log(rmid[j])
-            log_kn_cur = math.log(kn_cur)
-
-            logslope = (log_kn_cur - log_kn_prev) / (log_r_cur - log_r_prev)
-
-            if logslope != 0.0:
-                log_r_smfp = log_r_prev + (log_target_kn - log_kn_prev) / logslope
-                r_smfp = math.exp(log_r_smfp)
-            else:
-                r_smfp = rmid[j - 1]
-
-            # Accumulate m and v2 until r_smfp
-            if r_smfp <= r[j]:
-                k = j - 1
-                numv = numv_full
-            else:
-                k = j
-                dm_prev = m[j] - m[j - 1]
-                numv = numv_full + dm_prev * v2[j - 1]
-
-            rk0 = r[k]
-            rk1 = r[k + 1]
-            mk0 = m[k]
-            mk1 = m[k + 1]
-
-            # Find m_smfp assuming constant density in shell k
-            if r_smfp <= rk0:
-                frac = 0.0
-            elif r_smfp >= rk1:
-                frac = 1.0
-            else:
-                rsmfp3 = r_smfp * r_smfp * r_smfp
-                rk03 = rk0 * rk0 * rk0
-                rk13 = rk1 * rk1 * rk1
-                frac = (rsmfp3 - rk03) / (rk13 - rk03)
-
-            m_smfp = mk0 + frac * (mk1 - mk0)
-
-            # Complete v2_smfp computation with last partial shell
-            dm_partial = m_smfp - mk0
-            numv += dm_partial * v2[k]
-
-            if m_smfp > 0.0:
-                v2_smfp = numv / m_smfp
-            else:
-                v2_smfp = v2[0]
-
-            if r_smfp > 0.0:
-                rho_smfp = 3.0 * m_smfp / (r_smfp * r_smfp * r_smfp)
-            else:
-                rho_smfp = rho[0]
-
-            return r_smfp, rho_smfp, m_smfp, v2_smfp
-
-        # No crossing yet; shell j-1 is fully inside for future crossings
-        dm_prev = m[j] - m[j - 1]
-        numv_full += dm_prev * v2[j - 1]
-
-        log_r_prev  = math.log(rmid[j])
-        log_kn_prev = math.log(kn_cur)
-
-    # If no crossing is found, return outermost values.
-    r_smfp = r[N]
-    m_smfp = m[N]
-
-    dm_last = m[N] - m[N - 1]
-    numv_full += dm_last * v2[N - 1]
-
-    if m_smfp > 0.0:
-        v2_smfp = numv_full / m_smfp
-    else:
-        v2_smfp = v2[0]
+    v2_smfp = calc_mean_within_r(r, m, v2, r_smfp,)
 
     if r_smfp > 0.0:
         rho_smfp = 3.0 * m_smfp / (r_smfp * r_smfp * r_smfp)

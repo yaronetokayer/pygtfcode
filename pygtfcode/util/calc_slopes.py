@@ -1,6 +1,10 @@
+"""
+Helpers for computing derived slopes from simulation data
+"""
+
 import numpy as np
 import math
-from numba import njit, void, float64, types
+from numba import njit, float64, types
 
 GAMMA = 5.0 / 3.0
 

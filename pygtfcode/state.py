@@ -283,7 +283,7 @@ class State:
             - v2: Velocity dispersion squared in each shell
             - kn: Knudsen number in each shell
             - maxvel: maximum velocity dispersion
-            - minkn: minimum Knudsen number
+            - kn_c: Knudsen number of the core
         """
         from pygtfcode.profiles.profile_routines import menc, sigr
         from pygtfcode.util.calc_runtime import calc_ltemp
@@ -465,6 +465,8 @@ class State:
         """
         Resets initial state
         """
+        from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
+
         config = self.config
 
         self.r = self._setup_grid()
@@ -485,7 +487,9 @@ class State:
         self.du_max = 0.0                   # Max du of most recent step (used for adaptive time stepping)
 
         # For diagnostics
-        self.minkn = float(np.min(self.kn))
+        r_c = calc_core_r(self.r, self.rmid, self.rho)
+        self.kn_c = calc_logmean_within_r(self.r, self.m, self.kn, r_c)
+        # self.minkn = float(np.min(self.kn))
 
         self.n_iter_du          = 0
         self.n_iter_dr          = 0

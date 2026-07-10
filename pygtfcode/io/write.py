@@ -3,7 +3,7 @@ import os
 from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc_slopes import calc_balberg_zeta, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2, calc_dlogrho_dlogp
 from pygtfcode.util.calc_core import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rmn_rho_m_v2, calc_mintheta_r_rho_m_v2
-from pygtfcode.util.calc_runtime import low_kn_boost
+from pygtfcode.util.calc_runtime import low_kn_boost, calc_kappa_cell, calc_kappa_edge
 from pygtfcode.parameters.constants import Constants as const
 
 def _safe_div(num, den):
@@ -127,13 +127,13 @@ def write_log_entry(state, start_step):
     maxvel      = np.max(np.sqrt(state.v2))
     # minTheta    = np.min(state.Theta)
 
-    eps_du_eff = prec.eps_du * low_kn_boost(state.minkn, kn_threshold, du_boost, kn_width)
+    eps_du_eff = prec.eps_du * low_kn_boost(state.kn_c, kn_threshold, du_boost, kn_width)
 
-    # header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'Theta_min':>9}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
-    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'n':>5}  {'rho0':>12}  {'v_max':>12}  {'Kn_min':>12}  {'eps_du_eff':>10}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    # header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'rho0':>12}  {'v_max':>12}  {'kn_c':>12}  {'eps_du_eff':>10}  {'Theta_min':>9}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
+    header = f"{'step':>10}  {'time':>12}  {'<dt>':>12}  {'n':>5}  {'rho0':>12}  {'v_max':>12}  {'kn_c':>12}  {'eps_du_eff':>10}  {'<du lim>':>8}  {'<dr lim>':>8}  {'<n_iter_du>':>11}  {'<n_iter_dr>':>11}\n"
 
     if step == start_step: # Restart
-        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}       N/A       N/A          N/A          N/A\n"
+        new_line = f"{step:10d}  {state.t:12.6e}           N/A  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.kn_c:12.6e}  {eps_du_eff:10.4e}       N/A       N/A          N/A          N/A\n"
 
     else:
         nlog = io.nlog
@@ -144,8 +144,8 @@ def write_log_entry(state, start_step):
         elif ( step - start_step ) % nlog != 0:     # Final state
             nlog = ( step - start_step ) % nlog
 
-        # new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {minTheta:9.3e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
-        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.minkn:12.6e}  {eps_du_eff:10.4e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        # new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.kn_c:12.6e}  {eps_du_eff:10.4e}  {minTheta:9.3e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
+        new_line = f"{step:10d}  {state.t:12.6e}  {state.dt_cum / nlog:12.6e}  {state.n:5d}  {state.rho[0]:12.6e}  {maxvel:12.6e}  {state.kn_c:12.6e}  {eps_du_eff:10.4e}  {state.du_max_cum / eps_du_eff / nlog:8.2e}  {state.dr_max_cum / prec.eps_dr / nlog:8.2e}  {state.n_iter_du / nlog:11.5e}  {state.n_iter_dr / nlog:11.5e}\n"
 
     _update_file(filepath, header, new_line, step)
 
@@ -205,6 +205,12 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     drltemp[0] = np.nan
     drltemp[1:] = (state.r[2:] - state.r[1:-1]) / state.ltemp[1:]
     mfpltemp = state.mfp / state.ltemp
+    sim = state.config.sim
+    a = float(sim.a); b = float(sim.b); c = float(sim.c); sigma_m = float(state.char.sigma_m_char); alph = float(sim.alph);
+    k_lc, k_sc, k_totc = calc_kappa_cell(state.v2, state.rho, state.rmid, a, b, c, sigma_m, alph,)
+    krat_c = k_sc / k_lc
+    k_le, k_se, k_tote = calc_kappa_edge(state.v2, state.rho, state.r, a, b, c, sigma_m, alph,)
+    krat_e = k_se / k_le
 
     with open(filename, "w") as f:
         # header = (
@@ -219,7 +225,10 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
             f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'ltemp':>12}  {'mfp':>12}  {'drfrac':>12}  "
             f"{'drltemp':>12}  {'mfpltemp':>12}  "
-            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'sc1':>12}  {'sc2':>12}  {'dlnrhodlnp':>12}\n"
+            f"{'k_sc':>12}  {'k_lc':>12}  {'k_totc':>12}  "
+            f"{'k_se':>12}  {'k_le':>12}  {'k_tote':>12}  "
+            f"{'krat_c':>12}  {'krat_e':>12}  "
+            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'dlnrhodlnp':>12}\n"
         )
         dt = state.dt ### for the timescales
 
@@ -239,6 +248,14 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{state.drfrac[i]:12.6e}  "
                 f"{drltemp[i]:12.6e}  "
                 f"{mfpltemp[i]:12.6e}  "
+                f"{k_sc[i]:12.6e}  "
+                f"{k_lc[i]:12.6e}  "
+                f"{k_totc[i]:12.6e}  "
+                f"{k_se[i]:12.6e}  "
+                f"{k_le[i]:12.6e}  "
+                f"{k_tote[i]:12.6e}  "
+                f"{krat_c[i]:12.6e}  "
+                f"{krat_e[i]:12.6e}  "
                 # f"{state.lum[i+1]:12.6e}  "
                 f"{_safe_div(dt, state.t_cool[i]):12.6e}  "
                 # f"{_safe_div(state.t_sc[i], state.t_cool[i]):12.6e}  "
@@ -246,8 +263,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 # f"{_safe_div(dt, state.t_sc[i]):12.6e}\n"
                 f"{s[i]:12.6e}  "
                 f"{dsdr[i]:12.6e}  "
-                f"{sc1[i]:12.6e}  "
-                f"{sc2[i]:12.6e}  "
+                # f"{sc1[i]:12.6e}  "
+                # f"{sc2[i]:12.6e}  "
                 f"{dlnrhodlnp[i]:12.6e}\n"
             )
     
@@ -315,7 +332,7 @@ def write_time_evolution(state, last=False):
 
     r_c, rho_c, m_c, v2_c, tsc_c            = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
     r_m2, rho_m2, m_m2, v2_m2               = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.0)
-    r_m25, rho_m25, m_m25, v2_m25           = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.5)
+    # r_m25, rho_m25, m_m25, v2_m25           = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.5)
     # r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rmid, state.kn, rho,  v2, m)
     # r_minTh, rho_minTh, m_minTh, v2_minTh   = calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta)
     drfrac_max                              = np.max(np.diff(r[1:]) / np.sqrt(r[1:-1] * r[2:]))
@@ -335,8 +352,7 @@ def write_time_evolution(state, last=False):
         ("time_Gyr", t_Gyr),
         ("rho0", state.rho[0]),
         ("v_max", maxvel),
-        ("Kn_min", state.minkn),
-        # ("minTheta", minTheta),
+        ("kn_c", state.kn_c),
         ("r_c", r_c),
         ("rho_c", rho_c),
         ("m_c", m_c),
@@ -345,18 +361,6 @@ def write_time_evolution(state, last=False):
         ("rho_m2", rho_m2),
         ("m_m2", m_m2),
         ("v2_m2", v2_m2),
-        ("r_m25", r_m25),
-        ("rho_m25", rho_m25),
-        ("m_m25", m_m25),
-        ("v2_m25", v2_m25),
-        # ("r_smfp", r_smfp),
-        # ("rho_smfp", rho_smfp),
-        # ("m_smfp", m_smfp),
-        # ("v2_smfp", v2_smfp),
-        # ("r_minTh", r_minTh),
-        # ("rho_minTh", rho_minTh),
-        # ("m_minTh", m_minTh),
-        # ("v2_minTh", v2_minTh),
         ("drfrac_max", drfrac_max),
         ("tsc_c", tsc_c),
         ("te", te)
