@@ -1,0 +1,481 @@
+import math
+from numba import njit, float64, types
+
+@njit(types.Tuple((float64, float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
+    """
+    Computes core radius, core average density, core mass, and core v2.
+
+    Core radius is defined as r_c such that rho(r_c) = 0.5 * rho_0,
+    where rho_0 is the central density.
+
+    r_c is estimated by log-log interpolation in rho(r).
+    m_c is estimated by taking the shell that contains r_c and using
+    a constant-density-within-shell volume fraction.
+    v2_c is estimated as a shell-mass-weighted average of v2 inside r_c.
+
+    Arguments
+    ---------
+    r : ndarray, shape (N+1,)
+        Shell edge radii.
+    rmid : ndarray, shape (N,)
+        Midpoint radii.
+    rho : ndarray, shape (N,)
+        Shell densities.
+    v2 : ndarray, shape (N,)
+        Shell square of 1D velocity dispersion.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+
+    Returns
+    -------
+    r_c : float
+        Core radius
+    rho_c : float
+        Mean density in the core
+    m_c : float
+        Core mass
+    v2_c : float
+        Core v2
+    """
+    N = rmid.shape[0]
+
+    rho0        = rho[0]
+    halfrho0    = 0.5 * rho0
+    loghalfrho0 = math.log(halfrho0)
+
+    # Numerator for mass-weighted v2 average
+    numv_full = 0.0
+
+    log_r_prev      = math.log(rmid[0])
+    log_rho_prev    = math.log(rho0)
+
+    for j in range(1, N):
+        rho_cur = rho[j]
+
+        # Find the first shell outside r_c
+        if rho_cur <= halfrho0:
+            # Log-log interpolation for rc
+            log_r_cur   = math.log(rmid[j])
+            log_rho_cur = math.log(rho_cur)
+
+            logslope    = (log_rho_cur - log_rho_prev) / (log_r_cur - log_r_prev)
+            log_rc      = log_r_prev + (loghalfrho0 - log_rho_prev) / logslope
+            r_c         = math.exp(log_rc)
+
+            # Accumulate m and v2 until r_c
+            if r_c <= r[j]:
+                k = j - 1
+                numv = numv_full
+            else:
+                k = j
+                dm_prev = m[j] - m[j - 1]
+                numv = numv_full + dm_prev * v2[j - 1]
+
+            rk0 = r[k]
+            rk1 = r[k + 1]
+            mk0 = m[k]
+            mk1 = m[k + 1]
+
+            # Find m_c assuming constant densities
+            if r_c <= rk0:
+                frac = 0.0
+            elif r_c >= rk1:
+                frac = 1.0
+            else:
+                rc3 = r_c * r_c * r_c
+                rk03 = rk0 * rk0 * rk0
+                rk13 = rk1 * rk1 * rk1
+                frac = (rc3 - rk03) / (rk13 - rk03)
+
+            m_c = mk0 + frac * (mk1 - mk0)
+
+            # Complete v2_c computation with last partial shell
+            dm_partial = m_c - mk0
+            numv += dm_partial * v2[k]
+
+            if m_c > 0.0:
+                v2_c = numv / m_c
+            else:
+                v2_c = v2[0]
+
+            if r_c > 0.0:
+                rho_c = 3.0 * m_c / (r_c * r_c * r_c)
+            else:
+                rho_c = rho[0]
+
+            return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
+
+        # No crossing yet; shell j-1 is fully inside for future crossings
+        dm_prev = m[j] - m[j - 1]
+        numv_full += dm_prev * v2[j - 1]
+
+        log_r_prev      = math.log(rmid[j])
+        log_rho_prev    = math.log(rho_cur)
+
+    # If no crossing is found, return outermost values.
+    r_c = r[N]
+    m_c = m[N]
+
+    dm_last = m[N] - m[N - 1]
+    numv_full += dm_last * v2[N - 1]
+
+    if m_c > 0.0:
+        v2_c = numv_full / m_c
+    else:
+        v2_c = v2[0]
+
+    if r_c > 0.0:
+        rho_c = 3.0 * m_c / (r_c * r_c * r_c)
+    else:
+        rho_c = rho[0]
+
+    return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
+
+@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
+def calc_rmn_rho_m_v2(r, rmid, rho, v2, m, n):
+    """
+    Computes r_m2, average density inside r_m2, enclosed mass, and core v2.
+
+    r_m2 is defined such that
+
+        d(ln rho) / d(ln r) = -n.
+
+    r_m2 is estimated by finding the first place where the log-log
+    density slope crosses -2. Slopes are measured between adjacent rmid
+    values and assigned to the geometric midpoint of each interval.
+    The crossing location is then found by linear interpolation of the
+    slope in log-radius.
+
+    m_m2 is estimated by taking the shell that contains r_m2 and using
+    a constant-density-within-shell volume fraction.
+    v2_m2 is estimated as a shell-mass-weighted average of v2 inside r_m2.
+    """
+    N = rmid.shape[0]
+
+    target = -n
+
+    numv_full = 0.0
+
+    log_r_im2   = math.log(rmid[0])
+    log_rho_im2 = math.log(rho[0])
+
+    log_r_im1   = math.log(rmid[1])
+    log_rho_im1 = math.log(rho[1])
+
+    slope_prev = (log_rho_im1 - log_rho_im2) / (log_r_im1 - log_r_im2)
+    log_rslope_prev = 0.5 * (log_r_im2 + log_r_im1)
+
+    # Shell 0 is fully inside for any later crossing
+    dm_prev = m[1] - m[0]
+    numv_full += dm_prev * v2[0]
+
+    for j in range(2, N):
+        log_r_cur   = math.log(rmid[j])
+        log_rho_cur = math.log(rho[j])
+
+        slope_cur = (log_rho_cur - log_rho_im1) / (log_r_cur - log_r_im1)
+        log_rslope_cur = 0.5 * (log_r_im1 + log_r_cur)
+
+        # Find the first place where the slope crosses -2
+        if slope_prev > target and slope_cur <= target:
+            dslope = slope_cur - slope_prev
+
+            if dslope != 0.0:
+                log_r_m2 = log_rslope_prev + (target - slope_prev) * (
+                    log_rslope_cur - log_rslope_prev
+                ) / dslope
+                r_m2 = math.exp(log_r_m2)
+            else:
+                r_m2 = math.exp(log_rslope_cur)
+
+            # Accumulate m and v2 until r_m2
+            if r_m2 <= r[j]:
+                k = j - 1
+                numv = numv_full
+            else:
+                k = j
+                dm_prev = m[j] - m[j - 1]
+                numv = numv_full + dm_prev * v2[j - 1]
+
+            rk0 = r[k]
+            rk1 = r[k + 1]
+            mk0 = m[k]
+            mk1 = m[k + 1]
+
+            # Find m_m2 assuming constant densities
+            if r_m2 <= rk0:
+                frac = 0.0
+            elif r_m2 >= rk1:
+                frac = 1.0
+            else:
+                rm23 = r_m2 * r_m2 * r_m2
+                rk03 = rk0 * rk0 * rk0
+                rk13 = rk1 * rk1 * rk1
+                frac = (rm23 - rk03) / (rk13 - rk03)
+
+            m_m2 = mk0 + frac * (mk1 - mk0)
+
+            # Complete v2_m2 computation with last partial shell
+            dm_partial = m_m2 - mk0
+            numv += dm_partial * v2[k]
+
+            if m_m2 > 0.0:
+                v2_m2 = numv / m_m2
+            else:
+                v2_m2 = v2[0]
+
+            if r_m2 > 0.0:
+                rho_m2 = 3.0 * m_m2 / (r_m2 * r_m2 * r_m2)
+            else:
+                rho_m2 = rho[0]
+
+            return r_m2, rho_m2, m_m2, v2_m2
+
+        # No crossing yet; shell j-1 is fully inside for future crossings
+        dm_prev = m[j] - m[j - 1]
+        numv_full += dm_prev * v2[j - 1]
+
+        log_r_im1 = log_r_cur
+        log_rho_im1 = log_rho_cur
+        slope_prev = slope_cur
+        log_rslope_prev = log_rslope_cur
+
+    # If no crossing is found, return outermost values.
+    r_m2 = r[N]
+    m_m2 = m[N]
+
+    dm_last = m[N] - m[N - 1]
+    numv_full += dm_last * v2[N - 1]
+
+    if m_m2 > 0.0:
+        v2_m2 = numv_full / m_m2
+    else:
+        v2_m2 = v2[0]
+
+    if r_m2 > 0.0:
+        rho_m2 = 3.0 * m_m2 / (r_m2 * r_m2 * r_m2)
+    else:
+        rho_m2 = rho[0]
+
+    return r_m2, rho_m2, m_m2, v2_m2
+
+@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_smfp_r_rho_m_v2(r, rmid, kn, rho, v2, m):
+    """
+    Computes SMFP radius, SMFP average density, SMFP mass, and SMFP v2.
+
+    SMFP radius is defined as r_smfp where Kn crosses 1.0.
+
+    r_smfp is estimated by log-log interpolation in Kn(r).
+    m_smfp is estimated by taking the shell that contains r_smfp and using
+    a constant-density-within-shell volume fraction.
+    v2_smfp is estimated as a shell-mass-weighted average of v2 inside r_smfp.
+
+    Arguments
+    ---------
+    r : ndarray, shape (N+1,)
+        Shell edge radii.
+    rmid : ndarray, shape (N,)
+        Midpoint radii.
+    kn : ndarray, shape (N,)
+        Knudsen number at rmid.
+    rho : ndarray, shape (N,)
+        Shell densities.
+    v2 : ndarray, shape (N,)
+        Shell square of 1D velocity dispersion.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+
+    Returns
+    -------
+    r_smfp : float
+        SMFP radius
+    rho_smfp : float
+        Average density within r_smfp
+    m_smfp : float
+        Enclosed mass at r_smfp
+    v2_smfp : float
+        Mass-weighted v2 within r_smfp
+    """
+    N = rmid.shape[0]
+
+    target_kn = 1.0
+    log_target_kn = 0.0
+
+    numv_full = 0.0
+
+    log_r_prev  = math.log(rmid[0])
+    log_kn_prev = math.log(kn[0])
+
+    for j in range(1, N):
+        kn_cur = kn[j]
+
+        # Find the first shell where Kn crosses 1.0
+        if (kn_cur - target_kn) * (kn[j - 1] - target_kn) <= 0.0:
+            # Log-log interpolation for r_smfp
+            log_r_cur  = math.log(rmid[j])
+            log_kn_cur = math.log(kn_cur)
+
+            logslope = (log_kn_cur - log_kn_prev) / (log_r_cur - log_r_prev)
+
+            if logslope != 0.0:
+                log_r_smfp = log_r_prev + (log_target_kn - log_kn_prev) / logslope
+                r_smfp = math.exp(log_r_smfp)
+            else:
+                r_smfp = rmid[j - 1]
+
+            # Accumulate m and v2 until r_smfp
+            if r_smfp <= r[j]:
+                k = j - 1
+                numv = numv_full
+            else:
+                k = j
+                dm_prev = m[j] - m[j - 1]
+                numv = numv_full + dm_prev * v2[j - 1]
+
+            rk0 = r[k]
+            rk1 = r[k + 1]
+            mk0 = m[k]
+            mk1 = m[k + 1]
+
+            # Find m_smfp assuming constant density in shell k
+            if r_smfp <= rk0:
+                frac = 0.0
+            elif r_smfp >= rk1:
+                frac = 1.0
+            else:
+                rsmfp3 = r_smfp * r_smfp * r_smfp
+                rk03 = rk0 * rk0 * rk0
+                rk13 = rk1 * rk1 * rk1
+                frac = (rsmfp3 - rk03) / (rk13 - rk03)
+
+            m_smfp = mk0 + frac * (mk1 - mk0)
+
+            # Complete v2_smfp computation with last partial shell
+            dm_partial = m_smfp - mk0
+            numv += dm_partial * v2[k]
+
+            if m_smfp > 0.0:
+                v2_smfp = numv / m_smfp
+            else:
+                v2_smfp = v2[0]
+
+            if r_smfp > 0.0:
+                rho_smfp = 3.0 * m_smfp / (r_smfp * r_smfp * r_smfp)
+            else:
+                rho_smfp = rho[0]
+
+            return r_smfp, rho_smfp, m_smfp, v2_smfp
+
+        # No crossing yet; shell j-1 is fully inside for future crossings
+        dm_prev = m[j] - m[j - 1]
+        numv_full += dm_prev * v2[j - 1]
+
+        log_r_prev  = math.log(rmid[j])
+        log_kn_prev = math.log(kn_cur)
+
+    # If no crossing is found, return outermost values.
+    r_smfp = r[N]
+    m_smfp = m[N]
+
+    dm_last = m[N] - m[N - 1]
+    numv_full += dm_last * v2[N - 1]
+
+    if m_smfp > 0.0:
+        v2_smfp = numv_full / m_smfp
+    else:
+        v2_smfp = v2[0]
+
+    if r_smfp > 0.0:
+        rho_smfp = 3.0 * m_smfp / (r_smfp * r_smfp * r_smfp)
+    else:
+        rho_smfp = rho[0]
+
+    return r_smfp, rho_smfp, m_smfp, v2_smfp
+
+@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta):
+    """
+    Computes core radius, core average density, core mass, and core v2.
+
+    Core radius is defined as the radius where Theta is minimum.
+    Theta is defined at rmid.
+
+    Arguments
+    ---------
+    r : ndarray, shape (N+1,)
+        Shell edge radii.
+    rmid : ndarray, shape (N,)
+        Midpoint radii.
+    rho : ndarray, shape (N,)
+        Shell densities.
+    v2 : ndarray, shape (N,)
+        Shell square of 1D velocity dispersion.
+    m : ndarray, shape (N+1,)
+        Enclosed mass at shell edges.
+    Theta : ndarray, shape (N,)
+        Local cooling-to-sound-crossing time ratio.
+
+    Returns
+    -------
+    r_c : float
+        Radius of min Theta.
+    rho_c : float
+        Mean density within r_c.
+    m_c : float
+        Mass within r_c.
+    v2_c : float
+        v2 within r_c.
+    """
+    N = rmid.shape[0]
+
+    # Find index of minimum Theta
+    k = 0
+    theta_min = Theta[0]
+    for j in range(1, N):
+        if Theta[j] < theta_min:
+            theta_min = Theta[j]
+            k = j
+
+    r_c = rmid[k]
+
+    # Mass inside r_c, assuming constant density within shell k
+    rk0 = r[k]
+    rk1 = r[k + 1]
+    mk0 = m[k]
+    mk1 = m[k + 1]
+
+    if r_c <= rk0:
+        frac = 0.0
+    elif r_c >= rk1:
+        frac = 1.0
+    else:
+        rc3 = r_c * r_c * r_c
+        rk03 = rk0 * rk0 * rk0
+        rk13 = rk1 * rk1 * rk1
+        frac = (rc3 - rk03) / (rk13 - rk03)
+
+    m_c = mk0 + frac * (mk1 - mk0)
+
+    # Mass-weighted v2 inside r_c
+    numv = 0.0
+
+    for j in range(k):
+        dm = m[j + 1] - m[j]
+        numv += dm * v2[j]
+
+    dm_partial = m_c - mk0
+    numv += dm_partial * v2[k]
+
+    if m_c > 0.0:
+        v2_c = numv / m_c
+    else:
+        v2_c = v2[0]
+
+    if r_c > 0.0:
+        rho_c = 3.0 * m_c / (r_c * r_c * r_c)
+    else:
+        rho_c = rho[0]
+
+    return r_c, rho_c, m_c, v2_c

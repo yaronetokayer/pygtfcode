@@ -1,7 +1,7 @@
 import numpy as np
 import math
 from numba import njit, float64, types, void, int64
-from pygtfcode.util.calc import solve_tridiagonal_thomas
+from pygtfcode.util.calc_linalg import solve_tridiagonal_thomas
 
 STATUS_OK = 0
 STATUS_SHELL_CROSSING = 1

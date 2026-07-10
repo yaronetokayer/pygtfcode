@@ -1,11 +1,9 @@
 import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
-from pygtfcode.util.calc import (
-    calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rmn_rho_m_v2, calc_mintheta_r_rho_m_v2, 
-    calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2,
-    calc_dlogrho_dlogp
-    )
+from pygtfcode.util.calc_slopes import calc_balberg_zeta, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2, calc_dlogrho_dlogp
+from pygtfcode.util.calc_core import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rmn_rho_m_v2, calc_mintheta_r_rho_m_v2
+from pygtfcode.util.calc_runtime import low_kn_boost
 from pygtfcode.parameters.constants import Constants as const
 
 def _safe_div(num, den):

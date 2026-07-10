@@ -4,7 +4,7 @@ from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_ti
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim, conduct_implicit_tcool_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
 from pygtfcode.evolve.split import check_drfrac_split, check_drltemp_split, check_drfrac_merge, check_drltemp_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
-from pygtfcode.util.calc import low_kn_boost, calc_ltemp
+from pygtfcode.util.calc_runtime import low_kn_boost, calc_ltemp
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -324,3 +324,4 @@ def allocate_work_arrays(n):
     work_nint = np.zeros(n, dtype=np.int64)
 
     return a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint
+

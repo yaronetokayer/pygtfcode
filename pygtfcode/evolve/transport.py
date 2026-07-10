@@ -2,7 +2,7 @@ import numpy as np
 import math
 from numba import njit, float64, boolean, types, void
 from pygtfcode.util.interpolate import interp_linear_to_interfaces
-from pygtfcode.util.calc import solve_tridiagonal_thomas
+from pygtfcode.util.calc_linalg import solve_tridiagonal_thomas
 
 _TINY64 = np.finfo(np.float64).tiny
 

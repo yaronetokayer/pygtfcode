@@ -286,7 +286,7 @@ class State:
             - minkn: minimum Knudsen number
         """
         from pygtfcode.profiles.profile_routines import menc, sigr
-        from pygtfcode.util.calc import calc_ltemp
+        from pygtfcode.util.calc_runtime import calc_ltemp
 
         if self.config.io.chatter:
             print("Initializing profiles...")
@@ -357,7 +357,7 @@ class State:
             Path to the snapshot file containing initial conditions.
         """
         from pygtfcode.io.read import extract_snapshot_data
-        from pygtfcode.util.calc import calc_ltemp
+        from pygtfcode.util.calc_runtime import calc_ltemp
 
         if self.config.io.chatter:
             print(f"Loading initial conditions from {ic_filepath} ...")
@@ -403,7 +403,7 @@ class State:
         Iteratively runs revirialize() until max |dr/r| < eps_dr.
         """
         from pygtfcode.evolve.hydrostatic import revirialize_w_he_resid, compute_he_pressures_with_resid, STATUS_SHELL_CROSSING
-        from pygtfcode.util.calc import calc_ltemp
+        from pygtfcode.util.calc_runtime import calc_ltemp
         chatter = self.config.io.chatter
 
         if chatter:
