@@ -2,7 +2,7 @@ import numpy as np
 import math
 from numba import njit, void, float64, types
 
-@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(types.Tuple((float64, float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
 def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
     """
     Computes core radius, core average density, core mass, and core v2.
@@ -105,7 +105,7 @@ def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
             else:
                 rho_c = rho[0]
 
-            return r_c, rho_c, m_c, v2_c
+            return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
 
         # No crossing yet; shell j-1 is fully inside for future crossings
         dm_prev = m[j] - m[j - 1]
@@ -131,16 +131,16 @@ def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
     else:
         rho_c = rho[0]
 
-    return r_c, rho_c, m_c, v2_c
+    return r_c, rho_c, m_c, v2_c, (r_c / math.sqrt(v2_c))
 
-@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
-def calc_rm2_rho_m_v2(r, rmid, rho, v2, m):
+@njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
+def calc_rmn_rho_m_v2(r, rmid, rho, v2, m, n):
     """
     Computes r_m2, average density inside r_m2, enclosed mass, and core v2.
 
     r_m2 is defined such that
 
-        d(ln rho) / d(ln r) = -2.
+        d(ln rho) / d(ln r) = -n.
 
     r_m2 is estimated by finding the first place where the log-log
     density slope crosses -2. Slopes are measured between adjacent rmid
@@ -154,7 +154,7 @@ def calc_rm2_rho_m_v2(r, rmid, rho, v2, m):
     """
     N = rmid.shape[0]
 
-    target = -2.0
+    target = -n
 
     numv_full = 0.0
 
@@ -1151,6 +1151,79 @@ def calc_ltemp(ltemp, v2, rmid):
         ltemp[i] = v2[i] * np.abs(rmid[i + 1] - rmid[i - 1]) / np.abs(v2[i + 1] - v2[i - 1])
 
     ltemp[n - 1] = v2[n - 1] * np.abs(rmid[n - 1] - rmid[n - 2]) / np.abs(v2[n - 1] - v2[n - 2])
+
+@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+def calc_dlnrho_dlnr(rho, rmid):
+    """
+    Compute dln(rho)/dln(r) via finite differences on possibly nonuniform rmid.
+    """
+    n = rho.size
+    dlnrho_dlnr = np.empty(n, dtype=np.float64)
+
+    dlnrho_dlnr[0] = np.nan
+
+    dlnrho_dlnr[1] = (
+        math.log(rho[2]) - math.log(rho[1])
+    ) / (
+        math.log(rmid[2]) - math.log(rmid[1])
+    )
+
+    for i in range(2, n - 1):
+        dlnrho_dlnr[i] = (
+            math.log(rho[i + 1]) - math.log(rho[i - 1])
+        ) / (
+            math.log(rmid[i + 1]) - math.log(rmid[i - 1])
+        )
+
+    dlnrho_dlnr[n - 1] = (
+        math.log(rho[n - 1]) - math.log(rho[n - 2])
+    ) / (
+        math.log(rmid[n - 1]) - math.log(rmid[n - 2])
+    )
+
+    return dlnrho_dlnr
+
+@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+def calc_dlnv_dlnr(v2, rmid):
+    """
+    Compute dln(v)/dln(r) via finite differences on possibly nonuniform rmid.
+
+    Input is v2 = v^2, so dln(v)/dln(r) = 0.5 * dln(v2)/dln(r).
+
+    Index 0 is set to nan.
+    Index 1 uses a forward one-sided finite difference.
+    Interior points use centered finite differences.
+    Final index uses a backward one-sided finite difference.
+    """
+    n = v2.size
+    dlnv_dlnr = np.empty(n, dtype=np.float64)
+
+    if n == 1:
+        dlnv_dlnr[0] = np.nan
+        return dlnv_dlnr
+
+    dlnv_dlnr[0] = np.nan
+
+    dlnv_dlnr[1] = 0.5 * (
+        math.log(v2[2]) - math.log(v2[1])
+    ) / (
+        math.log(rmid[2]) - math.log(rmid[1])
+    )
+
+    for i in range(2, n - 1):
+        dlnv_dlnr[i] = 0.5 * (
+            math.log(v2[i + 1]) - math.log(v2[i - 1])
+        ) / (
+            math.log(rmid[i + 1]) - math.log(rmid[i - 1])
+        )
+
+    dlnv_dlnr[n - 1] = 0.5 * (
+        math.log(v2[n - 1]) - math.log(v2[n - 2])
+    ) / (
+        math.log(rmid[n - 1]) - math.log(rmid[n - 2])
+    )
+
+    return dlnv_dlnr
 
 # @njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64), fastmath=True, cache=True)
 # def calc_smfp_r_rho_m_v2(r, rho, v2, m, sigma_m):

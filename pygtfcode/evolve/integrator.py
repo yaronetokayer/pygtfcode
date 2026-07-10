@@ -3,7 +3,7 @@ import math
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
 from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim, conduct_implicit_tcool_nolim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
-from pygtfcode.evolve.split import check_drfrac_split, check_drfrac_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
+from pygtfcode.evolve.split import check_drfrac_split, check_drltemp_split, check_drfrac_merge, check_drltemp_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
 from pygtfcode.util.calc import low_kn_boost, calc_ltemp
 
 def run_until_stop(state, start_step, **kwargs):
@@ -79,6 +79,7 @@ def run_until_stop(state, start_step, **kwargs):
         if grid_splitting:
             # Check for splitting
             status = check_drfrac_split(state.r, work_nint, drfrac_max)
+            # status = check_drltemp_split(state.r, state.ltemp, work_nint, drfrac_max)
             if status == STATUS_SPLITS:
                 split_grid(state, work_nint)
                 state.resize_state_arrays()
@@ -86,6 +87,7 @@ def run_until_stop(state, start_step, **kwargs):
 
             # Check for merging
             status = check_drfrac_merge(state.r, work_nint, drfrac_min, drfrac_max)
+            # status = check_drltemp_merge(state.r, state.ltemp, work_nint, drfrac_min, drfrac_max)
             if status == STATUS_MERGES:
                 merge_grid(state, work_nint)
                 state.resize_state_arrays()

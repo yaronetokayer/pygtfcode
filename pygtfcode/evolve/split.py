@@ -6,6 +6,71 @@ STATUS_NO_SPLITS = 0; STATUS_SPLITS = 1
 STATUS_NO_MERGES = 0; STATUS_MERGES = 1
 _TINY64 = np.finfo(np.float64).tiny
 
+@njit((float64[:], float64[:], int64[:], float64), cache=True, fastmath=True)
+def check_drltemp_split(r, ltemp, nsplit, drfrac_max):
+    """
+    Check the dr / ltemp condition in each radial cell.
+
+    For each cell i, compute
+
+        drltemp = (r[i+1] - r[i]) / ltemp[i]
+
+    If drltemp exceeds drfrac_max, compute how many additional
+    splits are needed so that each child cell satisfies the same
+    condition, assuming equal linear spacing inside the cell and
+    treating ltemp[i] as the relevant temperature length scale for
+    the parent cell.
+
+    The array nsplit is updated in-place:
+
+        nsplit[i] = 0  -> no split
+        nsplit[i] = 1  -> split into 2 pieces
+        nsplit[i] = 2  -> split into 3 pieces
+        etc.
+
+    The first two cells, i = 0 and i = 1, are never split because
+    ltemp[0] and ltemp[1] are NaN by construction.
+
+    Returns
+    -------
+    status : int
+        STATUS_NO_SPLITS if no cells need splitting.
+        STATUS_SPLITS if at least one cell needs splitting.
+    """
+    n = nsplit.size
+    status = STATUS_NO_SPLITS
+
+    nsplit[0] = 0
+    nsplit[1] = 0
+
+    rout = r[2]
+    for i in range(2, n):
+        nsplit[i] = 0
+
+        rin = rout
+        rout = r[i + 1]
+        lt = ltemp[i]
+
+        if rout <= rin:
+            continue
+
+        if not (lt > _TINY64):
+            continue
+
+        dr = rout - rin
+        drmax = drfrac_max * lt
+
+        if dr > drmax:
+            # Number of equal-width pieces needed.
+            npieces = int(math.ceil(dr / drmax))
+
+            # Number of additional splits/inserted edges.
+            nsplit[i] = npieces - 1
+
+            status = STATUS_SPLITS
+
+    return status
+
 @njit((float64[:], int64[:], float64), cache=True, fastmath=True)
 def check_drfrac_split(r, nsplit, drfrac_max):
     """
@@ -201,6 +266,94 @@ def split_grid(state, nsplit):
     state.rho   = rho_new
 
     state.n     = n_new
+
+@njit((float64[:], float64[:], int64[:], float64, float64), cache=True, fastmath=True)
+def check_drltemp_merge(r, ltemp, merge_mask, drfrac_min, drfrac_max):
+    """
+    Check whether adjacent cells are small enough to merge using
+    the dr / ltemp condition.
+
+    merge_mask[i] = 1 means merge cell i with cell i+1.
+    merge_mask[i] = 0 means no merge starts at cell i.
+
+    The first two cells, i = 0 and i = 1, are never used as merge
+    starts because ltemp[0] and ltemp[1] are NaN by construction.
+
+    A merge of cells i and i+1 is allowed when
+
+        dr_i      / ltemp[i]     < drfrac_min
+        dr_ip     / ltemp[i + 1] < drfrac_min
+        dr_merge  / lt_merge     < drfrac_max
+
+    where
+
+        lt_merge = min(ltemp[i], ltemp[i + 1])
+
+    is used as a conservative proxy for the merged-cell temperature
+    length scale.
+
+    Returns
+    -------
+    status : int
+        STATUS_NO_MERGES if no cells need merging.
+        STATUS_MERGES if at least one merge is marked.
+    """
+    n = merge_mask.size
+    status = STATUS_NO_MERGES
+
+    # These can never start a merge.
+    merge_mask[0] = 0
+    merge_mask[1] = 0
+
+    # The final cell can never start a merge because there is no i+1 cell.
+    merge_mask[n - 1] = 0
+
+    i = 2
+    while i < n - 1:
+        merge_mask[i] = 0
+
+        r0 = r[i]
+        r1 = r[i + 1]
+        r2 = r[i + 2]
+
+        if r1 <= r0 or r2 <= r1:
+            i += 1
+            continue
+
+        lt_i = ltemp[i]
+        lt_ip = ltemp[i + 1]
+
+        if not (lt_i > _TINY64 and lt_ip > _TINY64):
+            i += 1
+            continue
+
+        dr_i = r1 - r0
+        dr_ip = r2 - r1
+
+        if (
+            dr_i < drfrac_min * lt_i
+            and dr_ip < drfrac_min * lt_ip
+        ):
+            dr_merge = dr_i + dr_ip
+
+            lt_merge = lt_i
+            if lt_ip < lt_merge:
+                lt_merge = lt_ip
+
+            if dr_merge < drfrac_max * lt_merge:
+                merge_mask[i] = 1
+
+                # Since we skip over i+1 after marking a merge,
+                # clear it here to avoid stale merge requests.
+                merge_mask[i + 1] = 0
+
+                status = STATUS_MERGES
+                i += 2
+                continue
+
+        i += 1
+
+    return status
 
 @njit((float64[:], int64[:], float64, float64), cache=True, fastmath=True)
 def check_drfrac_merge(r, merge_mask, drfrac_min, drfrac_max):

@@ -7,11 +7,13 @@ import shutil
 from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, extract_time_evolution_data
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-VALID_PROFILES = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'drltemp', 'ltemp', 'mfp']
+VALID_PROFILES = ['rho', 'm', 'v2', 'kn', 'dttcool', 'tdyntcool', 'drfrac', 's', 'dsdr', 'sc1', 'sc2', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'drltemp', 'ltemp', 'mfp', 'dlnrhodlnr', 'dlnvdlnr']
+PLUMMER_PROFILES = ['rho', 'v2']
 EDGE_QUANTITIES = ['m']
-LINEAR_Y_PROFILES = ['s']
+LINEAR_Y_PROFILES = ['s', 'dlnrhodlnr', 'dlnvdlnr']
 SYMLOG_Y_PROFILES = ['dsdr', 'dlnrhodlnp']
-LINE_AT_1_PROFILES = ['kn', 'dttcool', 'tdyntcool', 'sc1', 'sc2', 'mfpltemp', 'drltemp']
+LINE_AT_1_PROFILES = ['kn', 'dttcool', 'tdyntcool', 'sc1', 'sc2', 'mfpltemp', 'drltemp', 'mfp']
+VALID_RADII = ['r_c', 'r_smfp', 'r_minTh', 'r_m25']
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
     if xaxis == 'r':
@@ -175,6 +177,78 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
             ax.legend(loc=legend_loc)
     if grid:
         ax.grid(True, which="both", ls="--")
+
+def plot_plummer(ax, profile, data, r0_plummer, xaxis='r'):
+    """
+    Plot Plummer profile on passed axis object
+
+    Arguments
+    ---------
+    ax : Axis
+        Axis object on which to plot
+    profile : str
+        Profile to plot.  Options are 'rho', 'v2'
+    data : dict
+        Dictionary returned by extract_snapshot_data()
+    r0_plummer : float
+        Scale radius for plummer sphere
+        Should be the point where the rho profile hits a log slope of -2.5.
+    xaxis : str, optional
+        X-axis to plot.  Default is 'r'.  Other option is 'm'.
+    """
+    def plummer_rho(x, x0=1, a=1):
+        """
+        Denisty profile for Plummer sphere
+        x - radial axis
+        x0 - Plummer scale radius
+        a - value at r0
+        """
+        return a * (2 /  (1 + (x/x0)**2) )**(5/2)
+
+    # def plummer_v(x, x0=1, a=1):
+    #     """
+    #     v profile for Plummer sphere
+    #     x - radial axis
+    #     x0 - Plummer scale radius
+    #     a - value at r0
+    #     """
+    #     return a * (2 / (1 + (x/x0)**2) )**(1/4)
+    
+    def plummer_v(x, x0=1.0, rho_at_x0=1.0):
+        """
+        Self-consistent 1D velocity-dispersion profile for a Plummer sphere.
+
+        x0 is the Plummer scale radius and rho_at_x0 is rho(x0).
+        Assumes G = 1.
+        """
+        v_at_x0 = np.sqrt((8.0 * np.pi / 9.0) * rho_at_x0 * x0**2)
+        return v_at_x0 * (2.0 / (1.0 + (x / x0)**2))**(1.0 / 4.0)
+    
+    if profile not in PLUMMER_PROFILES:
+        raise ValueError(f"'plot_plummer' was passed for invalid profile. Valid options are: {PLUMMER_PROFILES}")
+
+    if xaxis == 'r':
+        xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
+    elif xaxis == 'm':
+        xkey = 'm'
+
+    # Plot Plummer profile
+    rmid = 10**data['log_rmid']
+    if xaxis == 'r':
+        x = 10**data[xkey] if profile in ['m'] else rmid
+    elif xaxis == 'm':
+        m_edges = data[xkey]
+        x = np.empty_like(m_edges)
+        x[0] = 0.5 * m_edges[0]
+        x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
+
+    norm = np.interp(r0_plummer, rmid, data['rho'])
+    if profile == 'rho':
+        plummer = plummer_rho(rmid, x0=r0_plummer, a=norm)
+    elif profile == 'v2':
+        plummer = (plummer_v(rmid, x0=r0_plummer, rho_at_x0=np.sqrt(norm)))**2
+
+    ax.plot(x, plummer, lw=1.5, color='blue', ls='--', label='Plummer fit')
 
 def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
     """
@@ -362,8 +436,9 @@ def _deluxe_frame(args):
 
     Must be top-level so ProcessPoolExecutor can pickle it.
     """
-    ( 
-        ind, model_dir, temp_dir, n, profiles, insets, xaxis, add_radii, axislims, grid, index_t, tevo_t, time_data,
+    (
+        ind, model_dir, temp_dir, n, profiles, insets, xaxis, add_radii,
+        axislims, grid, index_t, tevo_t, time_data, plummer, vertical,
     ) = args
 
     import os
@@ -386,7 +461,19 @@ def _deluxe_frame(args):
         extract_snapshot_data(snapshot_path),
     ]
 
-    fig, axs = plt.subplots(1, n, figsize=(6 * n, 5))
+    if vertical:
+        fig, axs = plt.subplots(
+            n, 1,
+            figsize=(6, 4 * n),
+            sharex=True,
+        )
+        fig.subplots_adjust(hspace=0.05)
+    else:
+        fig, axs = plt.subplots(
+            1, n,
+            figsize=(6 * n, 5),
+        )
+
     axs = np.atleast_1d(axs)
 
     for i, ax in enumerate(axs):
@@ -396,30 +483,66 @@ def _deluxe_frame(args):
 
         legend = True if i == 0 else False
 
-        plot_profile(ax, profile, data_list, xaxis=xax, axislims=axislims[profile], legend=legend, legend_loc="lower left", grid=grid, for_movie=True,)
+        # Add Plummer
+        if plummer and (profile in PLUMMER_PROFILES):
+            r0_plummer = np.interp(index_t[ind], tevo_t, time_data["r_m25"])
+            plot_plummer(ax, profile, data_list[-1], r0_plummer, xaxis=xax)
+
+        plot_profile(
+            ax,
+            profile,
+            data_list,
+            xaxis=xax,
+            axislims=axislims[profile],
+            legend=legend,
+            legend_loc="lower left",
+            grid=grid,
+            for_movie=True,
+        )
 
         if add_radii is not None:
             for radius in add_radii:
                 r = np.interp(index_t[ind], tevo_t, time_data[radius])
-                if profile in ['s', 'dsdr']:
-                    text_y = ax.get_ylim()[0]
-                else:
-                    text_y = ax.get_ylim()[0] * 2.0
+
+                text_y = 0.05
+
                 if xax == "r":
                     if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
                         continue
 
                     ax.axvline(r, color="red", ls="--", zorder=-10)
-                    ax.text(r, text_y, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
+                    ax.text(
+                        r,
+                        text_y,
+                        radius,
+                        transform=ax.get_xaxis_transform(),
+                        rotation=90,
+                        color="red",
+                        fontsize=10,
+                        ha="right",
+                        va="bottom",
+                        zorder=-10,
+                    )
 
                 elif xax == "m":
-                    m = np.interp(r, 10 ** data_list[1]["log_r"], data_list[1]["m"])
+                    m = np.interp(r, 10 ** data_list[1]["log_r"], data_list[1]["m"],)
 
                     if m < axislims[profile][0][0] or m > axislims[profile][0][1]:
                         continue
 
                     ax.axvline(m, color="red", ls="--", zorder=-10)
-                    ax.text(m, text_y, radius, rotation=90, color="red", fontsize=10, ha="right", va="bottom", zorder=-10,)
+                    ax.text(
+                        m,
+                        text_y,
+                        radius,
+                        transform=ax.get_xaxis_transform(),
+                        rotation=90,
+                        color="red",
+                        fontsize=10,
+                        ha="right",
+                        va="bottom",
+                        zorder=-10,
+                    )
 
         if inset is not None:
             tevo_y = time_data[inset]
@@ -427,7 +550,12 @@ def _deluxe_frame(args):
             axin = ax.inset_axes([0.55, 0.65, 0.45, 0.35])
             axin.axvline(index_t[ind], color="grey")
             axin.plot(tevo_t, tevo_y, color="black")
-            axin.scatter(index_t[ind], np.interp(index_t[ind], tevo_t, tevo_y), color="red", s=50,)
+            axin.scatter(
+                index_t[ind],
+                np.interp(index_t[ind], tevo_t, tevo_y),
+                color="red",
+                s=50,
+            )
 
             axin.set_ylabel(inset, fontsize=12)
             axin.set_xlabel("$t$", fontsize=12)
@@ -502,12 +630,11 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         raise ValueError(f"Invalid profile specified. Valid options are: {VALID_PROFILES}")
     
     # Validate radii
-    valid_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']
     if add_radii is not None:
         if isinstance(add_radii, str):
             add_radii = [add_radii]
-        if any(radius not in valid_radii for radius in add_radii):
-            raise ValueError(f"Invalid radius specified. Valid options are: {valid_radii}")
+        if any(radius not in VALID_RADII for radius in add_radii):
+            raise ValueError(f"Invalid radius specified. Valid options are: {VALID_RADII}")
         
     # Validate xaxis
     valid_xaxis = ['r', 'm']
@@ -682,7 +809,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     # Print the location of the saved movie
     print(f"Movie saved to {output_movie_path}")
 
-def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, add_radii=None, filepath=None, base_dir=None, grid=False, fps=20):
+def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, add_radii=None, plummer=False, vertical=False, filepath=None, base_dir=None, grid=False, fps=20):
     """
     Animate profiles wit constant scale and with inset for time evolution.
     Scale stays constant throughout.
@@ -700,6 +827,10 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     add_radii : list, optional
         List of radii to add to profiles from time_evolution.txt
         Options: 'r_c', 'r_m2', 'r_smfp', 'r_minTh'
+    plummer : bool, optional
+        Add plummer fits for the density and temperature profiles (NOTE: we know this doesn't really work)
+    vertical : bool, optional
+        Whether to stack panels vertically.
     filepath : str, optional
         Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_deluxe.mp4'
     base_dir : str, optional
@@ -733,12 +864,11 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         raise ValueError(f"Invalid profile specified. Valid options are: {VALID_PROFILES}")
     
     # Validate radii
-    valid_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']
     if add_radii is not None:
         if isinstance(add_radii, str):
             add_radii = [add_radii]
-        if any(radius not in valid_radii for radius in add_radii):
-            raise ValueError(f"Invalid radius specified. Valid options are: {valid_radii}")
+        if any(radius not in VALID_RADII for radius in add_radii):
+            raise ValueError(f"Invalid radius specified. Valid options are: {VALID_RADII}")
         
     # Validate xaxis
     valid_xaxis = ['r', 'm']
@@ -761,7 +891,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     else:
         raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
     
-    # Load rhoc time evolution data
+    # Load time evolution data
     print(f"Getting time evolution data...")
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
     time_data = extract_time_evolution_data(time_evolution_path)
@@ -826,6 +956,8 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
             index_t,
             tevo_t,
             time_data,
+            plummer,
+            vertical,
         )
         for ind in indices
     ]

@@ -2,7 +2,7 @@ import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc import (
-    calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rm2_rho_m_v2, calc_mintheta_r_rho_m_v2, 
+    calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rmn_rho_m_v2, calc_mintheta_r_rho_m_v2, 
     calc_balberg_zeta, low_kn_boost, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2,
     calc_dlogrho_dlogp
     )
@@ -315,14 +315,20 @@ def write_time_evolution(state, last=False):
     r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
     # Theta = state.Theta
 
-    r_c, rho_c, m_c, v2_c                   = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
-    r_m2, rho_m2, m_m2, v2_m2               = calc_rm2_rho_m_v2(r, rmid, rho, v2, m)
-    r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rmid, state.kn, rho,  v2, m)
+    r_c, rho_c, m_c, v2_c, tsc_c            = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
+    r_m2, rho_m2, m_m2, v2_m2               = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.0)
+    r_m25, rho_m25, m_m25, v2_m25           = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.5)
+    # r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rmid, state.kn, rho,  v2, m)
     # r_minTh, rho_minTh, m_minTh, v2_minTh   = calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta)
     drfrac_max                              = np.max(np.diff(r[1:]) / np.sqrt(r[1:-1] * r[2:]))
 
     maxvel      = np.max(np.sqrt(state.v2))
     # minTheta    = np.min(Theta)
+    mask = (rmid < 2) & np.isfinite(state.ltemp) & np.isfinite(state.mfp)
+    if np.any(mask):
+        te = np.min(state.ltemp[mask] / state.mfp[mask]) * tsc_c
+    else:
+        te = np.nan
 
     columns = [
         ("step", step),
@@ -341,15 +347,21 @@ def write_time_evolution(state, last=False):
         ("rho_m2", rho_m2),
         ("m_m2", m_m2),
         ("v2_m2", v2_m2),
-        ("r_smfp", r_smfp),
-        ("rho_smfp", rho_smfp),
-        ("m_smfp", m_smfp),
-        ("v2_smfp", v2_smfp),
+        ("r_m25", r_m25),
+        ("rho_m25", rho_m25),
+        ("m_m25", m_m25),
+        ("v2_m25", v2_m25),
+        # ("r_smfp", r_smfp),
+        # ("rho_smfp", rho_smfp),
+        # ("m_smfp", m_smfp),
+        # ("v2_smfp", v2_smfp),
         # ("r_minTh", r_minTh),
         # ("rho_minTh", rho_minTh),
         # ("m_minTh", m_minTh),
         # ("v2_minTh", v2_minTh),
-        ("drfrac_max", drfrac_max)
+        ("drfrac_max", drfrac_max),
+        ("tsc_c", tsc_c),
+        ("te", te)
     ]
 
     # Build header
