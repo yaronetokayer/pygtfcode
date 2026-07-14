@@ -203,7 +203,7 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph,):
     return k_l, k_s, k
 
 @njit(float64(float64[::1], float64[::1], float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64, float64,), cache=True, fastmath=True)
-def compute_core_lum_dt(r, rmid, rho, v2, m, alpha, a, b, c, sigma_m, eps,):
+def calc_core_lum_dt(r, rmid, rho, v2, m, alpha, a, b, c, sigma_m, eps,):
     """
     Estimate the timestep that limits fractional core-energy loss.
 

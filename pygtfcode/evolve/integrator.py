@@ -5,8 +5,7 @@ from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, condu
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
 from pygtfcode.evolve.split import check_drfrac_split, check_drltemp_split, check_drfrac_merge, check_drltemp_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
 from pygtfcode.util.calc_runtime import low_kn_boost, calc_ltemp
-from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r, calc_mean_within_r
-from pygtfcode.util.interpolate import interp_pl_to_r
+from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -38,7 +37,7 @@ def run_until_stop(state, start_step, **kwargs):
     nlog = int(io.nlog); nupdate = int(io.nupdate)
     grid_splitting = bool(grid.grid_splitting); drfrac_max = float(grid.drfrac_max); drfrac_min = float(grid.drfrac_min)
 
-    # For adaptive time-stepping
+    # For time-stepping
     safety = 0.99
     kn_threshold = prec.kn_threshold
     du_boost = prec.du_boost
@@ -61,14 +60,14 @@ def run_until_stop(state, start_step, **kwargs):
         #--- Increment counter
         state.step_count += 1
         step_count = state.step_count
-        
-        #--- Estimate the proposed du-limited dt using proportional control
+
         eps_du_eff = prec.eps_du * low_kn_boost(state.kn_c, kn_threshold, du_boost, kn_width)
-        eps_du_eff = min(10.0, eps_du_eff)
 
         if step_count == 1:
             dt_prop = 1.0 # We have no maxdu yet
-        else:
+
+        else:         
+            #--- du-limited dt using proportional control
             err = eps_du_eff / state.du_max
             fac = safety * err
             dt_prop = fac * state.dt
@@ -216,10 +215,8 @@ def integrate_time_step(state, config,                                  # State 
     if implicit_conduct:
         # implicit: work_n1 used to store dv2
         # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
-        if step_count < 100:
-            du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
-        else:
-            du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph)
+        # du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph)
+        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
         init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
