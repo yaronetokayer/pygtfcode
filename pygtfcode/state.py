@@ -305,6 +305,7 @@ class State:
             mtot = menc(self.rcut, self, chatter=False)
             fc = fNFW(self.config.init.cvir)
             self.char.mtot_m200 = mtot/fc
+            print(mtot, fc, mtot/fc)
 
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
