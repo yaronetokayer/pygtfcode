@@ -208,7 +208,7 @@ class State:
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
         char.v0 = float(np.sqrt(const.gee * char.m_s / char.r_s))
-        sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun^2
+        sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun
         char.sigma0 = sigma0 * float(const.Mpc_to_cm)**2 / float(const.Msun_to_gram) # In cm^2 / g
 
         v0_cgs = char.v0 * 1.0e5
@@ -374,7 +374,7 @@ class State:
             self.r[:] = r_loaded
             # raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
 
-        self.rmid   = (0.5 * self.r[1:] + self.r[:-1]).astype(np.float64)
+        self.rmid   = 0.5 * (self.r[1:] + self.r[:-1]).astype(np.float64)
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
