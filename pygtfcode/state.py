@@ -207,13 +207,13 @@ class State:
             char.r_s *= ( char.fc / char.chi )**(1.0/3.0)
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
-        char.v0 = float(np.sqrt(const.gee * char.m_s / char.r_s))
+        char.v_s = float(np.sqrt(const.gee * char.m_s / char.r_s))
         sigma_m_s = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun
         char.sigma_m_s = sigma_m_s * float(const.Mpc_to_cm)**2 / float(const.Msun_to_gram) # In cm^2 / g
 
-        v0_cgs = char.v0 * 1.0e5
+        v_s_cgs = char.v_s * 1.0e5
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
-        char.t0 = 1.0 / (float(sim.a) * float(sim.sigma_m) * v0_cgs * rho_s_cgs)
+        char.t_s = 1.0 / (float(sim.a) * float(sim.sigma_m) * v_s_cgs * rho_s_cgs)
         char.sigma_m_char = float(sim.sigma_m) / char.sigma_m_s # sigma_m in dimensionless form
 
         return char  # Store the CharParams object in config
@@ -570,10 +570,10 @@ class State:
             'log[Mvir/Msun]'            : np.log10(init.Mvir / cosmo.xhubble),
             'log[Mtot/Msun]'            : np.log10(Mtot),
             'Vvir [km/s]'               : vvir,
-            'v_0 [km/s]'                : char.v0,
+            'v_s [km/s]'                : char.v_s,
             'log[rho_s/(Msun/kpc^3)]'   : np.log10(char.rho_s * 1.0e-9),
             'r_s [kpc]'                 : char.r_s * 1.0e3,
-            't_0 [Gyr]'                 : char.t0 * const.sec_to_Gyr
+            't_s [Gyr]'                 : char.t_s * const.sec_to_Gyr
         }
 
         return params_dict

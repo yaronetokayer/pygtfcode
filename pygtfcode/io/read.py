@@ -306,7 +306,7 @@ def load_snapshot_bundle(model_dir: Union[str, Path], snapshot: Optional[int] = 
     # Find the row in conv corresponding to snap_idx
     row_idx = int(np.where(conv["snapshot_index"] == snap_idx)[0][0])
     step_val = int(conv["step_count"][row_idx])
-    t_val    = float(conv["t_t0"][row_idx])
+    t_val    = float(conv["t_t_s"][row_idx])
 
     # Resolve the profile file path and load its arrays
     profile_path = pdir / f"profile_{snap_idx}.dat"

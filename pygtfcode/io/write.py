@@ -325,7 +325,7 @@ def write_time_evolution(state, last=False):
     )
     step    = state.step_count
     t       = state.t
-    t_Gyr   = t * state.char.t0 * const.sec_to_Gyr
+    t_Gyr   = t * state.char.t_s * const.sec_to_Gyr
     
     r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
     # Theta = state.Theta

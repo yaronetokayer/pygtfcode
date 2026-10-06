@@ -4,8 +4,15 @@ class SimParams:
 
     Attributes
     ----------
-    sigma_m : float
-        Self-interaction cross-section in cm^2/g. Must be positive.
+    sigma_0 : float
+        Physical low-velocity isotropic-equivalent cross section per mass in cm^2/g. Must be positive.
+        At low velocities the cross section per unit mass reduces to this value.
+    w : float
+        Physical velocity scale in km/s.  Set transition of the velocity-dependent cross section drop off.
+    smfp_order : int
+        Which order polynomial approximation to use for SMFP conductivity, accounting for velocity dependence.
+        See Outmezguine et al. (2023), Appendix B.
+        Options are 1 and 2.
     alph : float
         Coefficient for interpolation scheme between lmfp and smfp regimes.
         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph). Must be positive.
@@ -18,22 +25,27 @@ class SimParams:
     a : float
         Model parameter 'a'. Must be positive.
     b : float
-        Model parameter 'b'. Must be positive.
+        Model parameter 'b'. Sets normalization of SMFP conduction scaling. Value from kinetic theory 25*sqrt(pi)/32.
+        Must be positive.
     c : float
         Model parameter 'c'. Must be positive.
     """
     def __init__(
             self, 
-            sigma_m             : float = 10.0,
+            sigma_0             : float = 10.0,
+            w                   : float = 10,
+            smfp_oder           : int = 2,
             alph                : float = 1.0,
             t_halt              : float = 1e3,
             rho_c_halt          : float = 1500,
             implicit_conduct    : bool = True,
             a                   : float = 2.256758,
-            b                   : float = 1.38,
+            b                   : float = 1.3847,
             c                   : float = 0.75
     ):
-        self._sigma_m = None
+        self._sigma_0 = None
+        self._w = None
+        self._smfp_order = None
         self._alph = None
         self._t_halt = None
         self._rho_c_halt = None
@@ -42,7 +54,9 @@ class SimParams:
         self._b = None
         self._c = None
 
-        self.sigma_m = sigma_m
+        self.sigma_0 = sigma_0
+        self.w = w
+        self.smfp_order = smfp_oder
         self.alph = alph
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
@@ -52,14 +66,36 @@ class SimParams:
         self.c = c
 
     @property
-    def sigma_m(self):
-        return self._sigma_m
+    def sigma_0(self):
+        return self._sigma_0
 
-    @sigma_m.setter
-    def sigma_m(self, value):
+    @sigma_0.setter
+    def sigma_0(self, value):
         if value <= 0:
-            raise ValueError("sigma_m must be positive")
-        self._sigma_m = float(value)
+            raise ValueError("sigma_0 must be positive")
+        self._sigma_0 = float(value)
+
+    @property
+    def w(self):
+        return self._w
+
+    @w.setter
+    def w(self, value):
+        if value <= 0:
+            raise ValueError("w must be positive")
+        self._w = float(value)
+
+    @property
+    def smfp_order(self):
+        return self._smfp_order
+
+    @smfp_order.setter
+    def smfp_order(self, value):
+        if not isinstance(value, int):
+            raise ValueError("smfp_order must be an integer")
+        if value not in [1, 2]:
+            raise ValueError("smfp_order must be either 1 or 2")
+        self._smfp_order = value
 
     @property
     def alph(self):
