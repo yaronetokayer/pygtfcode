@@ -20,8 +20,8 @@ class CharParams:
         Characteristic velocity scale [km/s].
     rho_s : float
         Characteristic density [Msun / Mpc^3].
-    sigma_0_char : float
-        sigma_0 in characteristic cross section per unit mass units.
+    sigma_m_0_char : float
+        sigma_m_0 in characteristic cross section per unit mass units.
     w_char : float
         w in characteristic velocity units.
     mtot_m200 : float
@@ -37,7 +37,7 @@ class CharParams:
         self.t_s = None
         self.v_s = None
         self.rho_s = None
-        self.sigma_m_char = None
+        self.sigma_m_0_char = None
         self.w_char = None
         self.mtot_m200 = None
 

@@ -193,7 +193,7 @@ def integrate_time_step(state, config,                                  # State 
     prec = config.prec; sim  = config.sim; char = state.char
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
-    sigma_m = float(char.sigma_m_char)
+    sigma_m_0 = float(char.sigma_m_0_char)
     alph = float(sim.alph); implicit_conduct = bool(sim.implicit_conduct)
     eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
@@ -214,13 +214,13 @@ def integrate_time_step(state, config,                                  # State 
     ### Step 1: Energy transport ###
     if implicit_conduct:
         # implicit: work_n1 used to store dv2
-        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
-        # du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph)
-        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m, alph, eps_du_eff, max_iter_du)
+        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m_0, alph, eps_du_eff, max_iter_du)
+        # du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, alph)
+        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
         init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-        compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, work_n2, cored)
+        compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, work_n2, cored)
         du_max, dt_prop, iter_du = conduct_heat(v2, m, work_n2, work_n1, dt_prop, eps_du_eff)
     
     if iter_du == -1:
@@ -267,7 +267,7 @@ def integrate_time_step(state, config,                                  # State 
 
     # kn
     np.sqrt(work_n2, out=state.kn)
-    state.kn *= sigma_m
+    state.kn *= sigma_m_0
     np.reciprocal(state.kn, out=state.kn)
     r_c = calc_core_r(r, state.rmid, rho)
     state.kn_c = calc_logmean_within_r(r, m, state.kn, r_c)
@@ -282,7 +282,7 @@ def integrate_time_step(state, config,                                  # State 
 
     # ltemp and mfp
     calc_ltemp(state.ltemp, state.v2, state.rmid)
-    np.multiply(sigma_m, state.rho, out=state.mfp)
+    np.multiply(sigma_m_0, state.rho, out=state.mfp)
     np.reciprocal(state.mfp, out=state.mfp)
 
     # Diagnostics
@@ -304,7 +304,7 @@ def integrate_time_step(state, config,                                  # State 
     # np.divide(state.rmid, work_n1, out=state.t_sc)
 
     # np.multiply(rho, work_n1, out=state.t_coll)
-    # np.multiply(state.t_coll, sigma_m, out=state.t_coll)
+    # np.multiply(state.t_coll, sigma_m_0, out=state.t_coll)
     # np.reciprocal(state.t_coll, out=state.t_coll)
 
     np.sqrt(rho, out=state.t_dyn)
@@ -312,7 +312,7 @@ def integrate_time_step(state, config,                                  # State 
     
     # Luminosity
     # init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-    # compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, state.lum, cored)
+    # compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, state.lum, cored)
 
 def allocate_work_arrays(n):
     n_int = n - 1

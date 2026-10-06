@@ -213,8 +213,9 @@ class State:
 
         v_s_cgs = char.v_s * 1.0e5
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
-        char.t_s = 1.0 / (float(sim.a) * float(sim.sigma_m) * v_s_cgs * rho_s_cgs)
-        char.sigma_m_char = float(sim.sigma_m) / char.sigma_m_s # sigma_m in dimensionless form
+        char.t_s = 1.0 / (float(sim.a) * float(sim.sigma_m_0) * v_s_cgs * rho_s_cgs)
+        char.sigma_m_0_char = float(sim.sigma_m_0) / char.sigma_m_s # sigma_m in dimensionless form
+        char.w_char = float(sim.w) / char.v_s
 
         return char  # Store the CharParams object in config
     
@@ -308,8 +309,8 @@ class State:
 
         v2 = np.asarray(sigr(r_mid, self), dtype=np.float64)
         rho = 3.0 * ( m[1:] - m[:-1] ) / dr3
-        kn = 1.0 / (self.char.sigma_m_char * np.sqrt(rho * v2))
-        mfp = 1.0 / (self.char.sigma_m_char * rho)
+        kn = 1.0 / (self.char.sigma_m_0_char * np.sqrt(rho * v2))
+        mfp = 1.0 / (self.char.sigma_m_0_char * rho)
 
         # Apply central smoothing if using regular NFW profile (imode = 1)
         # This helps reduce artificial gradients in innermost cell
@@ -380,13 +381,13 @@ class State:
         self.v2     = data['v2'].astype(np.float64)
 
         # Derived quantities
-        self.kn         = np.asarray(1.0 / (self.char.sigma_m_char * np.sqrt(self.rho * self.v2)), dtype=np.float64)
+        self.kn         = np.asarray(1.0 / (self.char.sigma_m_0_char * np.sqrt(self.rho * self.v2)), dtype=np.float64)
         self.drfrac     = np.zeros_like(self.rho, dtype=np.float64)
         self.drfrac[0]  = np.nan
         self.drfrac[1:] = (self.r[2:]/self.r[1:-1] - 1.0) / np.sqrt(self.r[2:]/self.r[1:-1])
         self.ltemp      = np.zeros_like(self.rho, dtype=np.float64)
         calc_ltemp(self.ltemp, self.v2, self.rmid)
-        self.mfp        = np.asarray( 1.0 / (self.char.sigma_m_char * self.rho), dtype=np.float64)
+        self.mfp        = np.asarray( 1.0 / (self.char.sigma_m_0_char * self.rho), dtype=np.float64)
 
         # self.Theta  = data['Theta'].astype(np.float64)
 
@@ -454,9 +455,9 @@ class State:
         self.v2 = v2_new
 
         self.rmid[:]    = 0.5 * (r_new[1:] + r_new[:-1])
-        self.kn[:]      = 1.0 / (self.char.sigma_m_char * np.sqrt(p_new))
+        self.kn[:]      = 1.0 / (self.char.sigma_m_0_char * np.sqrt(p_new))
         calc_ltemp(self.ltemp, self.v2, self.rmid)
-        self.mfp[:]     = 1.0 / (self.char.sigma_m_char * self.rho)
+        self.mfp[:]     = 1.0 / (self.char.sigma_m_0_char * self.rho)
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")

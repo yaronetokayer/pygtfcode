@@ -9,7 +9,7 @@ _TINY64 = np.finfo(np.float64).tiny
 # cored = (init.profile == 'abg') and (float(init.gamma) < 1.0) # Leftover from integration loop when we used this function
 
 @njit(void(float64, float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
-def compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, lum, cored): 
+def compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, lum, cored): 
     """ 
     Compute luminosity of each shell interface based on temperature gradient and conductivity.
     e.g, Eq. (2) in Nishikawa et al. 2020.
@@ -22,7 +22,7 @@ def compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, lum, cored):
         Constant 'b' in the conductivity formula.
     c : float
         Constant 'c' in the conductivity formula.
-    sigma_m : float
+    sigma_m_0 : float
         Interaction cross section in dimensionless units.
     alph : float
         Coefficient for interpolation scheme between lmfp and smfp regimes.
@@ -49,7 +49,7 @@ def compute_luminosities(a, b, c, sigma_m, alph, r, v2, rho, lum, cored):
     v2int  = interp_linear_to_interfaces(r, v2)
     rhoint = interp_linear_to_interfaces(r, rho)
 
-    smfp_term = (a / b) * sigma_m**2
+    smfp_term = (a / b) * sigma_m_0**2
 
     for i in range(N-1):
         # One sided difference for cored profiles (i.e., ABG with gamma < 1)
@@ -541,7 +541,7 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     d[-1] = flux0[-1]
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, alph,):
+def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, alph,):
     """
     Implicit conduction step on v2.
 
@@ -561,7 +561,7 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)
@@ -583,7 +583,7 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     return du_max, dt, 0
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64,), cache=True, fastmath=True,)
-def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m, alph,):
+def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, alph,):
     """
     Implicit conduction step on v2.
 
@@ -603,7 +603,7 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)
@@ -632,7 +632,7 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     return du_max, dt, 0
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m, alph,):
+def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, alph,):
     """
     Implicit conduction step on v2.
 
@@ -654,7 +654,7 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)
@@ -688,7 +688,7 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     return du_max, dt, 0
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
+def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
     Repeatedly solves the implicit system with a trial dt until the
@@ -712,7 +712,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)
@@ -747,7 +747,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     return du_max, dt_trial, -1
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
+def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
     Repeatedly solves the implicit system with a trial dt until the
@@ -771,7 +771,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)
@@ -815,7 +815,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     return du_max, dt_trial, -1
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m, alph, eps_du, max_iter,):
+def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
     Repeatedly solves the implicit system with a trial dt until the
@@ -843,7 +843,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m**2 / b_param
+    Csmfp = a_param * sigma_m_0**2 / b_param
     Clmfp = 1.0 / c_param
 
     rho_int = interp_linear_to_interfaces(r, rho)

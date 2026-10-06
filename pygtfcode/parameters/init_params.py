@@ -12,7 +12,7 @@ class InitParams:
         String identifier for the profile type ('nfw', 'truncated_nfw', 'abg').
     """
 
-    def __init__(self, Mvir: float = 3.0e9, cvir: float = 20.0, z: float = 0.0):
+    def __init__(self, Mvir: float = 3.0e9, cvir: float = 20.0):
         self._Mvir = None
         self._cvir = None
         self.profile = None  # To be set by subclass
@@ -94,7 +94,7 @@ class TruncatedNFWParams(InitParams):
         self._deltaP = float(value)
 
     def __repr__(self):
-        return (f"TruncatedNFWParams(Mvir={self.Mvir}, cvir={self.cvir}, z={self.z}, "
+        return (f"TruncatedNFWParams(Mvir={self.Mvir}, cvir={self.cvir}, "
                 f"Zt={self.Zt}, deltaP={self.deltaP})")
 
 

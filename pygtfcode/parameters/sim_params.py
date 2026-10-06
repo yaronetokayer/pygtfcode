@@ -32,7 +32,7 @@ class SimParams:
     """
     def __init__(
             self, 
-            sigma_0             : float = 10.0,
+            sigma_m_0             : float = 10.0,
             w                   : float = 10,
             smfp_oder           : int = 2,
             alph                : float = 1.0,
@@ -43,7 +43,7 @@ class SimParams:
             b                   : float = 1.3847,
             c                   : float = 0.75
     ):
-        self._sigma_0 = None
+        self._sigma_m_0 = None
         self._w = None
         self._smfp_order = None
         self._alph = None
@@ -54,7 +54,7 @@ class SimParams:
         self._b = None
         self._c = None
 
-        self.sigma_0 = sigma_0
+        self.sigma_m_0 = sigma_m_0
         self.w = w
         self.smfp_order = smfp_oder
         self.alph = alph
@@ -66,14 +66,14 @@ class SimParams:
         self.c = c
 
     @property
-    def sigma_0(self):
-        return self._sigma_0
+    def sigma_m_0(self):
+        return self._sigma_m_0
 
-    @sigma_0.setter
-    def sigma_0(self, value):
+    @sigma_m_0.setter
+    def sigma_m_0(self, value):
         if value <= 0:
-            raise ValueError("sigma_0 must be positive")
-        self._sigma_0 = float(value)
+            raise ValueError("sigma_m_0 must be positive")
+        self._sigma_m_0 = float(value)
 
     @property
     def w(self):
