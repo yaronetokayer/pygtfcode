@@ -12,7 +12,7 @@ class CharParams:
         ABG normalization factor (None unless using ABG).
     m_s : float
         Characteristic mass scale [Msun].
-    sigma0 : float
+    sigma_m_s : float
         Characteristic cross section [cm^2/g].
     t0 : float
         Characteristic time scale [sec].
@@ -29,7 +29,7 @@ class CharParams:
         self.fc = None
         self.chi = None
         self.m_s = None
-        self.sigma0 = None
+        self.sigma_m_s = None
         self.t0 = None
         self.v0 = None
         self.rho_s = None

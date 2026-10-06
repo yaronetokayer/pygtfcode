@@ -208,13 +208,13 @@ class State:
 
         char.rho_s = char.m_s / ( 4.0 * np.pi * char.r_s**3 )
         char.v0 = float(np.sqrt(const.gee * char.m_s / char.r_s))
-        sigma0 = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun
-        char.sigma0 = sigma0 * float(const.Mpc_to_cm)**2 / float(const.Msun_to_gram) # In cm^2 / g
+        sigma_m_s = 4.0 * np.pi * char.r_s**2 / char.m_s # In Mpc^2 / Msun
+        char.sigma_m_s = sigma_m_s * float(const.Mpc_to_cm)**2 / float(const.Msun_to_gram) # In cm^2 / g
 
         v0_cgs = char.v0 * 1.0e5
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
         char.t0 = 1.0 / (float(sim.a) * float(sim.sigma_m) * v0_cgs * rho_s_cgs)
-        char.sigma_m_char = float(sim.sigma_m) / char.sigma0 # sigma_m in dimensionless form
+        char.sigma_m_char = float(sim.sigma_m) / char.sigma_m_s # sigma_m in dimensionless form
 
         return char  # Store the CharParams object in config
     
