@@ -61,10 +61,10 @@ class Config:
         """
         Build a Config from the nested dict produced by pygtfcode.io.read.import_metadata().
 
-        This is used when a state is constructed with State.from_dir().
+        Reconstructs parameters only; State.from_dir restart is not implemented.
 
         The `meta` dict is expected to have sections like:
-          "_init", "grid", "io", "prec", "sim"
+          "_init", "grid", "io", "prec", "sim", "cosmo"
         with keys possibly prefixed by underscores (e.g., "_Mvir", "_rmax", ...).
         """
         # Helper: strip leading underscores off keys
@@ -137,8 +137,7 @@ class Config:
             f"  grid={self.grid},\n"
             f"  init={self.init},\n"
             f"  sim={self.sim},\n"
-            f"  prec={self.prec}\n"
+            f"  prec={self.prec},\n"
             f"  cosmo={self.cosmo}\n"
             f")"
         )
-

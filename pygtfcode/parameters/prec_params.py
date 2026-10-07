@@ -1,3 +1,5 @@
+import math
+
 class PrecisionParams:
     """
     Parameters controlling numerical precision and convergence behavior.
@@ -7,19 +9,17 @@ class PrecisionParams:
     eps_du : float
         Maximum allowed relative change in internal energy (u) per time step.
     kn_threshold : float
-        Threshold in Knudsen number below which the du criterion is relaxed.
+        Threshold in amplitude-reference kn_c below which eps_du is relaxed.
     kn_width : float
-        Width of the transition in Knudsen number for boosting eps_du.
+        Width of the logistic transition in log10(kn_c / kn_threshold).
     du_boost : float
         Factor by which to boost eps_du in the low-Knudsen regime.
     eps_dr : float
-        Maximum allowed relative change in radius per time step.
+        Tolerance on the final fractional radius correction in each HE solve.
     max_iter_du : int
-        Maximum iterations allowed for re-virialization step convergence.
+        Maximum trial conduction solves per step (must be positive).
     max_iter_dr : int
-        Maximum iterations allowed for re-virialization step convergence.
-    drfrac_max : float
-        Maximum of dr/r in any cell before cell splitting.
+        Maximum additional HE solves after the first solve (may be zero).
     epsabs : float
         Absolute tolerance for numerical integration routines.
     epsrel : float
@@ -110,6 +110,8 @@ class PrecisionParams:
     @max_iter_du.setter
     def max_iter_du(self, value):
         self._validate_nonnegative_int(value, "max_iter_du")
+        if value == 0:
+            raise ValueError("max_iter_du must be positive.")
         self._max_iter_du = int(value)
 
     @property
@@ -140,11 +142,11 @@ class PrecisionParams:
         self._epsrel = float(value)
 
     def _validate_positive(self, value, name):
-        if not (value > 0):
+        if isinstance(value, bool) or not math.isfinite(value) or not (value > 0):
             raise ValueError(f"{name} must be a positive float.")
 
     def _validate_nonnegative_int(self, value, name):
-        if not (isinstance(value, int) and value >= 0):
+        if not (isinstance(value, int) and not isinstance(value, bool) and value >= 0):
             raise ValueError(f"{name} must be a non-negative integer.")
 
     def __repr__(self):

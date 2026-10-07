@@ -1,3 +1,5 @@
+import math
+
 class CosmoParams:
     """
     Cosmological parameters
@@ -26,7 +28,7 @@ class CosmoParams:
 
     @xhubble.setter
     def xhubble(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("xhubble must be positive")
         self._xhubble = float(value)
 
@@ -36,7 +38,7 @@ class CosmoParams:
 
     @Omega_m.setter
     def Omega_m(self, value):
-        if not 0 < value <= 1:
+        if isinstance(value, bool) or not math.isfinite(value) or not 0 < value <= 1:
             raise ValueError("Omega_m must be between 0 and 1")
         self._Omega_m = float(value)
 
@@ -46,7 +48,7 @@ class CosmoParams:
 
     @Delta_vir.setter
     def Delta_vir(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("Delta_vir must be positive")
         self._Delta_vir = float(value)
 
@@ -56,7 +58,7 @@ class CosmoParams:
 
     @z.setter
     def z(self, value):
-        if value < 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value < 0:
             raise ValueError("z must be non-negative")
         self._z = float(value)
 

@@ -115,7 +115,7 @@ def conduct_heat_Theta(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float
     Arguments
     ---------
     v2 : np.ndarray (N,)
-        Sqaure of 1D velocity dispersion. u = 1.5*v2.
+        Square of 1D velocity dispersion. u = 1.5*v2.
     m : np.ndarray (N+1,)
         Enclosed mass array
     lum : np.ndarray (N+1,)
@@ -194,7 +194,9 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
 
         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
 
-    Assumes n > 3.  Can take arbitrary alpha, see below.
+    Requires at least three cells. Supports positive alph and finite or
+    infinite w_char. Linearizes the temperature-dependent flux once at
+    the current state; timestep retries are not nonlinear Newton iterations.
 
     Parameters
     ----------
@@ -203,9 +205,9 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     m : ndarray, shape (N+1,)
         Enclosed mass at edges.
     rho_int : ndarray, shape (N-1,)
-        Interface values of rhok.
+        Interface density values.
     v2 : ndarray, shape (N,)
-        Cell-centered v2 for one species.
+        Cell-centered one-dimensional velocity dispersion squared.
     dt : float
         Timestep.
     a_param, b_param, c_param : float
@@ -218,7 +220,7 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     w_char : float
         velocity scale w in characteristic velocity units.
     smfp_order : int
-        Which order polynomial approximation to use for SMFP conductivity, accounting for velocity dependence.
+        Chapman-Enskog order for the normalized SMFP factor.
         See Outmezguine et al. (2023), Appendix B. Options are 1 and 2.
     a, b, c, d : ndarray, shape (N,)
         Output tridiagonal coefficients and RHS, filled in place.
@@ -354,7 +356,7 @@ def build_tridiag_system_ALPH1(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,)
 
         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
 
-    Assumes n > 3.  This is for alpha=1.
+    Legacy constant-scattering reference for alph=1; not used by the driver.
 
     Parameters
     ----------
@@ -363,9 +365,9 @@ def build_tridiag_system_ALPH1(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,)
     m : ndarray, shape (N+1,)
         Enclosed mass at edges.
     rho_int : ndarray, shape (N-1,)
-        Interface values of rhok.
+        Interface density values.
     v2 : ndarray, shape (N,)
-        Cell-centered v2 for one species.
+        Cell-centered one-dimensional velocity dispersion squared.
     Csmfp, Clmfp : float
         Conductivity coefficients.
     dt : float
@@ -496,6 +498,9 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
 
         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
 
+    Legacy vectorized constant-scattering reference for alph=1.
+    Not used by the velocity-dependent driver.
+
     Parameters
     ----------
     r : ndarray, shape (N+1,)
@@ -503,9 +508,9 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     m : ndarray, shape (N+1,)
         Enclosed mass at edges.
     rho_int : ndarray, shape (N-1,)
-        Interface values of rhok.
+        Interface density values.
     v2 : ndarray, shape (N,)
-        Cell-centered v2 for one species.
+        Cell-centered one-dimensional velocity dispersion squared.
     Csmfp, Clmfp : float
         Conductivity coefficients.
     dt : float
@@ -565,8 +570,8 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     
     v2 is updated in-place.
 
-    No limit on maximum fractional change - assumes we are being limited by 
-    relaxation time criterion
+    No fractional-change limiter: the caller is responsible for choosing dt.
+    Returns (du_max, dt, 0). This wrapper is not used by the default driver.
     """
     N = v2.shape[0]
     du_max = 0.0
@@ -656,10 +661,11 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     
     v2 is updated in-place. Also updates Theta in place.
 
-    Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
+    Theta = (v2 / |dv2dt|) / (a_param * sigma_m_0 * dr / sqrt(v2)).
+    Both times are in t_s units; the crossing speed is the 1D dispersion.
 
-    No limit on maximum fractional change - assumes we are being limited by 
-    relaxation time criterion
+    No fractional-change limiter: the caller is responsible for choosing dt.
+    Returns (du_max, dt, 0). This wrapper is not used by the default driver.
     """
     N = v2.shape[0]
     du_max = 0.0
@@ -691,7 +697,7 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
             du_max = rat
 
         if absdv2i > tiny and dr > tiny and v2i > tiny:
-            Th[i] = v2i * math.sqrt(v2i) * dt / (dr * absdv2i)
+            Th[i] = v2i * math.sqrt(v2i) * dt / (a_param * sigma_m_0 * dr * absdv2i)
         else:
             Th[i] = np.inf
 
@@ -733,6 +739,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     safety = 0.95
 
     dt_trial = dt
+    du_max = math.inf
 
     for j in range(max_iter):
 
@@ -745,6 +752,10 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
             denom = v2i if v2i > tiny else tiny
             rat = abs(dv2[i]) / denom
+            # NaN comparisons are false: explicitly reject invalid solutions.
+            if not math.isfinite(rat) or v2i + dv2[i] <= 0.0:
+                du_max = math.inf
+                break
 
             if rat > du_max:
                 du_max = rat
@@ -755,7 +766,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
             return du_max, dt_trial, j
 
         # Saturated implicit responses must still make progress on rejection.
-        dt_trial *= min(0.5, safety * eps_du / du_max)
+        dt_trial *= (min(0.5, safety * eps_du / du_max) if math.isfinite(du_max) else 0.5)
 
     return du_max, dt_trial, -1
 
@@ -793,6 +804,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     safety = 0.95
 
     dt_trial = dt
+    du_max = math.inf
 
     for j in range(max_iter):
 
@@ -805,6 +817,10 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
 
             denom = v2i if v2i > tiny else tiny
             rat = abs(dv2[i]) / denom
+            # NaN comparisons are false: explicitly reject invalid solutions.
+            if not math.isfinite(rat) or v2i + dv2[i] <= 0.0:
+                du_max = math.inf
+                break
 
             if rat > du_max:
                 du_max = rat
@@ -824,7 +840,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
             return du_max, dt_trial, j
 
         # Saturated implicit responses must still make progress on rejection.
-        dt_trial *= min(0.5, safety * eps_du / du_max)
+        dt_trial *= (min(0.5, safety * eps_du / du_max) if math.isfinite(du_max) else 0.5)
 
     return du_max, dt_trial, -1
 
@@ -842,11 +858,12 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
 
     Then updates v2 in place and returns
 
-        (du_max, dt_used).
+        (du_max, dt_used, du_iter).
 
     Also updates Theta in place.
 
-    Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
+    Theta = (v2 / |dv2dt|) / (a_param * sigma_m_0 * dr / sqrt(v2)).
+    Both times are in t_s units; the crossing speed is the 1D dispersion.
 
     The tridiagonal system is defined by:
         a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
@@ -866,6 +883,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     safety = 0.95
 
     dt_trial = dt
+    du_max = math.inf
 
     for j in range(max_iter):
 
@@ -878,6 +896,10 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
 
             denom = v2i if v2i > tiny else tiny
             rat = abs(dv2[i]) / denom
+            # NaN comparisons are false: explicitly reject invalid solutions.
+            if not math.isfinite(rat) or v2i + dv2[i] <= 0.0:
+                du_max = math.inf
+                break
 
             if rat > du_max:
                 du_max = rat
@@ -894,7 +916,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
                 absdv2i = abs(dv2i)
 
                 if absdv2i > tiny and dr > tiny and v2i > tiny:
-                    Th[i] = v2i * math.sqrt(v2i) * dt_trial / (dr * absdv2i)
+                    Th[i] = v2i * math.sqrt(v2i) * dt_trial / (a_param * sigma_m_0 * dr * absdv2i)
                 else:
                     Th[i] = np.inf
 
@@ -902,7 +924,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
             return du_max, dt_trial, j
 
         # Bound reduction even when the implicit response has saturated.
-        fac = min(0.5, safety * eps_du / du_max)
+        fac = (min(0.5, safety * eps_du / du_max) if math.isfinite(du_max) else 0.5)
         dt_trial *= fac
 
     return du_max, dt_trial, -1

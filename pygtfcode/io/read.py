@@ -120,7 +120,7 @@ def get_time_conversion(filepath, index):
     float
         Time value.
     """
-    # Find corresponding timestep.log in the same ModelXXXXX directory
+    # Find snapshot_conversion.txt in the same ModelXXXXX directory
     model_dir = os.path.dirname(filepath)
 
     data = extract_snapshot_indices(model_dir)
@@ -133,12 +133,12 @@ def get_time_conversion(filepath, index):
 
 def extract_snapshot_data(filepath, add_time=True):
     """
-    Extract data from a snapshot timestep file.
+    Extract header-named columns from a profile snapshot.
 
     Parameters
     ----------
-    filename : str
-        Path to the timestep_*.dat file.
+    filepath : str
+        Path to a profile_*.dat file (or an IC file with add_time=False).
     add_time : bool, optional
         If True, find the time from the snapshot conversion file.
 
@@ -158,8 +158,7 @@ def extract_snapshot_data(filepath, add_time=True):
     if data.ndim == 1:
         data = data[np.newaxis, :]
 
-    # Replace inf and -inf with nan
-    data = np.where(np.isinf(data), np.nan, data)
+    # Preserve infinities: they can represent vanishing gradients or rates.
 
     # Build dictionary dynamically
     result = {col: data[:, i] for i, col in enumerate(header)}
@@ -263,8 +262,7 @@ def import_metadata(model_dir: Union[Path, str]) -> Dict[str, Dict[str, Any]]:
 
 def load_snapshot_bundle(model_dir: Union[str, Path], snapshot: Optional[int] = None) -> Dict[str, Any]:
     """
-    Load one snapshot's arrays (via extract_snapshot_data) and add *current* run info
-    from the last row of snapshot_conversion.txt.
+    Load one snapshot and its matching index, time, and step count.
 
     Parameters
     ----------
@@ -278,9 +276,8 @@ def load_snapshot_bundle(model_dir: Union[str, Path], snapshot: Optional[int] = 
     dict
         Includes everything from extract_snapshot_data(profile_<idx>.dat) plus:
           - 'snapshot_index'       : int  (the index that was loaded)
-          - 'current_step_count'   : int  (last row of snapshot_conversion.txt)
-          - 'current_time'         : float (simulation units, last row)
-          - 'current_time_Gyr'     : float (Gyr, last row)
+          - 'step_count'           : int  (the selected snapshot's step)
+          - 'time'                 : float (the selected snapshot's time in t_s)
     """
     # Basic checks
     pdir = Path(model_dir)
@@ -293,20 +290,20 @@ def load_snapshot_bundle(model_dir: Union[str, Path], snapshot: Optional[int] = 
     # Choose which snapshot to load
     if snapshot is None:
         # Latest snapshot is the last entry in the table
-        snap_idx = int(conv["snapshot_index"][-1])
+        snap_idx = int(conv["index"][-1])
     else:
         snap_idx = int(snapshot)  # ensure int
         # sanity: ensure it exists in the table
-        if snap_idx not in set(conv["snapshot_index"].tolist()):
+        if snap_idx not in set(conv["index"].tolist()):
             # not fatal strictly, but helpful to warn early
             raise ValueError(
                 f"Snapshot index {snap_idx} not present in snapshot_conversion.txt "
-                f"(available: {conv['snapshot_index'].tolist()})"
+                f"(available: {conv['index'].tolist()})"
             )
     # Find the row in conv corresponding to snap_idx
-    row_idx = int(np.where(conv["snapshot_index"] == snap_idx)[0][0])
-    step_val = int(conv["step_count"][row_idx])
-    t_val    = float(conv["t_t_s"][row_idx])
+    row_idx = int(np.where(conv["index"] == snap_idx)[0][0])
+    step_val = int(conv["step"][row_idx])
+    t_val    = float(conv["time"][row_idx])
 
     # Resolve the profile file path and load its arrays
     profile_path = pdir / f"profile_{snap_idx}.dat"

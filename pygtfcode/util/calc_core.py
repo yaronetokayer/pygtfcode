@@ -152,6 +152,10 @@ def calc_r_smfp(r, rmid, kn):
 
         Kn(r_smfp) = 1.
 
+    This is a legacy Kn-based radius, not a conductivity-equality radius.
+    For finite w, amplitude-reference kn does not locate the transport
+    transition; even kn_cond=1 differs from kappa_S/kappa_L=1 by b/(a*c).
+
     The crossing radius is estimated by assuming Kn is a local power
     law between adjacent shell midpoint radii, equivalent to linear
     interpolation in log(Kn) versus log(r).
@@ -357,7 +361,8 @@ def calc_mean_within_r(r, m, q, r_max):
 def calc_core_r_rho_m_v2(r, rmid, rho, v2, m):
     """
     Compute core properties using the reusable interpolation and
-    averaging functions.
+    averaging functions. Returns r_c, mean rho_c, m_c, mean v2_c, and
+    r_c/sqrt(v2_c). The last quantity is in r_s/v_s, not t_s units.
     """
     r_c = calc_core_r(r, rmid, rho)
 
@@ -438,6 +443,10 @@ def calc_smfp_r_rho_m_v2(r, rmid, kn, rho, v2, m):
     The SMFP radius is defined by
 
         Kn(r_smfp) = 1.
+
+    This is a legacy Kn-based radius, not a conductivity-equality radius.
+    For finite w, amplitude-reference kn does not locate the transport
+    transition; even kn_cond=1 differs from kappa_S/kappa_L=1 by b/(a*c).
 
     Parameters
     ----------

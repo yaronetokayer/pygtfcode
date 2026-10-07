@@ -10,7 +10,7 @@ _TINY64 = np.finfo(np.float64).tiny
 @njit(float64[:](float64[:]), cache=True, fastmath=True)
 def compute_mass(m) -> np.ndarray:
     """
-    Placeholder funcion to compute mass used in build_tridiag_system.
+    Placeholder function to compute mass used in build_tridiag_system.
     Accounts for baryons, perturbers, etc. in future implementations.
 
     Arguments
@@ -21,7 +21,7 @@ def compute_mass(m) -> np.ndarray:
     Returns
     -------
     ndarray
-        Total mass for hydrostatis equilibrium calculations.
+        Total mass for hydrostatic equilibrium calculations.
     """
 
     return m
@@ -42,13 +42,13 @@ def build_tridiag_system(r, rho, p, m_tot, a, b, c, y):
         Shell-centered pressures.
     m_tot : ndarray, shape (N+1,)
         Total enclosed mass at the same edge radii as `r`.
-    a, b, c, y : ndarray, shape (N-2,)
+    a, b, c, y : ndarray, shape (N-1,)
         Preallocated output arrays to fill in place.
 
     Notes
     -----
     - The unknown vector x contains the interior fractional displacements x_j = Δr_j / r_j
-      (excluding the fixed inner and outer edges), so the returned arrays all have length M-2.
+      (excluding the fixed inner and outer edges), so the returned arrays all have length N-1.
     - The routine linearizes the hydrostatic update using finite differences and geometric
       volume factors. Small numerical floors are applied to pressure differences and density sums
       to prevent divide-by-zero or overflow. The outputs are arranged for direct use with the
@@ -431,8 +431,8 @@ def build_tridiag_system_log_OLD(r, rho, p, m_tot, a, b, c, y):
 @njit(void(float64[:], float64[:],  float64[:],  float64[:],  float64[:]), cache=True, fastmath=True)
 def update_r_p_rho(r, x, p, rho, work):
     """
-    Updates r, and then finds p, rho, and v2 based on exact volume ratios.
-    Ensures positivity and stability.
+    Updates r, p, and rho using adiabatic shell-volume ratios.
+    The caller checks shell crossing and derives v2 = p/rho.
     All updates are performed in place.
 
     Parameters
@@ -492,7 +492,7 @@ def compute_he_resid_norm(r, rho, p, m):
     return np.linalg.norm(res_vec)
 
 @njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
-def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, float]:
+def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -504,7 +504,7 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, 
         Density values. Updated in-place.
     p : ndarray
         Pressure values. Updated in-place.
-    m : ndarray
+    m_tot : ndarray
         Total enclosed mass at each radial grid point, including baryons/perturbers.
     a, b, c, y, x : ndarray (N-1,)
         Memory allocation for working arrays
@@ -517,13 +517,13 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, 
         STATUS_OK if successful,
         STATUS_SHELL_CROSSING if any radii cross.
     dr_max : float
-        Global maximum |dr/r| across all species.
+        Maximum interior-edge |dr/r| for this correction.
 
     Notes
     -----
     The function solves a tridiagonal system to compute radius corrections, then updates
-    density, pressure, and velocity dispersion accordingly. If any velocity dispersion
-    becomes negative, the function returns None.
+    density and pressure in place. Shell crossing is reported by status;
+    arrays have already been modified and are not rolled back.
     """
     Np1 = r.shape[0]
 
@@ -555,7 +555,7 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[i
         Density values.
     p : ndarray
         Pressure values.
-    m : ndarray
+    m_tot : ndarray
         Total enclosed mass at each radial grid point, including baryons/perturbers.
     a, b, c, y, x : ndarray (N-1,)
         Memory allocation for working arrays
@@ -568,7 +568,7 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[i
         STATUS_OK if successful,
         STATUS_SHELL_CROSSING if any radii cross.
     dr_max : float
-        Global maximum |dr/r| across all species.
+        Maximum interior-edge |dr/r| for this correction.
     he_res : float
         Norm of HE residual for updated profile.
         If shell crossing occurs, returns -1.0 as a sentinel.
@@ -576,8 +576,8 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[i
     Notes
     -----
     The function solves a tridiagonal system to compute radius corrections, then updates
-    density, pressure, and velocity dispersion accordingly. If any velocity dispersion
-    becomes negative, the function returns None.
+    density and pressure in place. Shell crossing is reported by status;
+    arrays have already been modified and are not rolled back.
     """
     Np1 = r.shape[0]
 
@@ -601,20 +601,20 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[i
 @njit(void(float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
 def compute_he_pressures(r, rho, p, m):
     """
-    In-place hydrostatic-equilibrium pressure update for unaligned radial grids.
+    In-place hydrostatic-equilibrium pressure update on the current radial grid.
 
     This version does NOT compute residuals.
 
     Parameters
     ----------
     r : ndarray, shape (N+1,)
-        Edge radii per species.
+        Edge radii.
     rho : ndarray, shape (N,)
-        Shell densities per species.
+        Shell densities.
     p : ndarray, shape (N,)
-        Shell pressures per species. Updated in place.
+        Shell pressures. Updated in place.
     m : ndarray, shape (N+1,)
-        Enclosed-mass-like data used by interp_m_enc().
+        Enclosed mass at the same edges as r.
     """
     Np1 = r.shape[0]
     N = Np1 - 1
@@ -634,18 +634,18 @@ def compute_he_pressures(r, rho, p, m):
 @njit(types.Tuple((float64, float64))(float64[:], float64[:], float64[:], float64[:]),fastmath=True, cache=True)
 def compute_he_pressures_with_resid(r, rho, p, m):
     """
-    In-place hydrostatic-equilibrium pressure update for unaligned radial grids.
+    In-place hydrostatic-equilibrium pressure update on the current radial grid.
 
     This version computes and returns the old and new HE residual norms.
 
     Parameters
     ----------
     r : ndarray, shape (N+1,)
-        Edge radii per species.
+        Edge radii.
     rho : ndarray, shape (N,)
-        Shell densities per species.
+        Shell densities.
     p : ndarray, shape (N,)
-        Shell pressures per species. Updated in place.
+        Shell pressures. Updated in place.
     m : ndarray, shape (N+1,)
         Enclosed-mass data.
 

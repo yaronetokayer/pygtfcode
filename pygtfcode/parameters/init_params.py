@@ -1,3 +1,5 @@
+import math
+
 class InitParams:
     """
     Base class for parameters defining the initial density profile.
@@ -26,7 +28,7 @@ class InitParams:
 
     @Mvir.setter
     def Mvir(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("Mvir must be positive.")
         self._Mvir = float(value)
 
@@ -36,7 +38,7 @@ class InitParams:
 
     @cvir.setter
     def cvir(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("cvir must be positive.")
         self._cvir = float(value)
 
@@ -79,8 +81,10 @@ class TruncatedNFWParams(InitParams):
 
     @Zt.setter
     def Zt(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("Zt must be positive.")
+        if value >= 1:
+            raise ValueError("Zt must be less than one.")
         self._Zt = float(value)
 
     @property
@@ -89,7 +93,7 @@ class TruncatedNFWParams(InitParams):
 
     @deltaP.setter
     def deltaP(self, value):
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("deltaP must be positive.")
         self._deltaP = float(value)
 
@@ -126,6 +130,8 @@ class ABGParams(InitParams):
 
     @alpha.setter
     def alpha(self, value):
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise ValueError("alpha must be finite and positive.")
         self._alpha = float(value)
 
     @property
@@ -134,6 +140,8 @@ class ABGParams(InitParams):
 
     @beta.setter
     def beta(self, value):
+        if isinstance(value, bool) or not math.isfinite(value):
+            raise ValueError("beta must be finite.")
         self._beta = float(value)
 
     @property
@@ -142,6 +150,8 @@ class ABGParams(InitParams):
 
     @gamma.setter
     def gamma(self, value):
+        if isinstance(value, bool) or not math.isfinite(value):
+            raise ValueError("gamma must be finite.")
         self._gamma = float(value)
 
     def __repr__(self):

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator, NullLocator, ScalarFormatter
 import subprocess
 from tqdm import tqdm
 import shutil
@@ -23,6 +24,8 @@ LINE_AT_1_PROFILES = ['dttcool', 'tdyntcool', 'mfpltemp', 'mfp_cond_ltemp', 'drl
 VALID_RADII = ['r_c', 'r_m2', 'r_smfp', 'r_minTh', 'r_m25']
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
+    if xaxis not in ('r', 'm'):
+        raise ValueError("xaxis must be 'r' or 'm'")
     if xaxis == 'r':
         xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
     elif xaxis == 'm':
@@ -74,14 +77,18 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
                 ylim_lower = min(ylim_lower, np.nanmin(positive_y) * 0.5)
 
             if np.any(np.isfinite(y)):
-                ylim_upper = max(ylim_upper, np.nanmax(y) * 10)
+                ylim_upper = max(ylim_upper, np.max(y[np.isfinite(y)]) * 10)
 
         if np.any(np.isfinite(x)):
             xlim_lower = min(xlim_lower, np.nanmin(x) * 0.8)
             xlim_upper = max(xlim_upper, np.nanmax(x) * 1.2)
 
-    if profile in ['kn', 'Theta']:
-        ylim_lower = min(ylim_lower, 0.1)
+    if not np.isfinite(xlim_lower) or not np.isfinite(xlim_upper):
+        raise ValueError('No finite coordinates to plot')
+    if not np.isfinite(ylim_lower) or not np.isfinite(ylim_upper):
+        # Initial rate diagnostics or legacy columns may be wholly undefined.
+        ylim_lower, ylim_upper = ((-1.0, 1.0) if profile in LINEAR_Y_PROFILES
+                                 or profile in SYMLOG_Y_PROFILES else (0.1, 10.0))
 
     return (xlim_lower, xlim_upper), (ylim_lower, ylim_upper)
 
@@ -94,9 +101,9 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     ax : Axis
         Axis object on which to plot
     profile : str
-        Profile to plot.  Options are 'rho', 'm', 'v2', 'kn'
-    data_list : dict
-        Dictionary returned by extract_snapshot_data()
+        Header-named profile to plot; see VALID_PROFILES.
+    data_list : list of dict
+        Snapshot dictionaries returned by extract_snapshot_data().
     xaxis : str, optional
         X-axis to plot.  Default is 'r'.  Other option is 'm'.
     axislims : list of tuples or None
@@ -121,6 +128,8 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     else:
         cmap = plt.get_cmap('tab20')
 
+    if xaxis not in ('r', 'm'):
+        raise ValueError("xaxis must be 'r' or 'm'")
     if xaxis == 'r':
         xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
     elif xaxis == 'm':
@@ -217,35 +226,29 @@ def plot_plummer(ax, profile, data, r0_plummer, xaxis='r'):
     """
     def plummer_rho(x, x0=1, a=1):
         """
-        Denisty profile for Plummer sphere
+        Density profile for Plummer sphere
         x - radial axis
         x0 - Plummer scale radius
         a - value at r0
         """
         return a * (2 /  (1 + (x/x0)**2) )**(5/2)
 
-    # def plummer_v(x, x0=1, a=1):
-    #     """
-    #     v profile for Plummer sphere
-    #     x - radial axis
-    #     x0 - Plummer scale radius
-    #     a - value at r0
-    #     """
-    #     return a * (2 / (1 + (x/x0)**2) )**(1/4)
-    
     def plummer_v(x, x0=1.0, rho_at_x0=1.0):
         """
         Self-consistent 1D velocity-dispersion profile for a Plummer sphere.
 
         x0 is the Plummer scale radius and rho_at_x0 is rho(x0).
-        Assumes G = 1.
+        Uses the package convention m_s = 4*pi*rho_s*r_s^3 and
+        v_s^2 = G*m_s/r_s.
         """
-        v_at_x0 = np.sqrt((8.0 * np.pi / 9.0) * rho_at_x0 * x0**2)
+        v_at_x0 = np.sqrt((2.0 / 9.0) * rho_at_x0 * x0**2)
         return v_at_x0 * (2.0 / (1.0 + (x / x0)**2))**(1.0 / 4.0)
     
     if profile not in PLUMMER_PROFILES:
         raise ValueError(f"'plot_plummer' was passed for invalid profile. Valid options are: {PLUMMER_PROFILES}")
 
+    if xaxis not in ('r', 'm'):
+        raise ValueError("xaxis must be 'r' or 'm'")
     if xaxis == 'r':
         xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
     elif xaxis == 'm':
@@ -265,11 +268,11 @@ def plot_plummer(ax, profile, data, r0_plummer, xaxis='r'):
     if profile == 'rho':
         plummer = plummer_rho(rmid, x0=r0_plummer, a=norm)
     elif profile == 'v2':
-        plummer = (plummer_v(rmid, x0=r0_plummer, rho_at_x0=np.sqrt(norm)))**2
+        plummer = (plummer_v(rmid, x0=r0_plummer, rho_at_x0=norm))**2
 
     ax.plot(x, plummer, lw=1.5, color='blue', ls='--', label='Plummer fit')
 
-def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
+def plot_snapshots(model, snapshots=None, profiles='rho', xaxis=None, base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
     """
     Plot up to three profiles at specified points in time for one simulation
 
@@ -280,7 +283,7 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=No
     snapshots : int or list of int
         Snapshot indices to plot
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'kn'
+        Profiles from VALID_PROFILES that are present in the supplied files.
     xaxis : list of str, optional
         X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     base_dir : str, optional
@@ -296,13 +299,23 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=No
         This controls the colormap of the plots
     """
 
-    if type(snapshots) != list:
+    if snapshots is None:
+        snapshots = [0]
+    elif isinstance(snapshots, (list, tuple, np.ndarray)):
+        snapshots = list(snapshots)
+    else:
         snapshots = [snapshots]
+    profiles = [profiles] if isinstance(profiles, str) else list(profiles)
+    if not profiles or not snapshots:
+        raise ValueError("At least one profile and snapshot must be specified")
 
     if xaxis is None:
         xaxis = ['r'] * len(profiles)
     elif isinstance(xaxis, str):
-        xaxis = [xaxis]
+        xaxis = [xaxis] * len(profiles)
+
+    if len(xaxis) != len(profiles):
+        raise ValueError('xaxis must have one entry per profile')
 
     def _resolve_dir(model, ind):
         if hasattr(model, 'config'): # Passed state object
@@ -343,8 +356,9 @@ def plot_snapshots(model, snapshots=[0], profiles='rho', xaxis=None, base_dir=No
             plt.show()
         else:
             plt.close(fig)
-    else:
+    elif show:
         plt.show()
+    return fig, axs
 
 def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, fps=20):
     """
@@ -359,7 +373,7 @@ def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, 
     base_dir : str, optional
         Required if any model is passed as an integer.  The directory in which all ModelXXXXX subdirectories reside.
     profiles : str or list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'kn'
+        Profiles from VALID_PROFILES that are present in the supplied files.
     grid : bool, optional
         If True, shows grid on axes
     fps : int, optional
@@ -608,7 +622,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     model : State object, Config object, or model_no
         Each model can be a State, Config, or integer model number.
     profiles : list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'kn', 'Theta'.
+        Profiles from VALID_PROFILES that are present in the supplied files.
     insets : list of str or None, optional
         Inset plots to include.  Options are any quantity in time_evolution.txt
     xaxis : list of str, optional
@@ -642,7 +656,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     if xaxis is None:
         xaxis = ['r'] * len(profiles)
     elif isinstance(xaxis, str):
-        xaxis = [xaxis]
+        xaxis = [xaxis] * len(profiles)
 
     # Validate profiles
     if any(profile not in VALID_PROFILES for profile in profiles):
@@ -659,6 +673,9 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     valid_xaxis = ['r', 'm']
     if any(x not in valid_xaxis for x in xaxis):
         raise ValueError(f"Invalid x-axis specified. Valid options are: {valid_xaxis}")
+
+    if not profiles or len(xaxis) != len(profiles):
+        raise ValueError('Specify profiles and one xaxis entry per profile')
 
     # Number of panels
     n = len(profiles) 
@@ -687,7 +704,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
             raise ValueError(f'Radii absent from this time history: {missing}')
 
     # Validate insets
-    valid_insets = list(time_data.keys())
+    valid_insets = [key for key in time_data if key != 'model_id']
     if any(inset not in valid_insets for inset in insets if inset is not None):
         raise ValueError(f"Invalid inset specified. Valid options are: {valid_insets}")
     if len(insets) != len(profiles):
@@ -696,7 +713,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     # Load snapshot indices
     snapshot_indices_data   = extract_snapshot_indices(model_dir)
     indices                 = snapshot_indices_data['index']
-    index_t                 = snapshot_indices_data['time']
+    index_t                 = dict(zip(indices, snapshot_indices_data['time']))
 
     # Get axis limits
     print(f"Getting axis limits...")
@@ -761,19 +778,15 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
                         if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
                             continue
                         ax.axvline(r, color='red', ls='--', zorder=-10)
-                        ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+                        ax.text(r, 0.05, radius, transform=ax.get_xaxis_transform(), rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
                     elif xax == 'm':
                         m = np.interp(r, 10**data_list[1]['log_r'], data_list[1]['m'])
                         # If r is outside the x-axis limits, skip plotting
                         if m < axislims[profile][0][0] or m > axislims[profile][0][1]:
                             continue
                         ax.axvline(m, color='red', ls='--', zorder=-10)
-                        ax.text(m, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
-                    # If r is outside the x-axis limits, skip plotting
-                    # if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
-                    #     continue
-                    # ax.axvline(r, color='red', ls='--', zorder=-10)
-                    # ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+                        ax.text(m, 0.05, radius, transform=ax.get_xaxis_transform(), rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+
 
             if inset is not None:
                 tevo_y = time_data[inset]
@@ -842,7 +855,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     model : State object, Config object, or model_no
         Each model can be a State, Config, or integer model number.
     profiles : list of str, optional
-        Profiles to plot.  Options are 'rho', 'm', 'v2', 'kn', 'Theta'.
+        Profiles from VALID_PROFILES that are present in the supplied files.
     insets : list of str or None, optional
         Inset plots to include.  Options are any quantity in time_evolution.txt
     xaxis : list of str, optional
@@ -880,7 +893,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     if xaxis is None:
         xaxis = ['r'] * len(profiles)
     elif isinstance(xaxis, str):
-        xaxis = [xaxis]
+        xaxis = [xaxis] * len(profiles)
 
     # Validate profiles
     if any(profile not in VALID_PROFILES for profile in profiles):
@@ -897,6 +910,9 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     valid_xaxis = ['r', 'm']
     if any(x not in valid_xaxis for x in xaxis):
         raise ValueError(f"Invalid x-axis specified. Valid options are: {valid_xaxis}")
+
+    if not profiles or len(xaxis) != len(profiles):
+        raise ValueError('Specify profiles and one xaxis entry per profile')
 
     # Number of panels
     n = len(profiles) 
@@ -927,7 +943,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
             raise ValueError(f'Radii absent from this time history: {missing}')
 
     # Validate insets
-    valid_insets = list(time_data.keys())
+    valid_insets = [key for key in time_data if key != 'model_id']
     if any(inset not in valid_insets for inset in insets if inset is not None):
         raise ValueError(f"Invalid inset specified. Valid options are: {valid_insets}")
     if len(insets) != len(profiles):
@@ -936,7 +952,7 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     # Load snapshot indices
     snapshot_indices_data   = extract_snapshot_indices(model_dir)
     indices                 = snapshot_indices_data['index']
-    index_t                 = snapshot_indices_data['time']
+    index_t                 = dict(zip(indices, snapshot_indices_data['time']))
 
     # Get axis limits
     print(f"Getting axis limits...")
@@ -1064,7 +1080,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
     """
     # Collect profiles and insets
     profiles = ['rho', 'v2']
-    insets = ['rho0', 'minTheta']
+    insets = ['rho0', 'kn_cond_c']
     
     # Validate radii
     add_radii = ['r_c', 'r_m2']  # Radii present in current time histories.
@@ -1095,7 +1111,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
     # Load snapshot indices
     snapshot_indices_data   = extract_snapshot_indices(model_dir)
     indices                 = snapshot_indices_data['index']
-    index_t                 = snapshot_indices_data['time']
+    index_t                 = dict(zip(indices, snapshot_indices_data['time']))
 
     # Get axis limits
     print(f"Getting axis limits...")
@@ -1159,7 +1175,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
                     if r < axislims[profile][0][0] or r > axislims[profile][0][1]:
                         continue
                     ax.axvline(r, color='red', ls='--', zorder=-10)
-                    ax.text(r, ax.get_ylim()[0]*2.0, radius, rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
+                    ax.text(r, 0.05, radius, transform=ax.get_xaxis_transform(), rotation=90, color='red', fontsize=10, ha='right', va='bottom', zorder=-10)
 
             if inset is not None:
                 tevo_y = time_data[inset]
@@ -1200,6 +1216,12 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
                 ax.set_xscale('log')
                 ax.set_ylabel('$\\zeta$', fontsize=16)
                 ax.set_xlabel('$v^2_\\mathrm{core}$/$v^2_\\mathrm{s}$', fontsize=16)
+            finite_x = xquant[np.isfinite(xquant) & (xquant > 0)]
+            if finite_x.size and finite_x.max() / finite_x.min() < 2:
+                # Log tick labels otherwise crowd very short histories.
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=3))
+                ax.xaxis.set_minor_locator(NullLocator())
+                ax.xaxis.set_major_formatter(ScalarFormatter())
             x = np.interp(index_t[ind], tevo_t, xquant)
             y = np.interp(index_t[ind], tevo_t, yquant)
             ax.scatter(x, y, color='red', s=50)

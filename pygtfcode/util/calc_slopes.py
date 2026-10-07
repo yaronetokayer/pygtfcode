@@ -393,7 +393,7 @@ def calc_dlnmc_dlnrhoc(m_c, rho_c, window):
 
     return zeta
 
-@njit(types.Tuple((float64[:], float64[:]))(float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(types.Tuple((float64[:], float64[:]))(float64[:], float64[:], float64[:]), cache=True)
 def calc_s_dsdr(v2, rho, rmid):
     """
     s = ln(v^3 / rho) = 1.5 ln(v2) - ln(rho)
@@ -406,6 +406,8 @@ def calc_s_dsdr(v2, rho, rmid):
     for i in range(n):
         s[i] = 1.5 * np.log(v2[i]) - np.log(rho[i])
 
+    if n == 0:
+        return s, dsdr
     if n == 1:
         dsdr[0] = 0.0
         return s, dsdr
@@ -420,14 +422,16 @@ def calc_s_dsdr(v2, rho, rmid):
 
     return s, dsdr
 
-@njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(float64[:](float64[:], float64[:], float64[:]), cache=True)
 def calc_sc1(v2, rho, rmid):
     """
     Schwarzschild criterion:
 
         SC1 = ((rho/(gamma*p)) * dp/dr) / (drho/dr)
 
-    SC1 > 1 implies stability against convection.
+    For outward-decreasing density, SC1 < 1 implies adiabatic stability.
+    The inequality reverses for increasing density; use the entropy
+    gradient directly when diagnosing inverted profiles.
     """
     n = v2.size
 
@@ -440,6 +444,8 @@ def calc_sc1(v2, rho, rmid):
     for i in range(n):
         p[i] = rho[i] * v2[i]
 
+    if n == 0:
+        return sc1
     if n == 1:
         sc1[0] = np.nan
         return sc1
@@ -482,7 +488,7 @@ def calc_sc1(v2, rho, rmid):
 
     return sc1
 
-@njit(float64[:](float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(float64[:](float64[:], float64[:], float64[:]), cache=True)
 def calc_sc2(v2, rho, rmid):
     """
     Schwarzschild criterion #2:
@@ -497,7 +503,9 @@ def calc_sc2(v2, rho, rmid):
 
         SC2 = ((1 - 1/gamma) * abs(dp/dr)) / (rho * abs(dv2/dr))
 
-    SC2 > 1 implies stability against convection.
+    SC2 > 1 is the adiabatic stability condition only when pressure and
+    temperature both decrease outward. Absolute values discard signs;
+    this ratio is not a general stability test for inverted profiles.
     """
     n = v2.size
 
@@ -509,6 +517,8 @@ def calc_sc2(v2, rho, rmid):
     for i in range(n):
         p[i] = rho[i] * v2[i]
 
+    if n == 0:
+        return sc2
     if n == 1:
         sc2[0] = np.nan
         return sc2
@@ -550,7 +560,7 @@ def calc_sc2(v2, rho, rmid):
 
     return sc2
 
-@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+@njit(float64[:](float64[:], float64[:]), cache=True)
 def calc_dlogrho_dlogp(v2, rho):
     """
     Return
@@ -587,28 +597,30 @@ def calc_dlogrho_dlogp(v2, rho):
 
     # centered interior
     for i in range(2, n - 1):
-        out[i] = (
-            v2[i]
-            * (rho[i + 1] - rho[i - 1])
-            / (rho[i + 1] * v2[i + 1] - rho[i - 1] * v2[i - 1])
-        )
+        dp = rho[i + 1] * v2[i + 1] - rho[i - 1] * v2[i - 1]
+        out[i] = v2[i] * (rho[i + 1] - rho[i - 1]) / dp if dp != 0 else np.nan
 
     # one-sided upper boundary
-    out[n - 1] = (
-        v2[n - 1]
-        * (rho[n - 1] - rho[n - 2])
-        / (rho[n - 1] * v2[n - 1] - rho[n - 2] * v2[n - 2])
-    )
+    dp = rho[n - 1] * v2[n - 1] - rho[n - 2] * v2[n - 2]
+    out[n - 1] = v2[n - 1] * (rho[n - 1] - rho[n - 2]) / dp if dp != 0 else np.nan
 
     return out
 
-@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+@njit(float64[:](float64[:], float64[:]), cache=True)
 def calc_dlnrho_dlnr(rho, rmid):
     """
     Compute dln(rho)/dln(r) via finite differences on possibly nonuniform rmid.
     """
     n = rho.size
     dlnrho_dlnr = np.empty(n, dtype=np.float64)
+
+    if n == 0:
+        return dlnrho_dlnr
+    if n <= 2:
+        dlnrho_dlnr[:] = np.nan
+        if n == 2:
+            dlnrho_dlnr[1] = (math.log(rho[1]) - math.log(rho[0])) / (math.log(rmid[1]) - math.log(rmid[0]))
+        return dlnrho_dlnr
 
     dlnrho_dlnr[0] = np.nan
 
@@ -633,7 +645,7 @@ def calc_dlnrho_dlnr(rho, rmid):
 
     return dlnrho_dlnr
 
-@njit(float64[:](float64[:], float64[:]), fastmath=True, cache=True)
+@njit(float64[:](float64[:], float64[:]), cache=True)
 def calc_dlnv_dlnr(v2, rmid):
     """
     Compute dln(v)/dln(r) via finite differences on possibly nonuniform rmid.
@@ -648,8 +660,12 @@ def calc_dlnv_dlnr(v2, rmid):
     n = v2.size
     dlnv_dlnr = np.empty(n, dtype=np.float64)
 
-    if n == 1:
-        dlnv_dlnr[0] = np.nan
+    if n == 0:
+        return dlnv_dlnr
+    if n <= 2:
+        dlnv_dlnr[:] = np.nan
+        if n == 2:
+            dlnv_dlnr[1] = 0.5 * (math.log(v2[1]) - math.log(v2[0])) / (math.log(rmid[1]) - math.log(rmid[0]))
         return dlnv_dlnr
 
     dlnv_dlnr[0] = np.nan

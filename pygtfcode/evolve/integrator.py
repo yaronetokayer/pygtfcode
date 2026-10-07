@@ -1,11 +1,9 @@
 import numpy as np
-import math
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_dulim, conduct_implicit_tcool_dulim, conduct_implicit_tcool_nolim
+from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_tcool_dulim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
-from pygtfcode.evolve.split import check_drfrac_split, check_drltemp_split, check_drfrac_merge, check_drltemp_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
+from pygtfcode.evolve.split import check_drfrac_split, check_drfrac_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
 from pygtfcode.util.calc_runtime import low_kn_boost, calc_ltemp
-from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
 
 def run_until_stop(state, start_step, **kwargs):
     """
@@ -68,8 +66,8 @@ def run_until_stop(state, start_step, **kwargs):
 
         else:         
             #--- du-limited dt using proportional control
-            err = eps_du_eff / state.du_max
-            fac = safety * err
+            # A zero-gradient step has no conduction error to invert.
+            fac = safety * eps_du_eff / state.du_max if state.du_max > 0.0 else 2.0
             dt_prop = fac * state.dt
 
         ########################
@@ -80,7 +78,6 @@ def run_until_stop(state, start_step, **kwargs):
         if grid_splitting:
             # Check for splitting
             status = check_drfrac_split(state.r, work_nint, drfrac_max)
-            # status = check_drltemp_split(state.r, state.ltemp, work_nint, drfrac_max)
             if status == STATUS_SPLITS:
                 state.n_split += 1  # Split operations since the last log entry.
                 split_grid(state, work_nint)
@@ -89,7 +86,6 @@ def run_until_stop(state, start_step, **kwargs):
 
             # Check for merging
             status = check_drfrac_merge(state.r, work_nint, drfrac_min, drfrac_max)
-            # status = check_drltemp_merge(state.r, state.ltemp, work_nint, drfrac_min, drfrac_max)
             if status == STATUS_MERGES:
                 state.n_merge += 1  # Merge operations, not net cell-count changes.
                 merge_grid(state, work_nint)
@@ -104,7 +100,7 @@ def run_until_stop(state, start_step, **kwargs):
         integrate_time_step(state, config, dt_prop, eps_du_eff, step_count,
                             a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
 
-        if step_count % nupdate == 0:
+        if chatter and step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
 
         ###########################
@@ -182,7 +178,7 @@ def integrate_time_step(state, config,                                  # State 
     eps_du_eff : float
         Effective du criterion for adaptive time-stepping, which may be relaxed in low-kn regime.
     dt_prop : float
-        Proposed dt value returned by compute_time_step
+        Proposed dt from the previous accepted conduction error.
     step_count : int
         Step count
     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
@@ -206,7 +202,6 @@ def integrate_time_step(state, config,                                  # State 
     m       = np.asarray(state.m,       dtype=np.float64)
     v2      = np.asarray(state.v2,      dtype=np.float64)
     rho     = np.asarray(state.rho,     dtype=np.float64)
-    # Theta   = np.asarray(state.Theta,   dtype=np.float64)
     t_cool  = np.asarray(state.t_cool,  dtype=np.float64)
 
     # Compute total enclosed mass including baryons, perturbers, etc.
@@ -217,8 +212,6 @@ def integrate_time_step(state, config,                                  # State 
     ### Step 1: Energy transport ###
     if implicit_conduct:
         # implicit: work_n1 used to store dv2
-        # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m_0, alph, eps_du_eff, max_iter_du)
-        # du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, alph)
         du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, w_char, smfp_order, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
@@ -239,7 +232,7 @@ def integrate_time_step(state, config,                                  # State 
         status, dr_max = revirialize(r, rho, work_n2, m, 
                                     a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1) # Modifies r, rho, p in place
 
-        # Shell crossing signaled by None
+        # Shell crossing is reported by a status code.
         if status == STATUS_SHELL_CROSSING:
             raise RuntimeError(f"Step {step_count}: Shell crossing in revirialization step")
         
@@ -259,7 +252,7 @@ def integrate_time_step(state, config,                                  # State 
 
     ### Step 3: Update state variables ###
 
-    # r, rho, and theta were modified in place already; no need to assign them
+    # r, rho, and pressure were modified in place.
     # Still need to update v2 based on the new p and rho
     np.divide(work_n2, rho, out=state.v2)
 
@@ -287,8 +280,7 @@ def integrate_time_step(state, config,                                  # State 
     state.n_iter_du += iter_du
     state.n_iter_dr += iter_dr
     state.dt_cum += float(dt_prop)
-    if step_count != 1:
-        state.dr_max_cum += float(dr_max)
+    state.dr_max_cum += float(dr_max)
     state.du_max_cum += float(du_max)
     state.du_limit_cum += float(du_max) / eps_du_eff
     state.log_steps += 1
@@ -298,23 +290,15 @@ def integrate_time_step(state, config,                                  # State 
     state.t         += float(dt_prop)
 
     ### Time scales ###
-    # work_n1 to store sqrt(v2)
-    # np.sqrt(state.v2, out=work_n1)
 
-    # np.divide(state.rmid, work_n1, out=state.t_sc)
 
-    # np.multiply(rho, work_n1, out=state.t_coll)
-    # np.multiply(state.t_coll, sigma_m_0, out=state.t_coll)
-    # np.reciprocal(state.t_coll, out=state.t_coll)
 
     np.sqrt(rho, out=state.t_dyn)
     np.reciprocal(state.t_dyn, out=state.t_dyn)
     # Convert r_s/v_s dynamical time to the amplitude-based time unit t_s.
     state.t_dyn *= a * sigma_m_0
     
-    # Luminosity
     # init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-    # compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, state.lum, cored)
 
 def allocate_work_arrays(n):
     n_int = n - 1
@@ -330,5 +314,3 @@ def allocate_work_arrays(n):
     work_nint = np.zeros(n, dtype=np.int64)
 
     return a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint
-
-

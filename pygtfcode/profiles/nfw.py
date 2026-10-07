@@ -3,7 +3,7 @@ from scipy.integrate import quad
 
 def fNFW(r):
     """
-    Analytic NFW mass profile: M(<r) / Mvir
+    Analytic NFW mass profile: M(<r) / m_s
 
     Parameters
     ----------
@@ -13,7 +13,7 @@ def fNFW(r):
     Returns
     -------
     M_enc : float or ndarray
-        Enclosed mass as a fraction of Mvir.
+        Enclosed mass in units of m_s; fNFW(cvir) is the virial normalization.
     """
     
     r = np.asarray(r, dtype=np.float64)
@@ -29,7 +29,7 @@ def menc_nfw(r):
 
 def sigr_nfw(r, config):
     """
-    Velocity dispersion squared at radius r (in units of v0^2).
+    Velocity dispersion squared at radius r (in units of v_s^2).
 
     Parameters
     ----------
@@ -39,7 +39,7 @@ def sigr_nfw(r, config):
     Returns
     -------
     v2 : float or ndarray
-        Velocity dispersion squared.
+        One-dimensional velocity dispersion squared in units of v_s^2.
     """
     epsabs = float(config.prec.epsabs)
     epsrel = float(config.prec.epsrel)
@@ -47,9 +47,9 @@ def sigr_nfw(r, config):
     r = np.asarray(r, dtype=np.float64)
     out = np.empty(r.shape, dtype=np.float64)
 
-    for i, ri in enumerate(r):
+    for i, ri in np.ndenumerate(r):
         ri_f = float(ri)
         integral, _ = quad(_nfw_velocity_integrand, ri_f, np.inf, epsabs=epsabs, epsrel=epsrel)
         out[i] = ri * (1.0 + ri)**2 * integral
 
-    return out if out.size > 1 else float(out[0])
+    return float(out) if out.ndim == 0 else out

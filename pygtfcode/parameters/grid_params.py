@@ -1,3 +1,5 @@
+import math
+
 class GridParams:
     """
     Parameters defining the radial grid for the simulation.
@@ -5,11 +7,18 @@ class GridParams:
     Attributes
     ----------
     rmin : float
-        Minimum radius of the grid, in units of the scale radius (r / r_s).
+        First positive edge radius in units of r_s; the central edge is zero.
     rmax : float
         Maximum radius of the grid, in units of the scale radius (r / r_s).
-    ngrid : int
-        Number of radial grid points (must be > 1).
+    drfrac_init : float
+        Initial shell width dr/sqrt(r_inner*r_outer); sets the cell count.
+    grid_splitting : bool
+        Enable adaptive splitting and merging outside the innermost cell.
+    drfrac_max : float
+        Width threshold for splitting and maximum allowed merged width.
+    drfrac_min : float
+        Both adjacent widths must be below this threshold to merge.
+        Must be smaller than drfrac_max.
     """
 
     def __init__(
@@ -41,7 +50,7 @@ class GridParams:
 
     @rmin.setter
     def rmin(self, value):
-        if value <= 0 or (self._rmax is not None and value >= self._rmax):
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0 or (self._rmax is not None and value >= self._rmax):
             raise ValueError("Require 0 < rmin < rmax")
         self._rmin = float(value)
 
@@ -51,7 +60,7 @@ class GridParams:
 
     @rmax.setter
     def rmax(self, value):
-        if value <= 0 or (self._rmin is not None and value <= self._rmin):
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0 or (self._rmin is not None and value <= self._rmin):
             raise ValueError("Require 0 < rmin < rmax")
         self._rmax = float(value)
 
@@ -62,7 +71,7 @@ class GridParams:
     @drfrac_init.setter
     def drfrac_init(self, value):
         self._validate_positive(value, "drfrac_init")
-        self._drfrac_init = value
+        self._drfrac_init = float(value)
 
     @property
     def grid_splitting(self):
@@ -81,6 +90,8 @@ class GridParams:
     @drfrac_max.setter
     def drfrac_max(self, value):
         self._validate_positive(value, "drfrac_max")
+        if self._drfrac_min is not None and value <= self._drfrac_min:
+            raise ValueError("Require drfrac_min < drfrac_max")
         self._drfrac_max = float(value)
 
     @property
@@ -90,10 +101,12 @@ class GridParams:
     @drfrac_min.setter
     def drfrac_min(self, value):
         self._validate_positive(value, "drfrac_min")
+        if self._drfrac_max is not None and value >= self._drfrac_max:
+            raise ValueError("Require drfrac_min < drfrac_max")
         self._drfrac_min = float(value)
 
     def _validate_positive(self, value, name):
-        if not (value > 0):
+        if isinstance(value, bool) or not math.isfinite(value) or not (value > 0):
             raise ValueError(f"{name} must be a positive float.")
 
     def __repr__(self):
@@ -103,4 +116,3 @@ class GridParams:
         ]
         attr_strs = [f"{attr}={getattr(self, attr)!r}" for attr in attrs]
         return f"{self.__class__.__name__}({', '.join(attr_strs)})"
-

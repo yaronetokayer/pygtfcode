@@ -9,7 +9,7 @@ def interp_linear_to_interfaces(r_edges_1d, q_cells_1d) -> np.ndarray:
     using the non-uniform-spacing-aware formula:
 
         fac_i   = (r_i   - r_{i-1}) / (r_{i+1} - r_{i-1})     for i = 1..N-1
-        q_{i|i+1} = q_i + fac_i * (q_{i+1} - q_i)
+        q_edge[i] = q_cells[i-1] + fac_i * (q_cells[i] - q_cells[i-1])
 
     Here r_* are edge (interface) radii with length N+1, q_cells has length N,
     and the returned array has length N-1 (interfaces i=1..N-1).

@@ -1,6 +1,6 @@
 import numpy as np
 import math
-from numba import njit, float64, types, void, int64
+from numba import njit, float64, int64
 
 STATUS_NO_SPLITS = 0; STATUS_SPLITS = 1
 STATUS_NO_MERGES = 0; STATUS_MERGES = 1
@@ -82,7 +82,9 @@ def check_drfrac_split(r, nsplit, drfrac_max):
 
     If drfrac exceeds drfrac_max, compute how many additional
     splits are needed so that each child cell satisfies the same
-    condition, assuming equal logarithmic spacing inside the cell.
+    condition under equal logarithmic subdivision. This is a proposal:
+    the current remapper uses equal-mass children, so it does not
+    guarantee that every resulting child meets drfrac_max.
 
     The array nsplit is updated in-place:
 
@@ -542,10 +544,10 @@ def merge_grid(state, merge_mask):
 
     # Checks
     if not np.all(np.diff(r_new) > 0.0):
-        raise RuntimeError("split_grid produced non-monotonic r_new.")
+        raise RuntimeError("merge_grid produced non-monotonic r_new.")
 
     if not np.all(np.diff(m_new) >= 0.0):
-        raise RuntimeError("split_grid produced non-monotonic m_new.")
+        raise RuntimeError("merge_grid produced non-monotonic m_new.")
 
     # replace state arrays
     state.r     = r_new

@@ -2,7 +2,7 @@ import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
 from pygtfcode.util.calc_slopes import calc_balberg_zeta, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2, calc_dlogrho_dlogp
-from pygtfcode.util.calc_core import calc_smfp_r_rho_m_v2, calc_core_r_rho_m_v2, calc_rmn_rho_m_v2, calc_mintheta_r_rho_m_v2
+from pygtfcode.util.calc_core import calc_core_r_rho_m_v2, calc_rmn_rho_m_v2
 from pygtfcode.util.calc_runtime import low_kn_boost, calc_kappa_cell, calc_kappa_edge
 from pygtfcode.util.calc_kp import factors
 from pygtfcode.parameters.constants import Constants as const
@@ -29,6 +29,8 @@ def make_dir(state):
         if state.config.io.chatter:
             print(f"Created directory: {full_path}")
     else:
+        if not state.config.io.overwrite:
+            raise FileExistsError(f"Model directory exists and overwrite=False: {full_path}")
         if state.config.io.chatter:
             print(f"Directory already exists: {full_path}")
 
@@ -126,7 +128,6 @@ def write_log_entry(state, start_step):
     step = state.step_count
 
     maxvel      = np.max(np.sqrt(state.v2))
-    # minTheta    = np.min(state.Theta)
 
     eps_du_eff = prec.eps_du * low_kn_boost(state.kn_c, kn_threshold, du_boost, kn_width)
 
@@ -176,7 +177,7 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
         The current simulation state.
     initialize : bool
         If True, this is part of initializing the grid and should not increment the snapshot index.
-    ic_file : string, optional
+    ic_filename : str, optional
         If provided, this is part of writing an initial condition file.
     """
     if ic_filename is None:
@@ -226,14 +227,6 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     krat_e = k_se / k_le
 
     with open(filename, "w") as f:
-        # header = (
-        #     f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-        #     f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'Theta':>12}\n"
-        # )
-        # header = (
-        #     f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
-        #     f"{'rho':>12}  {'v2':>12}  {'kn':>12}\n"
-        # )
         header = (
             f"{'i':>6}  {'log_r':>12}  {'log_rmid':>12}  {'m':>12}  "
             f"{'rho':>12}  {'v2':>12}  {'kn':>12}  {'ltemp':>12}  {'mfp':>12}  {'drfrac':>12}  "
@@ -259,7 +252,6 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{state.kn[i]:12.6e}  "
                 f"{state.ltemp[i]:12.6e}  "
                 f"{state.mfp[i]:12.6e}  "
-                # f"{state.Theta[i]:12.6e}\n"
                 f"{state.drfrac[i]:12.6e}  "
                 f"{drltemp[i]:12.6e}  "
                 f"{mfpltemp[i]:12.6e}  "
@@ -271,11 +263,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{k_tote[i]:12.6e}  "
                 f"{krat_c[i]:12.6e}  "
                 f"{krat_e[i]:12.6e}  "
-                # f"{state.lum[i+1]:12.6e}  "
                 f"{_safe_div(dt, state.t_cool[i]):12.6e}  "
-                # f"{_safe_div(state.t_sc[i], state.t_cool[i]):12.6e}  "
                 f"{_safe_div(state.t_dyn[i], state.t_cool[i]):12.6e}  "
-                # f"{_safe_div(dt, state.t_sc[i]):12.6e}\n"
                 f"{s[i]:12.6e}  "
                 f"{dsdr[i]:12.6e}  "
                 # f"{sc1[i]:12.6e}  "
@@ -339,7 +328,7 @@ def write_time_evolution(state, last=False):
     state : State
         The current simulation state.
     last : bool
-        If True, then also compute zeta profile
+        If True, append derived core-evolution slopes and zeta_balb.
     """
     filepath = os.path.join(
         state.config.io.base_dir,
@@ -351,13 +340,9 @@ def write_time_evolution(state, last=False):
     t_Gyr   = t * state.char.t_s * const.sec_to_Gyr
     
     r = state.r; rmid = state.rmid; rho = state.rho; v2 = state.v2; m = state.m
-    # Theta = state.Theta
 
     r_c, rho_c, m_c, v2_c, tsc_c            = calc_core_r_rho_m_v2(r, rmid, rho, v2, m)
     r_m2, rho_m2, m_m2, v2_m2               = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.0)
-    # r_m25, rho_m25, m_m25, v2_m25           = calc_rmn_rho_m_v2(r, rmid, rho, v2, m, 2.5)
-    # r_smfp, rho_smfp, m_smfp, v2_smfp       = calc_smfp_r_rho_m_v2(r, rmid, state.kn, rho,  v2, m)
-    # r_minTh, rho_minTh, m_minTh, v2_minTh   = calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta)
     drfrac_max                              = np.max(np.diff(r[1:]) / np.sqrt(r[1:-1] * r[2:]))
 
     maxvel      = np.max(np.sqrt(state.v2))
@@ -451,8 +436,18 @@ def _update_file(filepath, header, new_line, index):
 
         if lines and lines[0].strip() == header.strip():
             lines = [lines[0]] + [line for line in lines[1:] if int(line.split()[0]) < index]
-        else:
+        elif lines and lines[0].split()[:len(header.split())] == header.split():
+            # A completed history has appended slope columns. Drop only those
+            # derived columns when continuing, preserving earlier base rows.
+            ncols = len(header.split())
+            lines = [header] + [
+                '  '.join(line.split()[:ncols]) + '\n'
+                for line in lines[1:] if int(line.split()[0]) < index
+            ]
+        elif index == 0 or not lines:
             lines = [header]
+        else:
+            raise ValueError(f"Cannot append incompatible output schema to {filepath}")
     else:
         lines = [header]
 

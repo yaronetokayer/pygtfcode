@@ -1,5 +1,5 @@
 """
-Helpers to for derived quantities in the integration loop
+Helpers for derived quantities in the integration loop
 """
 
 import numpy as np
@@ -69,12 +69,14 @@ def low_kn_boost(kn_c, kn_threshold, boost, width):
 
     return 1.0 + (boost - 1.0) * S
  
-@njit(void(float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+@njit(void(float64[:], float64[:], float64[:]), cache=True)
 def calc_ltemp(ltemp, v2, rmid):
     """
     ltemp = v2 / |dv2/dr|
     In-place update of ltemp.
     dv2dr via finite differences on possibly nonuniform rmid.
+    Vanishing gradients give infinite ltemp; the first two cells are
+    undefined (except the outer cell on a two-cell grid).
     """
     n = v2.size
 
@@ -89,9 +91,11 @@ def calc_ltemp(ltemp, v2, rmid):
     ltemp[1] = np.nan
 
     for i in range(2, n - 1):
-        ltemp[i] = v2[i] * np.abs(rmid[i + 1] - rmid[i - 1]) / np.abs(v2[i + 1] - v2[i - 1])
+        gradient = abs(v2[i + 1] - v2[i - 1])
+        ltemp[i] = v2[i] * abs(rmid[i + 1] - rmid[i - 1]) / gradient if gradient > 0 else np.inf
 
-    ltemp[n - 1] = v2[n - 1] * np.abs(rmid[n - 1] - rmid[n - 2]) / np.abs(v2[n - 1] - v2[n - 2])
+    gradient = abs(v2[n - 1] - v2[n - 2])
+    ltemp[n - 1] = v2[n - 1] * abs(rmid[n - 1] - rmid[n - 2]) / gradient if gradient > 0 else np.inf
 
 @njit(types.Tuple((float64[::1], float64[::1], float64[::1],))(float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64, float64, types.int64), cache=True)
 def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph, w_char, smfp_order,):
@@ -269,7 +273,10 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph, w_char
 @njit(float64(float64[::1], float64[::1], float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64, float64,), cache=True, fastmath=True)
 def calc_core_lum_dt(r, rmid, rho, v2, m, alpha, a, b, c, sigma_m, eps,):
     """
-    Estimate the timestep that limits fractional core-energy loss.
+    Legacy constant-scattering estimate of a core-energy-loss timestep.
+
+    Not used by the active driver. This helper has not been migrated to
+    velocity-dependent factors; do not use it as a finite-w limiter.
 
     Returns
     -------
@@ -278,14 +285,8 @@ def calc_core_lum_dt(r, rmid, rho, v2, m, alpha, a, b, c, sigma_m, eps,):
             The luminosity constraint is inactive, for example because
             there is no resolved core interface or the gradient is zero.
 
-        0.0:
-            The evolved state contains nonfinite or nonphysical quantities.
-            Returning zero is conservative for a timestep limiter.
-
-    Raises
-    ------
-    ValueError
-        For invalid static configuration or incompatible array shapes.
+    Inputs must have compatible shapes and positive physical values;
+    this low-level legacy helper does not validate them.
     """
     N = rmid.size
 

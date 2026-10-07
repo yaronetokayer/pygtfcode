@@ -1,3 +1,5 @@
+import math
+
 import os
 
 class IOParams:
@@ -8,7 +10,7 @@ class IOParams:
     ----------
     model_no : int
         Integer identifier for the model run (must be 0 <= model_no < 100000).
-        Doesn't evaluate until accessed, at which point it default to the next available model_no in the base_dir
+        If omitted, selects the first available number when accessed.
     base_dir : str
         Path to the main directory where output files are written.
     model_dir : str
@@ -18,15 +20,17 @@ class IOParams:
     nupdate : int
         Timesteps between updating instantaneous timestep counter visual
     t_evol : bool
-        Whether to output time evolution data.
+        Enable density-triggered time-history output. Run endpoints and
+        profile snapshots still write concurrent time-history rows.
     profiles : bool
-        Whether to output profiles.
+        Enable density-triggered profiles. Initial and run-endpoint profiles
+        are always written.
     drho_prof : float
-        Change in log of central density to trigger writing profiles to disk.
+        Absolute fractional change in innermost-cell density to trigger writing profiles to disk.
     drho_tevol : float
-        Change in log of central density to trigger writing time evolution data to disk.
+        Absolute fractional change in innermost-cell density to trigger writing time evolution data to disk.
     overwrite : bool
-        Whether to overwrite existing output files.
+        Allow initialization in an existing model directory.
     chatter : bool
         Whether to print status messages during execution.
     """
@@ -72,7 +76,7 @@ class IOParams:
         if self._model_no is None:
             existing = {
                 int(name.replace("Model", ""))
-                for name in os.listdir(self.base_dir)
+                for name in (os.listdir(self.base_dir) if os.path.isdir(self.base_dir) else [])
                 if name.startswith("Model") and name[5:].isdigit()
             }
             for i in range(100000):
@@ -87,7 +91,7 @@ class IOParams:
 
     @model_no.setter
     def model_no(self, value):
-        if not isinstance(value, int):
+        if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError("model_no must be an integer")
         if not (0 <= value < 100000):
             raise ValueError("model_no must be between 0 and 99999 (inclusive)")
@@ -114,8 +118,10 @@ class IOParams:
 
     @nlog.setter
     def nlog(self, value):
-        if not isinstance(value, int):
+        if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError("nlog must be an integer")
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise ValueError("nlog must be positive")
         self._nlog = value
 
     @property
@@ -124,8 +130,10 @@ class IOParams:
 
     @nupdate.setter
     def nupdate(self, value):
-        if not isinstance(value, int):
+        if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError("nupdate must be an integer")
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
+            raise ValueError("nupdate must be positive")
         self._nupdate = value
 
     @property
@@ -156,7 +164,7 @@ class IOParams:
     def drho_prof(self, value):
         if not isinstance(value, (int, float)):
             raise TypeError("drho_prof must be a number")
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("drho_prof must be positive")
         self._drho_prof = float(value)
 
@@ -168,7 +176,7 @@ class IOParams:
     def drho_tevol(self, value):
         if not isinstance(value, (int, float)):
             raise TypeError("drho_tevol must be a number")
-        if value <= 0:
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 0:
             raise ValueError("drho_tevol must be positive")
         self._drho_tevol = float(value)
 
@@ -204,7 +212,7 @@ class IOParams:
                     if self._model_no is None:
                         value = "<not evaluated>"
                     else:
-                        value = f"Model{self._model_no:03d}"
+                        value = f"Model{self._model_no:05d}"
                 else:
                     value = getattr(self, attr)
             except Exception:
@@ -212,5 +220,3 @@ class IOParams:
             attr_strs.append(f"{attr}={repr(value)}")
 
         return f"{self.__class__.__name__}({', '.join(attr_strs)})"
-
-

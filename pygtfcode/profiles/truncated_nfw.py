@@ -46,8 +46,8 @@ def rho(phi, config):
     ----------
     phi : float
         Gravitational potential at a radius.
-    Zt : float
-        Truncation energy parameter.
+    config : Config
+        Supplies init.Zt and numerical quadrature tolerances.
 
     Returns
     -------
@@ -305,17 +305,17 @@ def menc_trunc(r, state, chatter=True):
     Returns
     -------
     M_enc : float or ndarray
-        Enclosed mass in units of Mvir.
+        Enclosed mass in units of m_s = 4*pi*rho_s*r_s^3.
     """
     chatter = chatter and bool(state.config.io.chatter)
     
-    r = np.atleast_1d(np.asarray(r, dtype=np.float64))
+    r = np.asarray(r, dtype=np.float64)
     epsabs = float(state.config.prec.epsabs)
     epsrel = float(state.config.prec.epsrel)
 
     out = np.empty(r.shape, dtype=np.float64)
 
-    for i, ri in enumerate(r):
+    for i, ri in np.ndenumerate(r):
         val, _ = quad(
             _density_times_r2_trunc,
             0.0,
@@ -331,12 +331,11 @@ def menc_trunc(r, state, chatter=True):
     if chatter:
         print("")  # Finalize output line
 
-    return out if out.size > 1 else float(out[0])
+    return float(out) if out.ndim == 0 else out
 
 def generate_sigr_integrand_lookup(state, n_points=1000):
     """
-    Generate an interpolated function for the velocity dispersion squared
-    as a function of radius for the truncated NFW profile.
+    Generate the Jeans integrand m(r)*rho(r)/r^2 for a truncated NFW profile.
 
     Parameters
     ----------
@@ -347,8 +346,9 @@ def generate_sigr_integrand_lookup(state, n_points=1000):
 
     Returns
     -------
-    sigr_interp : interp1d
-        Interpolated function for velocity dispersion squared.
+    f_interp : interp1d
+        Interpolated Jeans integrand; integrate and divide by local density
+        to obtain v2 in units of v_s^2.
     """
     if state.config.io.chatter:
         print("Generating lookup for v2 integrand...")
@@ -382,7 +382,7 @@ def sigr_trunc(r, state):
     Returns
     -------
     float or ndarray
-        Velocity dispersion squared at radius r.
+        One-dimensional velocity dispersion squared at r, in units of v_s^2.
     """
     r = np.asarray(r, dtype=np.float64)
     epsabs = state.config.prec.epsabs
@@ -391,8 +391,8 @@ def sigr_trunc(r, state):
 
     integrand = generate_sigr_integrand_lookup(state)
 
-    for i, ri in enumerate(r):
-        if ri > float(state.rcut):
+    for i, ri in np.ndenumerate(r):
+        if ri >= float(state.rcut):
             out[i] = 0.0
             continue
         if ri <= 0.0:
@@ -423,26 +423,4 @@ def sigr_trunc(r, state):
     if state.config.io.chatter:
         print("")  # Finalize output line
 
-    return out if out.size > 1 else float(out[0])
-
-# NOT USED IN CURRENT VERSION
-# @njit
-# def df_trunc(e, Zt, Ft):
-#     """
-#     Truncated distribution function f_trunc(e) = f(e + Zt) - Ft.
-
-#     Parameters
-#     ----------
-#     e : float or ndarray
-#         Energy variable for integration, in [0, phi]
-#     Zt : float
-#         Energy shift defining the truncation threshold.
-#     Ft : float
-#         Distribution function floor used in truncation.
-
-#     Returns
-#     -------
-#     float or ndarray
-#         Truncated distribution function.
-#     """
-#     return df(e + Zt) - Ft
+    return float(out) if out.ndim == 0 else out

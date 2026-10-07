@@ -30,8 +30,10 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
     grid : bool, optional
         If True, shows grid on axis
     """
-    if type(models) != list:
+    if not isinstance(models, (list, tuple)):
         models = [models]
+    if not models:
+        raise ValueError("At least one model must be specified")
 
     def _resolve_path(model):
         if hasattr(model, 'config'): # Passed state object
@@ -49,7 +51,7 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
     data_list = [extract_time_evolution_data(_resolve_path(m)) for m in models]
 
     for data in data_list:
-        if quantity not in data:
+        if quantity not in data or quantity == 'model_id':
             raise ValueError(f"Quantity {quantity!r} is absent. Available columns: {list(data)}")
 
     fig, ax = plt.subplots(figsize=(7, 5))

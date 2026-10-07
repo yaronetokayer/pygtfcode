@@ -76,7 +76,10 @@ class State:
     @classmethod
     def from_dir(cls, model_dir: str, snapshot: None | int = None):
         """
-        Create a State object from an existing model directory.
+        Restart from a model directory (not implemented).
+
+        This method currently raises RuntimeError. Use from_config with
+        ic_filepath to start a new run from a saved profile; that resets time.
 
         Parameters
         ----------
@@ -85,65 +88,12 @@ class State:
         snapshot : int, optional
             Snapshot index to load. If None, loads the latest snapshot.
 
-        Returns
-        -------
-        State
-            A new State object initialized with data from the specified directory.
+        Raises
+        ------
+        RuntimeError
+            Restart support is not implemented.
         """
-        raise RuntimeError("this module is still in development")
-        # Check directory exists
-        p = Path(model_dir)
-        if not p.is_dir():
-            raise FileNotFoundError(f"Model directory does not exist: {p}")
-        
-        # Imports
-        from pygtfcode.io.read import import_metadata, load_snapshot_bundle
-        from pygtfcode.config import Config
-
-        meta = import_metadata(p)
-        snapshot_bundle = load_snapshot_bundle(p, snapshot=snapshot)
-
-        # Construct config and state
-
-        config = Config.from_dict(meta)
-        if config.io.chatter:
-            print("Set config from metadata.")
-
-        state = cls(config)
-
-        if config.io.chatter:
-            print("Setting state variables from snapshot...")     
-
-        prec = config.prec
-
-        state.r = np.insert(10**snapshot_bundle['log_r'].astype(np.float64), 0, 0.0)
-        state.rmid = 10**snapshot_bundle['log_rmid'].astype(np.float64)
-        state.m = np.insert(snapshot_bundle['m'].astype(np.float64), 0, 0.0)
-        state.rho = snapshot_bundle['rho'].astype(np.float64)
-        state.v2 = snapshot_bundle['v2'].astype(np.float64)
-        state.trelax = snapshot_bundle['trelax'].astype(np.float64)
-        state.kn = snapshot_bundle['kn'].astype(np.float64)
-        state.t = float(snapshot_bundle['time'])
-        state.step_count = int(snapshot_bundle['step_count'])
-        state.snapshot_index = int(snapshot_bundle['snapshot_index'])
-
-        state.dt = float(prec.eps_dt)
-
-        # For diagnostics
-        # state.minkn = float(np.min(state.kn))
-        # state.mintrelax = float(np.min(state.trelax))
-
-        state.n_iter_du = 0
-        state.n_iter_dr = 0
-        state.dt_cum = 0.0
-        state.dr_max_cum = 0.0
-        state.du_max_cum = 0.0
-        state.dt_over_trelax_cum = 0.0
-
-        if config.io.chatter:
-            print("State loaded.")
-
-        return state
+        raise RuntimeError("State.from_dir restart support is not implemented")
 
     @classmethod
     def make_ic_file(cls, config, ic_filepath):
@@ -159,8 +109,8 @@ class State:
 
         Returns
         -------
-        State
-            A new State object initialized with the given configuration.
+        None
+            Writes an unrelaxed profile; from_config relaxes it when loaded.
         """
         from pygtfcode.io.write import write_profile_snapshot
         
@@ -189,7 +139,7 @@ class State:
 
         char = CharParams() # Instantiate CharParams object
 
-        # Ensure double point precision
+        # Ensure double precision
         Mvir  = float(init.Mvir)
         cvir  = float(init.cvir)
 
@@ -203,7 +153,7 @@ class State:
         char.r_s = rvir / cvir
 
         if init.profile != 'abg':
-            char.m_s = Mvir_h / char.fc # Changed from Mvir_h - check this
+            char.m_s = Mvir_h / char.fc # M(<cvir) = m_s * fNFW(cvir).
             
         else:
             from pygtfcode.profiles.abg import chi
@@ -219,19 +169,14 @@ class State:
         v_s_cgs = char.v_s * 1.0e5
         rho_s_cgs = char.rho_s * float(const.Msun_to_gram) / float(const.Mpc_to_cm)**3
         char.t_s = 1.0 / (float(sim.a) * float(sim.sigma_m_0) * v_s_cgs * rho_s_cgs)
-        char.sigma_m_0_char = float(sim.sigma_m_0) / char.sigma_m_s # sigma_m in dimensionless form
+        char.sigma_m_0_char = float(sim.sigma_m_0) / char.sigma_m_s # Cross-section amplitude in characteristic units
         char.w_char = float(sim.w) / char.v_s
 
-        return char  # Store the CharParams object in config
+        return char
     
     def _setup_grid(self):
         """
         Constructs the radial grid in log-space between rmin and rmax.
-
-        Parameters
-        ----------
-        config : Config
-            The simulation configuration object.
 
         Returns
         -------
@@ -257,7 +202,7 @@ class State:
 
         # Number of log-spaced cells between rmin and rmax.
         nlog = int(np.ceil(log_span / log_q_init))
-        nlog = max(nlog, 1)
+        nlog = max(nlog, 2)
         ngrid = nlog + 1
 
         log_q_actual = log_span / nlog
@@ -283,12 +228,10 @@ class State:
         initial profile defined in config.
 
         Sets the following attributes:
-            - m: Enclosed mass at r[i+1]
+            - m: Enclosed mass at edges r[i], including m[0] = 0
             - rho: Density in each shell (size ngrid)
-            - p: Pressure in each shell
             - v2: Velocity dispersion squared in each shell
-            - kn: Knudsen number in each shell
-            - maxvel: maximum velocity dispersion
+            - kn, mfp: Amplitude-reference transport scales in each shell
             - kn_c: Knudsen number of the core
         """
         from pygtfcode.profiles.profile_routines import menc, sigr
@@ -304,7 +247,7 @@ class State:
         m = np.zeros_like(r, dtype=np.float64)
         m[1:] = menc(r[1:], self)               # m[i] at shell edges
 
-        ### For Frank ###
+        # Truncated-halo mass relative to the parent NFW virial mass.
         if self.config.init.profile == 'truncated_nfw':
             from pygtfcode.profiles.nfw import fNFW
             # Calculate Mtot / M200
@@ -317,7 +260,7 @@ class State:
         kn = 1.0 / (self.char.sigma_m_0_char * np.sqrt(rho * v2))
         mfp = 1.0 / (self.char.sigma_m_0_char * rho)
 
-        # Apply central smoothing if using regular NFW profile (imode = 1)
+        # Apply central smoothing for the regular NFW profile
         # This helps reduce artificial gradients in innermost cell
         if self.config.init.profile == "nfw":
             r1 = r[1]
@@ -344,14 +287,10 @@ class State:
         self.ltemp      = np.zeros_like(rho, dtype=np.float64)
         calc_ltemp(self.ltemp, v2, r_mid)
         self.mfp        = np.asarray(mfp, dtype=np.float64)
-        # self.Theta  = np.zeros_like(self.rho, dtype=np.float64)
 
-        ### Testing diagnostics ###
-        # self.t_sc   = (r_mid / np.sqrt(v2)).astype(np.float64)
-        # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
-        self.t_cool = np.zeros_like(rho, dtype=np.float64)
+        # No accepted conduction rate is available before the first step.
+        self.t_cool = np.full_like(rho, np.inf, dtype=np.float64)
         self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(rho)).astype(np.float64)
-        # self.lum    = np.zeros_like(r, dtype=np.float64)
 
         self._update_transport_diagnostics()
 
@@ -374,13 +313,10 @@ class State:
 
         # Check that the grid matches
         r_loaded = np.insert(10**data['log_r'].astype(np.float64), 0, 0.0)
-        if not np.allclose(r_loaded, self.r, rtol=1e-5, atol=1e-8):
-            # for i in range(len(r_loaded)):
-            #     print(r_loaded[i], self.r[i])
-                # print(abs(r_loaded[i]- self.r[i]), 1e-8 + 1e-5*self.r[i], abs(r_loaded[i]- self.r[i]) < 1e-8 + 1e-5*self.r[i])
+        if r_loaded.shape != self.r.shape or not np.allclose(r_loaded, self.r, rtol=1e-5, atol=1e-8):
             warnings.warn("Radial grid in IC file does not match the grid defined by the current configuration.  Using IC file grid.", RuntimeWarning)
-            self.r[:] = r_loaded
-            # raise ValueError("Radial grid in IC file does not match the grid defined by the current configuration.")
+            self.r = r_loaded
+            self.n = r_loaded.size - 1
 
         self.rmid   = 0.5 * (self.r[1:] + self.r[:-1]).astype(np.float64)
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
@@ -396,14 +332,9 @@ class State:
         calc_ltemp(self.ltemp, self.v2, self.rmid)
         self.mfp        = np.asarray( 1.0 / (self.char.sigma_m_0_char * self.rho), dtype=np.float64)
 
-        # self.Theta  = data['Theta'].astype(np.float64)
 
-        ### Testing diagnostics ###
-        # self.t_sc   = (self.rmid / np.sqrt(self.v2)).astype(np.float64)
-        # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
-        self.t_cool = np.empty_like(self.rho, dtype=np.float64)
+        self.t_cool = np.full_like(self.rho, np.inf, dtype=np.float64)
         self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)).astype(np.float64)
-        # self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
         self._update_transport_diagnostics()
 
@@ -467,6 +398,8 @@ class State:
         self._update_transport_diagnostics()
         calc_ltemp(self.ltemp, self.v2, self.rmid)
         self.t_dyn[:]   = self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)
+        self.drfrac[0] = np.nan
+        self.drfrac[1:] = np.diff(self.r[1:]) / np.sqrt(self.r[1:-1] * self.r[2:])
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
@@ -497,13 +430,11 @@ class State:
         """
         Resets initial state
         """
-        from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
-
         config = self.config
 
         self.r = self._setup_grid()
         if ic_filepath is not None:
-            # Check if filpath exists
+            # Check if filepath exists
             if not Path(ic_filepath).is_file():
                 print(f"IC file {ic_filepath} not found. Creating IC file at that location...")
                 self.make_ic_file(config, ic_filepath=ic_filepath)
@@ -520,7 +451,6 @@ class State:
 
         # Recompute both conventions after initialization and relaxation.
         self._update_transport_diagnostics()
-        # self.minkn = float(np.min(self.kn))
 
         self.n_iter_du          = 0
         self.n_iter_dr          = 0
@@ -540,7 +470,8 @@ class State:
         """
         Run the simulation until a halting criterion is met.
         User can set halting criteria to run for a specified duration.
-        These are overridden by the halting criteria in self.config.
+        The first satisfied user or configuration criterion stops the run.
+        The configured density limit is checked only after t > 50 (in t_s).
 
         Arguments 
         ---------
@@ -549,7 +480,7 @@ class State:
         stoptime : float, optional
             Amount of simulation time by which to advance the simulation
         rho_c: float, optional
-            Max central denisty value to advance until
+            Maximum innermost-cell density (rho[0]/rho_s) to advance until
         """
         from pygtfcode.evolve.integrator import run_until_stop
         from pygtfcode.io.write import write_log_entry, write_profile_snapshot, write_time_evolution
@@ -585,21 +516,20 @@ class State:
         
     def get_phys(self):
         """
-        Method to print characteristic quantities in physical units
+        Return a dictionary of characteristic quantities in physical units
         """
-        from pygtfcode.profiles.profile_routines import menc
         from pygtfcode.parameters.constants import Constants as const
 
         char = self.char
         init = self.config.init
         cosmo = self.config.cosmo
 
-        Mtot = menc(self.config.grid.rmax, self, chatter=False) * char.m_s
+        Mtot = self.m[-1] * char.m_s
         rvir = 0.169 * (init.Mvir / 1.0e12)**(1/3)
         rvir *= (cosmo.Delta_vir / 178.0)**(-1.0/3.0)
         rvir *= (cosmo.xH() / (100 * cosmo.xhubble))**(-2/3)
         rvir /= cosmo.xhubble
-        vvir = np.sqrt(cosmo.gee * init.Mvir / cosmo.xhubble / rvir)
+        vvir = np.sqrt(const.gee * init.Mvir / cosmo.xhubble / rvir)
 
         params_dict = {
             'log[Mvir/Msun]'            : np.log10(init.Mvir / cosmo.xhubble),
@@ -615,14 +545,14 @@ class State:
 
     def plot_time_evolution(self, **kwargs):
         """
-        Plot any time-evolution quantity vs. time for for the simulation represented by
+        Plot any time-evolution quantity vs. time for the simulation represented by
         the State object
 
         Arguments
         ---------
         quantity : str, optional
             Key from the time_evolution.txt file to plot on the y-axis.
-            Default is 'rho_c'.
+            Default is 'rho0'.
             Any time_evolution.txt column, including rho0, kn_cond_c,
             x_c/x_m2, K_L_c/K_S_c and K_L_m2/K_S_m2.
         ylabel : str, optional
@@ -638,7 +568,7 @@ class State:
         """
         from pygtfcode.plot.time_evolution import plot_time_evolution
 
-        plot_time_evolution(self, **kwargs)
+        return plot_time_evolution(self, **kwargs)
 
     def plot_snapshots(self, **kwargs):
         """
@@ -650,7 +580,8 @@ class State:
         snapshots : int or list of int, optional
             Snapshot indices to plot, default is the current state
         profiles : str or list of str, optional
-            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'kn'
+            Profiles from plot.snapshot.VALID_PROFILES, including rho, v2,
+            kn_cond, mfp_cond, x, K_L, and K_S.
         filepath : str, optional
             If provided, save the plot to this file.
         show : bool, optional
@@ -661,7 +592,7 @@ class State:
         from pygtfcode.plot.snapshot import plot_snapshots
 
         snapshots = kwargs.pop('snapshots', -1)
-        plot_snapshots(self, snapshots=snapshots, **kwargs)
+        return plot_snapshots(self, snapshots=snapshots, **kwargs)
         
     def make_movie(self, **kwargs):
         """
@@ -673,7 +604,8 @@ class State:
         filepath : str, optional
             Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_{profiles}.mp4'
         profiles : str or list of str, optional
-            Profiles to plot.  Options are 'rho', 'm', 'v2', 'p', 'kn'
+            Profiles from plot.snapshot.VALID_PROFILES, including rho, v2,
+            kn_cond, mfp_cond, x, K_L, and K_S.
         grid : bool, optional
             If True, shows grid on axes
         fps : int, optional
@@ -697,18 +629,19 @@ class State:
         self.mfp_cond = np.empty(n, dtype=np.float64)
         self.ltemp  = np.empty(n,   dtype=np.float64)
         self.mfp    = np.empty(n,   dtype=np.float64)
-        # self.t_sc   = np.empty(n,   dtype=np.float64)
-        # self.t_coll = np.empty(n,   dtype=np.float64)
         self.t_dyn  = np.empty(n,   dtype=np.float64)
         self.drfrac = np.empty(n,   dtype=np.float64)
-        # self.lum    = np.empty(n+1, dtype=np.float64)
-        self.t_cool = np.empty(n,   dtype=np.float64)
+        self.t_cool = np.full(n, np.inf, dtype=np.float64)
 
         self.rmid[:] = 0.5 * (self.r[1:] + self.r[:-1])
         self._update_transport_diagnostics()
+        from pygtfcode.util.calc_runtime import calc_ltemp
+        calc_ltemp(self.ltemp, self.v2, self.rmid)
+        self.drfrac[0] = np.nan
+        self.drfrac[1:] = np.diff(self.r[1:]) / np.sqrt(self.r[1:-1] * self.r[2:])
+        self.t_dyn[:] = self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key
         filtered = {k: v for k, v in self.__dict__.items() if k != "config"}
         return f"{self.__class__.__name__}(\n{pprint.pformat(filtered, indent=2)}\n)"
-
