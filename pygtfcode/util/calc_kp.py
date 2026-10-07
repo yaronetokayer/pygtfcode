@@ -19,7 +19,6 @@ COEFF = np.array([
     [80.0, 1.32953,   0.43, 0.76],
 ])
 
-
 @njit(cache=True)
 def softplus(z):
     """
@@ -36,7 +35,6 @@ def softplus(z):
         Softplus of z, evaluated using a stable exponential argument.
     """
     return max(z, 0.0) + math.log1p(math.exp(-abs(z)))
-
 
 @njit(cache=True)
 def kp_log_slope(x, p):
@@ -89,7 +87,6 @@ def kp_log_slope(x, p):
     slope = -logistic * dlog_a_dlog_s * dlog_s_dlog_x
 
     return log_kp, slope
-
 
 @njit(cache=True)
 def factors(T, what, order=2):
@@ -164,7 +161,6 @@ def factors(T, what, order=2):
     slope_smfp = slope_k5 + dnumerator / numerator - ddenominator / denominator
 
     return k5, k_smfp, slope_k5, slope_smfp
-
 
 @njit(cache=True)
 def conductivity(T, rho, sigmahat, what, alph, a, b, c, order=2):
