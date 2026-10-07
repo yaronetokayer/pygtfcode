@@ -193,7 +193,8 @@ def integrate_time_step(state, config,                                  # State 
     prec = config.prec; sim  = config.sim; char = state.char
 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
-    sigma_m_0 = float(char.sigma_m_0_char)
+    smfp_order = sim.smfp_order
+    sigma_m_0 = float(char.sigma_m_0_char); w_char = float(char.w_char)
     alph = float(sim.alph); implicit_conduct = bool(sim.implicit_conduct)
     eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
@@ -216,9 +217,10 @@ def integrate_time_step(state, config,                                  # State 
         # implicit: work_n1 used to store dv2
         # du_max, dt_prop, iter_du = conduct_implicit_dulim(v2, rho, r, m, work_n1, dt_prop, a, b, c, sigma_m_0, alph, eps_du_eff, max_iter_du)
         # du_max, dt_prop, iter_du = conduct_implicit_tcool_nolim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, alph)
-        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, alph, eps_du_eff, max_iter_du)
+        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, w_char, smfp_order, alph, eps_du_eff, max_iter_du)
     else:
         # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
+        # This branch is currently deprecated
         init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
         compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, work_n2, cored)
         du_max, dt_prop, iter_du = conduct_heat(v2, m, work_n2, work_n1, dt_prop, eps_du_eff)

@@ -3,6 +3,7 @@ import math
 from numba import njit, float64, boolean, types, void
 from pygtfcode.util.interpolate import interp_linear_to_interfaces
 from pygtfcode.util.calc_linalg import solve_tridiagonal_thomas
+from pygtfcode.util.calc_kp import conductivity
 
 _TINY64 = np.finfo(np.float64).tiny
 
@@ -186,8 +187,8 @@ def conduct_heat_Theta(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float
 
 ### IMPLICIT SCHEME
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,):
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0_char, w_char, smfp_order, a, b, c, d,):
     """
     Build tridiagonal system for implicit conduction update in v2:
 
@@ -205,13 +206,20 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
         Interface values of rhok.
     v2 : ndarray, shape (N,)
         Cell-centered v2 for one species.
-    Csmfp, Clmfp : float
-        Conductivity coefficients.
     dt : float
         Timestep.
+    a_param, b_param, c_param : float
+        Conductivity parameters.
     alph : float
         Coefficient for interpolation scheme between lmfp and smfp regimes.
         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph)
+    sigma_m_0_char : float
+        cross section normalization per unit mass in characteristic cross section units.
+    w_char : float
+        velocity scale w in characteristic velocity units.
+    smfp_order : int
+        Which order polynomial approximation to use for SMFP conductivity, accounting for velocity dependence.
+        See Outmezguine et al. (2023), Appendix B. Options are 1 and 2.
     a, b, c, d : ndarray, shape (N,)
         Output tridiagonal coefficients and RHS, filled in place.
     """
@@ -231,22 +239,24 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
 
     v2C         = v2[0]
     v2R         = v2[1]
-
     dvR         = v2R - v2C
-    svR         = v2C + v2R
-    sqrt_svR    = math.sqrt(svR)
-    svR32       = sqrt_svR * svR
+    T_face      = 0.5 * ( v2C + v2R )
 
-    rhofacR         = ( two_Clmfp / rho_int[0] )**alph
-    denombaseR      = ( Csmfp * svR )**alph + rhofacR
-    inv_denombaseR  = 1.0 / denombaseR
-    inv_denomR1     = inv_denombaseR**inv_alph
-    inv_denomR2     = inv_denomR1 * inv_denombaseR
+    k_face, slope_face = conductivity(
+        T_face,
+        rho_int[0],
+        sigma_m_0_char,
+        w_char,
+        alph,
+        a_param,
+        b_param,
+        c_param,
+        smfp_order,
+    )
 
-    tmpR        = sqrt_svR * dvR
-    commonR     = tmpR * ( 0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
-    termR       = svR32 * inv_denomR1
-    fluxR       = coefR * svR32 * dvR * inv_denomR1
+    termR = sqrt2 * k_face
+    commonR = termR * dvR * slope_face / svR
+    fluxR = coefR * termR * dvR
 
     a[0] = 0.0
     b[0] = coefR * (commonR - termR) - sqrt2 * m[1] / dt
@@ -266,25 +276,27 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
 
     v2C     = v2R
     v2R     = v2[2]
+    dvR     = v2R - v2C
+    T_face  = 0.5 * ( v2C + v2R )
 
-    dvR         = v2R - v2C
-    svR         = v2C + v2R
-    sqrt_svR    = math.sqrt(svR)
-    svR32       = sqrt_svR * svR
+    k_face, slope_face = conductivity(
+        T_face,
+        rho_int[1],
+        sigma_m_0_char,
+        w_char,
+        alph,
+        a_param,
+        b_param,
+        c_param,
+        smfp_order,
+    )
 
-    rhofacR         = ( two_Clmfp / rho_int[1] )**alph
-    denombaseR      = ( Csmfp * svR )**alph + rhofacR
-    inv_denombaseR  = 1.0 / denombaseR
-    inv_denomR1     = inv_denombaseR**inv_alph
-    inv_denomR2     = inv_denomR1 * inv_denombaseR
-    
-    commonL = commonR
-    tmpR    = sqrt_svR * dvR
-    commonR = tmpR * (0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
     termL   = termR
-    termR   = svR32 * inv_denomR1
+    termR = sqrt2 * k_face
+    commonL = commonR
+    commonR = termR * dvR * slope_face / svR
     fluxL   = fluxR
-    fluxR   = coefR * svR32 * dvR * inv_denomR1
+    fluxR = coefR * termR * dvR
 
     for j in range(1, n - 1):
         a[j] = -coefL * (commonL - termL)
@@ -309,25 +321,27 @@ def build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
 
             v2C     = v2R
             v2R     = v2[j + 2]
+            dvR     = v2R - v2C
+            T_face  = 0.5 * ( v2C + v2R )
 
-            dvR         = v2R - v2C
-            svR         = v2C + v2R
-            sqrt_svR    = math.sqrt(svR)
-            svR32       = sqrt_svR * svR
+            k_face, slope_face = conductivity(
+                T_face,
+                rho_int[j + 1],
+                sigma_m_0_char,
+                w_char,
+                alph,
+                a_param,
+                b_param,
+                c_param,
+                smfp_order,
+            )
 
-            rhofacR         = ( two_Clmfp / rho_int[j + 1] )**alph
-            denombaseR      = ( Csmfp * svR )**alph + rhofacR
-            inv_denombaseR  = 1.0 / denombaseR
-            inv_denomR1     = inv_denombaseR**inv_alph
-            inv_denomR2     = inv_denomR1 * inv_denombaseR
-
-            commonL     = commonR
-            tmpR        = sqrt_svR * dvR
-            commonR     = tmpR * ( 0.5 * inv_denomR1 + rhofacR * inv_denomR2 )
-            termL       = termR
-            termR       = svR32 * inv_denomR1
-            fluxL       = fluxR
-            fluxR       = coefR * svR32 * dvR * inv_denomR1
+            termL   = termR
+            termR = sqrt2 * k_face
+            commonL = commonR
+            commonR = termR * dvR * slope_face / svR
+            fluxL   = fluxR
+            fluxR = coefR * termR * dvR
 
     ### Last cell ###
     a[n - 1] = - coefR * ( commonR - termR)
@@ -747,7 +761,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     return du_max, dt_trial, -1
 
 @njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
+def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
     Repeatedly solves the implicit system with a trial dt until the
@@ -771,9 +785,6 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
     tiny = _TINY64
@@ -783,7 +794,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
 
     for j in range(max_iter):
 
-        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, alph, a, b, c, d,)
+        build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
         solve_tridiagonal_thomas(a, b, c, d, dv2)
 
         du_max = 0.0
