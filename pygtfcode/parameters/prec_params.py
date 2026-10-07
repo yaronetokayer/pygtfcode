@@ -9,9 +9,9 @@ class PrecisionParams:
     eps_du : float
         Maximum allowed relative change in internal energy (u) per time step.
     kn_threshold : float
-        Threshold in amplitude-reference kn_c below which eps_du is relaxed.
+        Threshold in conductivity-effective kn_cond_c below which eps_du is relaxed.
     kn_width : float
-        Width of the logistic transition in log10(kn_c / kn_threshold).
+        Width of the logistic transition in log10(kn_cond_c / kn_threshold).
     du_boost : float
         Factor by which to boost eps_du in the low-Knudsen regime.
     eps_dr : float

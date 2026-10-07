@@ -31,7 +31,7 @@ class State:
     kn and mfp retain amplitude-reference meanings. kn_cond and mfp_cond
     describe the conductivity transition, not literal collision statistics.
     kn_c and kn_cond_c are their respective core logarithmic means.
-    The legacy timestep boost continues to use kn_c.
+    The timestep tolerance boost uses kn_cond_c.
     """
 
     def __init__(self, config, ic_filepath=None):
@@ -408,8 +408,8 @@ class State:
         """Refresh both diagnostic conventions on the current cell grid.
 
         kn_c remains the amplitude-reference core mean for compatibility.
-        kn_cond_c is the effective conductivity-transition core mean; using
-        it in the timestep boost would be a separate policy change.
+        kn_cond_c is the conductivity-effective core mean used by the
+        timestep tolerance boost.
         """
         from pygtfcode.util.calc_runtime import calc_transport_scales
         from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r

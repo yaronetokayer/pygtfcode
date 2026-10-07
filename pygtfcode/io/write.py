@@ -129,7 +129,7 @@ def write_log_entry(state, start_step):
 
     maxvel      = np.max(np.sqrt(state.v2))
 
-    eps_du_eff = prec.eps_du * low_kn_boost(state.kn_c, kn_threshold, du_boost, kn_width)
+    eps_du_eff = prec.eps_du * low_kn_boost(state.kn_cond_c, kn_threshold, du_boost, kn_width)
 
     # Average each accepted step's limiter fraction, not the ratio of averages.
     # dr is the final HE correction, not total shell displacement. Iteration

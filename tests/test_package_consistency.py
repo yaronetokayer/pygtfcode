@@ -30,6 +30,34 @@ class PackageConsistencyTests(unittest.TestCase):
         packages = {item.name: item.ispkg for item in pkgutil.iter_modules(pygtfcode.__path__)}
         self.assertTrue(packages['util'])
 
+    def test_boost_uses_conductivity_core_in_driver_and_log(self):
+        import re
+        from pygtfcode.evolve import integrator
+        from pygtfcode.util.calc_runtime import low_kn_boost
+        for w in (50., np.inf):
+            with self.subTest(w=w), self.tempdir() as folder, contextlib.redirect_stdout(io.StringIO()):
+                cfg = self.config(folder, sim=dict(w=w))
+                cfg.prec.du_boost = 100.
+                state = State.from_config(cfg)
+                prec = cfg.prec
+                def effective(kn):
+                    return prec.eps_du * low_kn_boost(kn, prec.kn_threshold,
+                                                     prec.du_boost, prec.kn_width)
+                expected = effective(state.kn_cond_c)
+                if np.isfinite(w):
+                    self.assertLess(expected, effective(state.kn_c))
+                else:
+                    self.assertEqual(expected, effective(state.kn_c))
+                with patch.object(integrator, 'integrate_time_step',
+                                  wraps=integrator.integrate_time_step) as step:
+                    state.run(steps=1)
+                    self.assertEqual(step.call_args.args[3], expected)
+                lines = (Path(folder)/cfg.io.model_dir/'logfile.txt').read_text().splitlines()
+                keys = re.split(r' {2,}', lines[0].strip())
+                row = dict(zip(keys, lines[-1].split()))
+                self.assertAlmostEqual(float(row['eps_du_eff'])/effective(state.kn_cond_c),
+                                       1., places=6)
+
     def test_parameter_validation(self):
         from pygtfcode.parameters import SimParams, GridParams, PrecisionParams, IOParams
         for key in ('sigma_m_0', 'a', 'b', 'c', 'alph'):

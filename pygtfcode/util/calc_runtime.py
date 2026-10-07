@@ -60,9 +60,9 @@ def low_kn_boost(kn_c, kn_threshold, boost, width):
     Returns ~1 when kn_c >> kn_threshold,
     ~boost when kn_c << kn_threshold.
 
-    The driver currently supplies the amplitude-reference core Knudsen
-    number. kn_cond_c is a separate diagnostic and does not change this
-    policy; use boost = 1 to disable relaxation during convergence tests.
+    The argument kn_c is the supplied core diagnostic; the driver passes
+    state.kn_cond_c, the conductivity-effective core Knudsen number.
+    Use boost = 1 to disable relaxation during convergence tests.
     """
     x = np.log10(kn_c / kn_threshold)
     S = 1.0 / (1.0 + np.exp(x / width))

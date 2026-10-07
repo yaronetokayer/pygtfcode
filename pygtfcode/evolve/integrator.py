@@ -59,7 +59,7 @@ def run_until_stop(state, start_step, **kwargs):
         state.step_count += 1
         step_count = state.step_count
 
-        eps_du_eff = prec.eps_du * low_kn_boost(state.kn_c, kn_threshold, du_boost, kn_width)
+        eps_du_eff = prec.eps_du * low_kn_boost(state.kn_cond_c, kn_threshold, du_boost, kn_width)
 
         if step_count == 1:
             dt_prop = 1.0 # We have no maxdu yet
@@ -263,7 +263,7 @@ def integrate_time_step(state, config,                                  # State 
     state.rmid *= 0.5
 
     # Keep amplitude-reference and conductivity-effective diagnostics distinct.
-    # The low-Kn boost still uses the amplitude-reference kn_c.
+    # The low-Kn boost uses the conductivity-effective core kn_cond_c.
     state._update_transport_diagnostics()
 
     # drfrac
