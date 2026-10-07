@@ -185,6 +185,63 @@ class VelocityTransportTests(unittest.TestCase):
                 self.assertEqual(rebuilt.sim.w, w)
                 self.assertEqual(rebuilt.sim.smfp_order, 2)
 
+    def test_output_schema_and_plotting(self):
+        import re
+        import matplotlib.pyplot as plt
+        from pygtfcode.io.read import extract_time_evolution_data, extract_snapshot_data
+        from pygtfcode.io.write import write_log_entry
+        from pygtfcode.plot.time_evolution import plot_time_evolution
+        from pygtfcode.plot.snapshot import plot_profile
+        for w in (50., np.inf):
+            with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as folder:
+                cfg = Config(sim=dict(w=w), grid=dict(drfrac_init=.15),
+                             prec=dict(du_boost=1.),
+                             io=dict(base_dir=folder, model_no=1, chatter=False))
+                state = State.from_config(cfg)
+                state.run(steps=3)
+                model = Path(folder)/cfg.io.model_dir
+                data = extract_time_evolution_data(model/'time_evolution.txt')
+                self.assertNotIn('te', data)
+                for suffix in ('c', 'm2'):
+                    x = np.sqrt(data['v2_'+suffix])/state.char.w_char
+                    np.testing.assert_allclose(data['x_'+suffix], x, rtol=2e-6)
+                    for j, T in enumerate(data['v2_'+suffix]):
+                        kl, ks, _, _ = factors(T, state.char.w_char, cfg.sim.smfp_order)
+                        self.assertAlmostEqual(data['K_L_'+suffix][j]/kl, 1., places=5)
+                        self.assertAlmostEqual(data['K_S_'+suffix][j]/ks, 1., places=5)
+                expected = data['r_c']/np.sqrt(data['v2_c'])*cfg.sim.a*state.char.sigma_m_0_char
+                np.testing.assert_allclose(data['tsc_c'], expected, rtol=2e-6)
+                snap = extract_snapshot_data(model/'profile_0.dat')
+                np.testing.assert_allclose(snap['mfp_cond_ltemp'], snap['mfp_cond']/snap['ltemp'], rtol=2e-6)
+                for key in ('x', 'K_L', 'K_S', 'kn_cond', 'mfp_cond', 'mfp_cond_ltemp', 'krat_e', 'k_se'):
+                    fig, ax = plt.subplots()
+                    plot_profile(ax, key, [snap])
+                    if key in ('krat_e', 'k_se'):
+                        np.testing.assert_allclose(ax.lines[0].get_xdata(), 10**snap['log_r'])
+                    fig.canvas.draw()
+                    plt.close(fig)
+                for key in ('x_c', 'x_m2', 'K_L_c', 'K_S_m2', 'n', 'tsc_c'):
+                    fig, ax = plot_time_evolution(cfg, quantity=key, show=False)
+                    fig.canvas.draw()
+                    if np.isinf(w) and key.startswith('x_'):
+                        self.assertEqual(ax.get_yscale(), 'linear')
+                    plt.close(fig)
+                # Verify interval means use the actual per-step tolerance.
+                state.du_limit_cum = .2 + .8
+                state.du_max_cum = 999.  # Must not be used in <du lim>.
+                state.log_steps = 2
+                state.n_split, state.n_merge = 3, 2
+                write_log_entry(state, 0)
+                lines = (model/'logfile.txt').read_text().splitlines()
+                keys = re.split(r' {2,}', lines[0].strip())
+                values = lines[-1].split()
+                row = dict(zip(keys, values))
+                self.assertAlmostEqual(float(row['<du lim>']), .5)
+                self.assertEqual(int(row['n_split']), 3)
+                self.assertEqual(int(row['n_merge']), 2)
+                self.assertIn('<n_retry_du>', row)
+                self.assertEqual(state.log_steps, 0)
+
     def test_output_and_full_driver(self):
         # Keep all test output within the checkout; remove only this temporary run.
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as folder:

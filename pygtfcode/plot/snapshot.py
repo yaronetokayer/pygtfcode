@@ -8,17 +8,19 @@ from pygtfcode.io.read import extract_snapshot_data, extract_snapshot_indices, e
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 VALID_PROFILES = [
-    'rho', 'm', 'v2', 'kn', 'mfp', 
+    'rho', 'm', 'v2', 'kn', 'mfp', 'kn_cond', 'mfp_cond',
+    'x', 'K_L', 'K_S', 'mfp_cond_ltemp',
     'dttcool', 'tdyntcool', 'drfrac', 'drltemp', 'ltemp', 
     's', 'dsdr', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'dlnrhodlnr', 'dlnvdlnr', 
     'k_sc', 'k_lc', 'k_totc', 'k_se', 'k_le', 'k_tote', 'krat_c', 'krat_e'
     ]
 PLUMMER_PROFILES = ['rho', 'v2']
-EDGE_QUANTITIES = ['m', 'k_se', 'k_le', 'k_tote']
-LINEAR_Y_PROFILES = ['s', 'dlnrhodlnr', 'dlnvdlnr']
+EDGE_QUANTITIES = ['m', 'k_se', 'k_le', 'k_tote', 'krat_e']
+LINEAR_Y_PROFILES = ['s', 'dlnrhodlnr', 'dlnvdlnr', 'x']
 SYMLOG_Y_PROFILES = ['dsdr', 'dlnrhodlnp']
-LINE_AT_1_PROFILES = ['kn', 'dttcool', 'tdyntcool', 'mfpltemp', 'drltemp', 'mfp']
-VALID_RADII = ['r_c', 'r_smfp', 'r_minTh', 'r_m25']
+# Conductivity equality occurs at krat=1, not generally at Kn=1.
+LINE_AT_1_PROFILES = ['dttcool', 'tdyntcool', 'mfpltemp', 'mfp_cond_ltemp', 'drltemp', 'krat_c', 'krat_e']
+VALID_RADII = ['r_c', 'r_m2', 'r_smfp', 'r_minTh', 'r_m25']
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
     if xaxis == 'r':
@@ -43,6 +45,8 @@ def get_profile_axis_limits(profile, data_list, xaxis='r'):
                 x[0] = 0.5 * m_edges[0]
                 x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
 
+        if profile not in data:
+            raise ValueError(f"Profile {profile!r} is absent from this output file.")
         y = data[profile]
 
         if profile in LINEAR_Y_PROFILES or profile in SYMLOG_Y_PROFILES:
@@ -132,22 +136,26 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     for ind, data in enumerate(data_list):
         rmid = 10**data['log_rmid']
         if xaxis == 'r':
-            x = 10**data[xkey] if profile in ['m'] else rmid
+            x = 10**data[xkey] if profile in EDGE_QUANTITIES else rmid
         elif xaxis == 'm':
             m_edges = data[xkey]
             x = np.empty_like(m_edges)
             x[0] = 0.5 * m_edges[0]
             x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
+            if profile in EDGE_QUANTITIES:
+                x = m_edges
 
+        if profile not in data:
+            raise ValueError(f"Profile {profile!r} is absent from this output file.")
         y = data[profile]
 
         ax.plot( x, y, lw=2, color=cmap(ind % 10), label=f"t={data['time']:.2e}")
 
         if profile in LINE_AT_1_PROFILES and ind == 0:
             ax.axhline(1.0, color='black', ls=':')
-            if profile == 'kn':
-                ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform())
-                ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform())
+            if profile in ('krat_c', 'krat_e') and ylim[0] < 1.0 < ylim[1]:
+                ax.text(0.95, 1.1, 'LMFP', ha='right', va='bottom', fontsize=12, transform=ax.get_yaxis_transform(), clip_on=True)
+                ax.text(0.95, 0.9, 'SMFP', ha='right', va='top', fontsize=12, transform=ax.get_yaxis_transform(), clip_on=True)
         if profile in ['dsdr'] and ind == 0:
             ax.axhline(0.0, color='black', ls=':')
         if profile in ['dlnrhodlnp'] and ind == 0:
@@ -167,13 +175,19 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     else:
         ax.set_yscale('log')
     if xaxis == 'r':
-        ax.set_xlabel(r'Radius [$r_\mathrm{s,0}$]', fontsize=14)
+        ax.set_xlabel(r'Radius [$r_\mathrm{s}$]', fontsize=14)
     elif xaxis == 'm':
         ax.set_xlabel(r'$M_\mathrm{enc}$ [$M_\mathrm{s}$]', fontsize=14)
     if profile == 's':
         ax.set_ylabel(r'$s=\log(v^3/\rho)$', fontsize=14)
     else:
-        ax.set_ylabel(profile, fontsize=14)
+        labels = {'kn': 'Kn (amplitude reference)', 'mfp': 'Reference MFP [r_s]',
+                  'kn_cond': 'Conductivity-effective Kn', 'mfp_cond': 'Effective transport length [r_s]',
+                  'x': 'v / w', 'K_L': 'LMFP factor K_L', 'K_S': 'SMFP factor K_S',
+                  'mfp_cond_ltemp': 'Effective transport length / temperature scale',
+                  'krat_c': 'Cell conductivity ratio (SMFP / LMFP)',
+                  'krat_e': 'Face conductivity ratio (SMFP / LMFP)'}
+        ax.set_ylabel(labels.get(profile, profile), fontsize=14)
     ax.tick_params(axis='both', labelsize=12)
     if legend:
         if legend_loc is None:
@@ -240,7 +254,7 @@ def plot_plummer(ax, profile, data, r0_plummer, xaxis='r'):
     # Plot Plummer profile
     rmid = 10**data['log_rmid']
     if xaxis == 'r':
-        x = 10**data[xkey] if profile in ['m'] else rmid
+        x = 10**data[xkey] if profile in EDGE_QUANTITIES else rmid
     elif xaxis == 'm':
         m_edges = data[xkey]
         x = np.empty_like(m_edges)
@@ -564,7 +578,7 @@ def _deluxe_frame(args):
 
             axin.set_ylabel(inset, fontsize=12)
             axin.set_xlabel("$t$", fontsize=12)
-            axin.set_yscale("log")
+            axin.set_yscale("log" if np.any(np.isfinite(tevo_y) & (tevo_y > 0)) else "linear")
             axin.tick_params(
                 axis="both",
                 which="both",
@@ -667,6 +681,10 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
     time_data = extract_time_evolution_data(time_evolution_path)
     tevo_t = time_data['time']
+    if add_radii is not None:
+        missing = [radius for radius in add_radii if radius not in time_data]
+        if missing:
+            raise ValueError(f'Radii absent from this time history: {missing}')
 
     # Validate insets
     valid_insets = list(time_data.keys())
@@ -766,7 +784,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
                             color='red', s=50)
                 axin.set_ylabel(inset, fontsize=12)
                 axin.set_xlabel('$t$', fontsize=12)
-                axin.set_yscale('log')
+                axin.set_yscale('log' if np.any(np.isfinite(tevo_y) & (tevo_y > 0)) else 'linear')
                 axin.tick_params(
                     axis='both',
                     which='both',
@@ -900,7 +918,13 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     print(f"Getting time evolution data...")
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
     time_data = extract_time_evolution_data(time_evolution_path)
+    if plummer and 'r_m25' not in time_data:
+        raise ValueError('Plummer overlay requires a time history containing r_m25.')
     tevo_t = time_data['time']
+    if add_radii is not None:
+        missing = [radius for radius in add_radii if radius not in time_data]
+        if missing:
+            raise ValueError(f'Radii absent from this time history: {missing}')
 
     # Validate insets
     valid_insets = list(time_data.keys())
@@ -1043,7 +1067,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
     insets = ['rho0', 'minTheta']
     
     # Validate radii
-    add_radii = ['r_c', 'r_m2', 'r_smfp', 'r_minTh']
+    add_radii = ['r_c', 'r_m2']  # Radii present in current time histories.
 
     # Get the model directory
     if hasattr(model, 'config'):        # Passed state object
@@ -1063,6 +1087,10 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
     time_data = extract_time_evolution_data(time_evolution_path)
     tevo_t = time_data['time']
+    if add_radii is not None:
+        missing = [radius for radius in add_radii if radius not in time_data]
+        if missing:
+            raise ValueError(f'Radii absent from this time history: {missing}')
 
     # Load snapshot indices
     snapshot_indices_data   = extract_snapshot_indices(model_dir)
@@ -1142,7 +1170,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
                             color='red', s=50)
                 axin.set_ylabel(inset, fontsize=12)
                 axin.set_xlabel('$t$', fontsize=12)
-                axin.set_yscale('log')
+                axin.set_yscale('log' if np.any(np.isfinite(tevo_y) & (tevo_y > 0)) else 'linear')
                 axin.tick_params(
                     axis='both',
                     which='both',
@@ -1166,7 +1194,7 @@ def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
                 ax.set_ylabel('$M_\\mathrm{core}$/$M_\\mathrm{s}$', fontsize=16)
                 ax.set_xlabel('$\\rho_\\mathrm{core}$/$\\rho_\\mathrm{s}$', fontsize=16)
             elif i == 1:
-                yquant = time_data['zeta_c']
+                yquant = time_data['zeta_balb'] if 'zeta_balb' in time_data else time_data['zeta_c']
                 xquant = time_data['v2_c']
                 ax.plot(xquant, yquant, color='black')
                 ax.set_xscale('log')

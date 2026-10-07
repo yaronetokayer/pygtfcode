@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import matplotlib.pyplot as plt
 from pygtfcode.io.read import extract_time_evolution_data
 
@@ -13,7 +14,9 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
     quantity : str, optional
         Key from the time_evolution.txt file to plot on the y-axis.
         Default is 'rho0'.
-        Options are 't_Gyr', 'rho0', 'v_max', 'kn_c'
+        Any header column is supported, including time_Gyr, n, kn_cond_c,
+        x_c/x_m2 and K_L_c/K_S_c/K_L_m2/K_S_m2. Legacy columns such as
+        te remain plottable only when present in the supplied file.
     ylabel : str, optional
         Custom y-axis label. Defaults to quantity.
     logy : bool, optional
@@ -45,6 +48,10 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
 
     data_list = [extract_time_evolution_data(_resolve_path(m)) for m in models]
 
+    for data in data_list:
+        if quantity not in data:
+            raise ValueError(f"Quantity {quantity!r} is absent. Available columns: {list(data)}")
+
     fig, ax = plt.subplots(figsize=(7, 5))
     cmap = plt.get_cmap('tab10')
 
@@ -52,10 +59,19 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
         label = f"{data['model_id']:05d}"
         ax.plot(data['time'], data[quantity], lw=2, ls='solid', color=cmap(i % 10), label=label)
 
-    ax.set_xlabel(r'Time [$t_\mathrm{char}$]', fontsize=16)
-    ax.set_ylabel(ylabel if ylabel else quantity, fontsize=16)
+    ax.set_xlabel(r'Time [$t_\mathrm{s}$]', fontsize=16)
+    labels = {'kn_c': 'Core Kn (amplitude reference)',
+              'kn_cond_c': 'Core conductivity-effective Kn',
+              'tsc_c': 'Core dispersion-crossing time [t_s]', 'time_Gyr': 'Time [Gyr]',
+              'n': 'Number of cells'}
+    for suffix in ('c', 'm2'):
+        labels['x_' + suffix] = 'v / w at mean v2_' + suffix
+        labels['K_L_' + suffix] = 'LMFP factor at mean v2_' + suffix
+        labels['K_S_' + suffix] = 'SMFP factor at mean v2_' + suffix
+    ax.set_ylabel(ylabel if ylabel else labels.get(quantity, quantity), fontsize=16)
     # ax.set_xscale('log') ###
-    if logy:
+    # Infinite w gives x_c=x_m2=0; use a linear axis for all-zero data.
+    if logy and any(np.any(np.isfinite(d[quantity]) & (d[quantity] > 0)) for d in data_list):
         ax.set_yscale('log')
     ax.tick_params(axis='both', labelsize=12)
     ax.legend(fontsize=12)
@@ -68,5 +84,6 @@ def plot_time_evolution(models, quantity='rho0', ylabel=None, logy=True, filepat
             plt.show()
         else:
             plt.close(fig)
-    else:
+    elif show:
         plt.show()
+    return fig, ax

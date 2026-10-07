@@ -528,6 +528,10 @@ class State:
         self.dt_cum             = 0.0
         self.dr_max_cum         = 0.0
         self.du_max_cum         = 0.0
+        self.du_limit_cum = 0.0
+        self.log_steps = 0
+        self.n_split = 0
+        self.n_merge = 0
 
         if config.io.chatter:
             print("State initialized.")
@@ -619,7 +623,8 @@ class State:
         quantity : str, optional
             Key from the time_evolution.txt file to plot on the y-axis.
             Default is 'rho_c'.
-            Options are 'rho0', 'v_max', 'kn_min'
+            Any time_evolution.txt column, including rho0, kn_cond_c,
+            x_c/x_m2, K_L_c/K_S_c and K_L_m2/K_S_m2.
         ylabel : str, optional
             Custom y-axis label. Defaults to quantity.
         logy : bool, optional

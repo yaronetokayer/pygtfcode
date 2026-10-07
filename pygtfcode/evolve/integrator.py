@@ -82,6 +82,7 @@ def run_until_stop(state, start_step, **kwargs):
             status = check_drfrac_split(state.r, work_nint, drfrac_max)
             # status = check_drltemp_split(state.r, state.ltemp, work_nint, drfrac_max)
             if status == STATUS_SPLITS:
+                state.n_split += 1  # Split operations since the last log entry.
                 split_grid(state, work_nint)
                 state.resize_state_arrays()
                 a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
@@ -90,6 +91,7 @@ def run_until_stop(state, start_step, **kwargs):
             status = check_drfrac_merge(state.r, work_nint, drfrac_min, drfrac_max)
             # status = check_drltemp_merge(state.r, state.ltemp, work_nint, drfrac_min, drfrac_max)
             if status == STATUS_MERGES:
+                state.n_merge += 1  # Merge operations, not net cell-count changes.
                 merge_grid(state, work_nint)
                 state.resize_state_arrays()
                 a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
@@ -288,6 +290,8 @@ def integrate_time_step(state, config,                                  # State 
     if step_count != 1:
         state.dr_max_cum += float(dr_max)
     state.du_max_cum += float(du_max)
+    state.du_limit_cum += float(du_max) / eps_du_eff
+    state.log_steps += 1
 
     state.du_max    = float(du_max)
     state.dt        = float(dt_prop)
