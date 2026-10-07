@@ -267,13 +267,9 @@ def integrate_time_step(state, config,                                  # State 
     np.add(r[1:], r[:-1], out=state.rmid)
     state.rmid *= 0.5
 
-    # kn
-    np.sqrt(work_n2, out=state.kn)
-    state.kn *= sigma_m_0
-    np.reciprocal(state.kn, out=state.kn)
-    r_c = calc_core_r(r, state.rmid, rho)
-    state.kn_c = calc_logmean_within_r(r, m, state.kn, r_c)
-    # state.minkn = float(np.min(state.kn))
+    # Keep amplitude-reference and conductivity-effective diagnostics distinct.
+    # The low-Kn boost still uses the amplitude-reference kn_c.
+    state._update_transport_diagnostics()
 
     # drfrac
     state.drfrac[0] = np.nan
@@ -284,8 +280,6 @@ def integrate_time_step(state, config,                                  # State 
 
     # ltemp and mfp
     calc_ltemp(state.ltemp, state.v2, state.rmid)
-    np.multiply(sigma_m_0, state.rho, out=state.mfp)
-    np.reciprocal(state.mfp, out=state.mfp)
 
     # Diagnostics
     state.n_iter_du += iter_du

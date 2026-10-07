@@ -9,6 +9,49 @@ from pygtfcode.util.interpolate import interp_linear_to_interfaces, interp_pl_to
 from pygtfcode.util.calc_kp import factors, conductivity
 from pygtfcode.util.calc_core import calc_core_r, calc_mean_within_r
 
+@njit(cache=True)
+def calc_transport_scales(v2, rho, sigma_m_0, w_char, smfp_order,
+                         kn, mfp, kn_cond, mfp_cond):
+    """
+    Fill amplitude-reference and conductivity-effective cell diagnostics.
+
+    Parameters
+    ----------
+    v2, rho : ndarray, shape (N,)
+        Positive dimensionless dispersion squared and density.
+    sigma_m_0 : float
+        Cross-section amplitude per mass in characteristic units.
+    w_char : float
+        Velocity scale w / v_s; positive infinity selects constant scattering.
+    smfp_order : int
+        SMFP moment approximation, 1 or normalized 2.
+    kn, mfp : ndarray, shape (N,)
+        Output reference diagnostics using only the fixed amplitude:
+        kn = 1 / (sigma_m_0 * sqrt(rho * v2)),
+        mfp = 1 / (sigma_m_0 * rho), in units of r_s.
+        For finite w these are not velocity-averaged collision diagnostics.
+    kn_cond, mfp_cond : ndarray, shape (N,)
+        Output effective conductivity diagnostics: reference values divided
+        by sqrt(K_L * K_S). Then kappa_S / kappa_L = b/(a*c) * kn_cond^2.
+        mfp_cond = H * kn_cond with H = sqrt(v2/rho), in units of r_s.
+        This effective length is not the literal mean distance between
+        collisions, which requires a separately defined collision-rate average.
+
+    Notes
+    -----
+    Both pairs coincide for infinite w. The normalized second-order factor
+    preserves b as the constant-limit conductivity coefficient.
+    """
+    for i in range(v2.size):
+        kn[i] = 1.0 / (sigma_m_0 * math.sqrt(rho[i] * v2[i]))
+        mfp[i] = 1.0 / (sigma_m_0 * rho[i])
+        kl, ks, _, _ = factors(v2[i], w_char, smfp_order)
+        # Separate square roots avoid prematurely underflowing KL * KS.
+        factor = math.sqrt(kl) * math.sqrt(ks)
+        kn_cond[i] = kn[i] / factor
+        mfp_cond[i] = mfp[i] / factor
+
+
 @njit(float64(float64, float64, float64, float64), fastmath=True, cache=True)
 def low_kn_boost(kn_c, kn_threshold, boost, width):
     """
@@ -16,6 +59,10 @@ def low_kn_boost(kn_c, kn_threshold, boost, width):
 
     Returns ~1 when kn_c >> kn_threshold,
     ~boost when kn_c << kn_threshold.
+
+    The driver currently supplies the amplitude-reference core Knudsen
+    number. kn_cond_c is a separate diagnostic and does not change this
+    policy; use boost = 1 to disable relaxation during convergence tests.
     """
     x = np.log10(kn_c / kn_threshold)
     S = 1.0 / (1.0 + np.exp(x / width))

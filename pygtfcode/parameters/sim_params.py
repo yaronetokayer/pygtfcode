@@ -4,15 +4,18 @@ class SimParams:
 
     Attributes
     ----------
-    sigma_0 : float
+    sigma_m_0 : float
         Physical low-velocity isotropic-equivalent cross section per mass in cm^2/g. Must be positive.
         At low velocities the cross section per unit mass reduces to this value.
     w : float
-        Physical velocity scale in km/s.  Set transition of the velocity-dependent cross section drop off.
+        Physical velocity scale in km/s. Positive infinity (the default)
+        selects exact velocity-independent scattering. Finite positive values
+        set the scale of the velocity-dependent suppression.
     smfp_order : int
         Which order polynomial approximation to use for SMFP conductivity, accounting for velocity dependence.
         See Outmezguine et al. (2023), Appendix B.
-        Options are 1 and 2. Defaults to 2.
+        Options are 1 and 2. Defaults to 2. The second-order factor is
+        normalized by 45/44 so b retains its constant-scattering meaning.
     alph : float
         Coefficient for interpolation scheme between lmfp and smfp regimes.
         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph). Must be positive.
@@ -26,14 +29,16 @@ class SimParams:
         Model parameter 'a'. Must be positive.
     b : float
         Model parameter 'b'. Sets normalization of SMFP conduction scaling. Value from kinetic theory 25*sqrt(pi)/32.
-        Must be positive.
+        With normalized second order, b remains the constant-limit
+        conductivity coefficient; the raw second-order 45/44 enhancement
+        is not additionally applied. Must be positive.
     c : float
         Model parameter 'c'. Must be positive.
     """
     def __init__(
             self, 
             sigma_m_0             : float = 10.0,
-            w                   : float = 10,
+            w                   : float = float("inf"),
             smfp_order           : int = 2,
             alph                : float = 1.0,
             t_halt              : float = 1e3,

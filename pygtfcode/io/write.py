@@ -197,6 +197,9 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
             if idx > state.snapshot_index:
                 os.remove(os.path.join(snapshot_dir, fname))
 
+    # kn/mfp remain amplitude-reference columns. The appended *_cond columns
+    # describe conductivity; mfp_cond is an effective length in units of r_s,
+    # not a literal collision mean free path.
     # On the fly computations
     s, dsdr = calc_s_dsdr(state.v2, state.rho, state.rmid)
     sc1 = calc_sc1(state.v2, state.rho, state.rmid); sc2 = calc_sc2(state.v2, state.rho, state.rmid)
@@ -228,7 +231,8 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
             f"{'k_sc':>12}  {'k_lc':>12}  {'k_totc':>12}  "
             f"{'k_se':>12}  {'k_le':>12}  {'k_tote':>12}  "
             f"{'krat_c':>12}  {'krat_e':>12}  "
-            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'dlnrhodlnp':>12}\n"
+            f"{'dttcool':>12}  {'tdyntcool':>12}  {'s':>12}  {'dsdr':>12}  {'dlnrhodlnp':>12}  "
+            f"{'kn_cond':>12}  {'mfp_cond':>12}\n"
         )
         dt = state.dt ### for the timescales
 
@@ -265,7 +269,9 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{dsdr[i]:12.6e}  "
                 # f"{sc1[i]:12.6e}  "
                 # f"{sc2[i]:12.6e}  "
-                f"{dlnrhodlnp[i]:12.6e}\n"
+                f"{dlnrhodlnp[i]:12.6e}  "
+                f"{state.kn_cond[i]:12.6e}  "
+                f"{state.mfp_cond[i]:12.6e}\n"
             )
     
     if ic_filename is None:
@@ -352,7 +358,8 @@ def write_time_evolution(state, last=False):
         ("time_Gyr", t_Gyr),
         ("rho0", state.rho[0]),
         ("v_max", maxvel),
-        ("kn_c", state.kn_c),
+        ("kn_c", state.kn_c),  # Amplitude-reference mean, as before.
+        ("kn_cond_c", state.kn_cond_c),  # Conductivity-effective core mean.
         ("r_c", r_c),
         ("rho_c", rho_c),
         ("m_c", m_c),

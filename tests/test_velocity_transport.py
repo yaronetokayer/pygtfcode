@@ -128,6 +128,63 @@ class VelocityTransportTests(unittest.TestCase):
             self.assertTrue(np.all(s.v2 > 0))
             self.assertTrue(np.all(np.diff(s.r) > 0))
 
+    def check_diagnostics(self, state):
+        from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
+        sigma = state.char.sigma_m_0_char
+        what = state.char.w_char
+        moments = np.array([factors(t, what, state.config.sim.smfp_order) for t in state.v2])
+        scale = np.sqrt(moments[:, 0])*np.sqrt(moments[:, 1])
+        np.testing.assert_allclose(state.kn, 1/(sigma*np.sqrt(state.rho*state.v2)))
+        np.testing.assert_allclose(state.mfp, 1/(sigma*state.rho))
+        np.testing.assert_allclose(state.kn_cond, state.kn/scale)
+        np.testing.assert_allclose(state.mfp_cond, state.mfp/scale)
+        np.testing.assert_allclose(state.mfp_cond, np.sqrt(state.v2/state.rho)*state.kn_cond)
+        rc = calc_core_r(state.r, state.rmid, state.rho)
+        self.assertAlmostEqual(state.kn_c, calc_logmean_within_r(state.r, state.m, state.kn, rc))
+        self.assertAlmostEqual(state.kn_cond_c, calc_logmean_within_r(state.r, state.m, state.kn_cond, rc))
+        kl, ks, _ = calc_kappa_cell(state.v2, state.rho, state.rmid,
+            state.config.sim.a, state.config.sim.b, state.config.sim.c, sigma,
+            state.config.sim.alph, what, state.config.sim.smfp_order)
+        np.testing.assert_allclose(ks/kl,
+            state.config.sim.b/(state.config.sim.a*state.config.sim.c)*state.kn_cond**2)
+
+    def test_transport_diagnostics_lifecycle(self):
+        from pygtfcode.evolve.split import split_grid, merge_grid
+        for w in (50., np.inf):
+            for order in (1, 2):
+                s = State(Config(sim=dict(w=w, smfp_order=order), io=dict(chatter=False)))
+                s.reset()
+                self.check_diagnostics(s)
+                if np.isinf(w):
+                    np.testing.assert_array_equal(s.kn_cond, s.kn)
+                    np.testing.assert_array_equal(s.mfp_cond, s.mfp)
+                mask = np.zeros(s.n, dtype=np.int64)
+                mask[20] = 1
+                split_grid(s, mask)
+                s.resize_state_arrays()
+                self.check_diagnostics(s)
+                mask = np.zeros(s.n, dtype=np.int64)
+                mask[20] = 1
+                merge_grid(s, mask)
+                s.resize_state_arrays()
+                self.check_diagnostics(s)
+                integrate_time_step(s, s.config, 1e-6, 1e-4, 1, *allocate_work_arrays(s.n)[:-1])
+                self.check_diagnostics(s)
+
+    def test_default_w_and_metadata(self):
+        from pygtfcode.io.write import write_metadata
+        from pygtfcode.io.read import import_metadata
+        self.assertTrue(np.isposinf(Config().sim.w))
+        self.assertEqual(Config().prec.du_boost, 100.)
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as folder:
+            for w in (50., np.inf):
+                cfg = Config(sim=dict(w=w), io=dict(base_dir=folder, model_no=1, chatter=False))
+                state = State.from_config(cfg)
+                write_metadata(state)
+                rebuilt = Config.from_dict(import_metadata(Path(folder)/cfg.io.model_dir))
+                self.assertEqual(rebuilt.sim.w, w)
+                self.assertEqual(rebuilt.sim.smfp_order, 2)
+
     def test_output_and_full_driver(self):
         # Keep all test output within the checkout; remove only this temporary run.
         with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as folder:
@@ -136,7 +193,17 @@ class VelocityTransportTests(unittest.TestCase):
             state = State.from_config(cfg)
             state.run(steps=3)
             self.assertTrue(np.isfinite(state.t) and state.t > 0)
-            self.assertTrue(list(Path(folder).rglob('profile_*.dat')))
+            profiles = list(Path(folder).rglob('profile_*.dat'))
+            self.assertTrue(profiles)
+            header = profiles[0].read_text().splitlines()[0].split()
+            self.assertIn('kn_cond', header)
+            self.assertIn('mfp_cond', header)
+            for profile in profiles:
+                rows = np.loadtxt(profile, skiprows=1)
+                self.assertEqual(rows.shape[1], len(header))
+            history = (Path(folder)/cfg.io.model_dir/'time_evolution.txt').read_text()
+            self.assertIn('kn_cond_c', history.splitlines()[0])
+            self.check_diagnostics(state)
             np.testing.assert_allclose(state.t_dyn,
                 cfg.sim.a*state.char.sigma_m_0_char/np.sqrt(state.rho), rtol=1e-14)
 

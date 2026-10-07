@@ -27,6 +27,11 @@ class State:
     """
     Holds characteristic scales, grid, physical variables, time tracking,
     and simulation diagnostics. Constructed from a Config object.
+
+    kn and mfp retain amplitude-reference meanings. kn_cond and mfp_cond
+    describe the conductivity transition, not literal collision statistics.
+    kn_c and kn_cond_c are their respective core logarithmic means.
+    The legacy timestep boost continues to use kn_c.
     """
 
     def __init__(self, config, ic_filepath=None):
@@ -348,6 +353,8 @@ class State:
         self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(rho)).astype(np.float64)
         # self.lum    = np.zeros_like(r, dtype=np.float64)
 
+        self._update_transport_diagnostics()
+
     def _load_ic(self, ic_filepath):
         """
         Loads initial conditions from a snapshot file.
@@ -397,6 +404,8 @@ class State:
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
         self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)).astype(np.float64)
         # self.lum    = np.zeros_like(self.r, dtype=np.float64)
+
+        self._update_transport_diagnostics()
 
     def _ensure_virial_equilibrium(self):
         """
@@ -455,13 +464,34 @@ class State:
         self.v2 = v2_new
 
         self.rmid[:]    = 0.5 * (r_new[1:] + r_new[:-1])
-        self.kn[:]      = 1.0 / (self.char.sigma_m_0_char * np.sqrt(p_new))
+        self._update_transport_diagnostics()
         calc_ltemp(self.ltemp, self.v2, self.rmid)
-        self.mfp[:]     = 1.0 / (self.char.sigma_m_0_char * self.rho)
         self.t_dyn[:]   = self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")
+
+    def _update_transport_diagnostics(self):
+        """Refresh both diagnostic conventions on the current cell grid.
+
+        kn_c remains the amplitude-reference core mean for compatibility.
+        kn_cond_c is the effective conductivity-transition core mean; using
+        it in the timestep boost would be a separate policy change.
+        """
+        from pygtfcode.util.calc_runtime import calc_transport_scales
+        from pygtfcode.util.calc_core import calc_core_r, calc_logmean_within_r
+
+        for name in ('kn', 'mfp', 'kn_cond', 'mfp_cond'):
+            if not hasattr(self, name) or getattr(self, name).size != self.rho.size:
+                setattr(self, name, np.empty_like(self.rho))
+        calc_transport_scales(
+            self.v2, self.rho, float(self.char.sigma_m_0_char),
+            float(self.char.w_char), self.config.sim.smfp_order,
+            self.kn, self.mfp, self.kn_cond, self.mfp_cond,
+        )
+        r_c = calc_core_r(self.r, self.rmid, self.rho)
+        self.kn_c = calc_logmean_within_r(self.r, self.m, self.kn, r_c)
+        self.kn_cond_c = calc_logmean_within_r(self.r, self.m, self.kn_cond, r_c)
 
     def reset(self, ic_filepath=None):
         """
@@ -488,9 +518,8 @@ class State:
         self.dt = 1e-6                      # Initial time step (will be updated adaptively)
         self.du_max = 0.0                   # Max du of most recent step (used for adaptive time stepping)
 
-        # For diagnostics
-        r_c = calc_core_r(self.r, self.rmid, self.rho)
-        self.kn_c = calc_logmean_within_r(self.r, self.m, self.kn, r_c)
+        # Recompute both conventions after initialization and relaxation.
+        self._update_transport_diagnostics()
         # self.minkn = float(np.min(self.kn))
 
         self.n_iter_du          = 0
@@ -659,6 +688,8 @@ class State:
 
         self.rmid   = np.empty(n,   dtype=np.float64)
         self.kn     = np.empty(n,   dtype=np.float64)
+        self.kn_cond = np.empty(n, dtype=np.float64)
+        self.mfp_cond = np.empty(n, dtype=np.float64)
         self.ltemp  = np.empty(n,   dtype=np.float64)
         self.mfp    = np.empty(n,   dtype=np.float64)
         # self.t_sc   = np.empty(n,   dtype=np.float64)
@@ -667,6 +698,9 @@ class State:
         self.drfrac = np.empty(n,   dtype=np.float64)
         # self.lum    = np.empty(n+1, dtype=np.float64)
         self.t_cool = np.empty(n,   dtype=np.float64)
+
+        self.rmid[:] = 0.5 * (self.r[1:] + self.r[:-1])
+        self._update_transport_diagnostics()
 
     def __repr__(self):
         # Copy the __dict__ and omit the 'config' key
