@@ -345,7 +345,7 @@ class State:
         # self.t_sc   = (r_mid / np.sqrt(v2)).astype(np.float64)
         # self.t_coll = (1.0 / (rho * np.sqrt(v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.zeros_like(rho, dtype=np.float64)
-        self.t_dyn  = (1.0 / np.sqrt(rho)).astype(np.float64)
+        self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(rho)).astype(np.float64)
         # self.lum    = np.zeros_like(r, dtype=np.float64)
 
     def _load_ic(self, ic_filepath):
@@ -395,7 +395,7 @@ class State:
         # self.t_sc   = (self.rmid / np.sqrt(self.v2)).astype(np.float64)
         # self.t_coll = (1.0 / (self.rho * np.sqrt(self.v2) * self.char.sigma_m_char)).astype(np.float64)
         self.t_cool = np.empty_like(self.rho, dtype=np.float64)
-        self.t_dyn  = (1.0 / np.sqrt(self.rho)).astype(np.float64)
+        self.t_dyn  = (self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)).astype(np.float64)
         # self.lum    = np.zeros_like(self.r, dtype=np.float64)
 
     def _ensure_virial_equilibrium(self):
@@ -458,6 +458,7 @@ class State:
         self.kn[:]      = 1.0 / (self.char.sigma_m_0_char * np.sqrt(p_new))
         calc_ltemp(self.ltemp, self.v2, self.rmid)
         self.mfp[:]     = 1.0 / (self.char.sigma_m_0_char * self.rho)
+        self.t_dyn[:]   = self.config.sim.a * self.char.sigma_m_0_char / np.sqrt(self.rho)
 
         if chatter:
             print(f"Hydrostatic equilibrium achieved in {i} iterations. Max |dr/r| = {dr_max_new:.2e}.  HE res {he_res}.")

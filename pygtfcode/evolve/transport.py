@@ -187,7 +187,7 @@ def conduct_heat_Theta(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float
 
 ### IMPLICIT SCHEME
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True)
 def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0_char, w_char, smfp_order, a, b, c, d,):
     """
     Build tridiagonal system for implicit conduction update in v2:
@@ -225,8 +225,6 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     """
     n           = v2.shape[0] # Number of cells with unknown dv2 values
     sqrt2       = math.sqrt(2.0)
-    two_Clmfp   = 2.0 * Clmfp
-    inv_alph    = 1.0 / alph
 
     ### First cell ###
     rL          = r[0]
@@ -255,7 +253,7 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     )
 
     termR = sqrt2 * k_face
-    commonR = termR * dvR * slope_face / svR
+    commonR = termR * dvR * slope_face / (2.0 * T_face)
     fluxR = coefR * termR * dvR
 
     a[0] = 0.0
@@ -294,7 +292,7 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     termL   = termR
     termR = sqrt2 * k_face
     commonL = commonR
-    commonR = termR * dvR * slope_face / svR
+    commonR = termR * dvR * slope_face / (2.0 * T_face)
     fluxL   = fluxR
     fluxR = coefR * termR * dvR
 
@@ -339,7 +337,7 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
             termL   = termR
             termR = sqrt2 * k_face
             commonL = commonR
-            commonR = termR * dvR * slope_face / svR
+            commonR = termR * dvR * slope_face / (2.0 * T_face)
             fluxL   = fluxR
             fluxR = coefR * termR * dvR
 
@@ -554,10 +552,13 @@ def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
     c[-1] = 0.0
     d[-1] = flux0[-1]
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
 
     The tridiagonal system is defined by:
         a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
@@ -575,12 +576,9 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
-    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
+    build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
     solve_tridiagonal_thomas(a, b, c, d, dv2)
 
     tiny = _TINY64
@@ -596,10 +594,13 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64,), cache=True, fastmath=True,)
-def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
 
     The tridiagonal system is defined by:
         a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
@@ -617,12 +618,9 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
-    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
+    build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
     solve_tridiagonal_thomas(a, b, c, d, dv2)
 
     tiny = _TINY64
@@ -645,10 +643,13 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64), cache=True, fastmath=True)
-def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
 
     The tridiagonal system is defined by:
         a_i dv2_i-1 + b_i dv2_i + c_i dv2_i+1 = d_i
@@ -668,12 +669,9 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
-    build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt, alph, a, b, c, d,)
+    build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
     solve_tridiagonal_thomas(a, b, c, d, dv2)
 
     tiny = _TINY64
@@ -701,10 +699,13 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
+def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
     Repeatedly solves the implicit system with a trial dt until the
     maximum absolute fractional change satisfies
 
@@ -726,9 +727,6 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
     tiny = _TINY64
@@ -738,7 +736,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     for j in range(max_iter):
 
-        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, alph, a, b, c, d,)
+        build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
         solve_tridiagonal_thomas(a, b, c, d, dv2)
 
         du_max = 0.0
@@ -756,14 +754,18 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
                 v2[i] += dv2[i]
             return du_max, dt_trial, j
 
-        dt_trial *= safety * eps_du / du_max
+        # Saturated implicit responses must still make progress on rejection.
+        dt_trial *= min(0.5, safety * eps_du / du_max)
 
     return du_max, dt_trial, -1
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
 def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
     Repeatedly solves the implicit system with a trial dt until the
     maximum absolute fractional change satisfies
 
@@ -821,14 +823,18 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
                 v2[i] = v2_old + dv2i
             return du_max, dt_trial, j
 
-        dt_trial *= safety * eps_du / du_max
+        # Saturated implicit responses must still make progress on rejection.
+        dt_trial *= min(0.5, safety * eps_du / du_max)
 
     return du_max, dt_trial, -1
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64 , float64, types.int64), cache=True, fastmath=True)
-def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, alph, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
+def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
+
+    w_char is w / v_s; smfp_order selects the normalized first- or
+    second-order SMFP factor. Use w_char = inf for constant scattering.
     Repeatedly solves the implicit system with a trial dt until the
     maximum absolute fractional change satisfies
 
@@ -854,9 +860,6 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     c = np.empty(N, dtype=np.float64)
     d = np.empty(N, dtype=np.float64)
 
-    Csmfp = a_param * sigma_m_0**2 / b_param
-    Clmfp = 1.0 / c_param
-
     rho_int = interp_linear_to_interfaces(r, rho)
 
     tiny = _TINY64
@@ -866,7 +869,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
 
     for j in range(max_iter):
 
-        build_tridiag_system(r, m, rho_int, v2, Csmfp, Clmfp, dt_trial, alph, a, b, c, d,)
+        build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
         solve_tridiagonal_thomas(a, b, c, d, dv2)
 
         du_max = 0.0
@@ -898,7 +901,8 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
                 v2[i] += dv2i
             return du_max, dt_trial, j
 
-        fac = safety * eps_du / du_max
+        # Bound reduction even when the implicit response has saturated.
+        fac = min(0.5, safety * eps_du / du_max)
         dt_trial *= fac
 
     return du_max, dt_trial, -1

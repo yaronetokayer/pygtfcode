@@ -311,6 +311,8 @@ def integrate_time_step(state, config,                                  # State 
 
     np.sqrt(rho, out=state.t_dyn)
     np.reciprocal(state.t_dyn, out=state.t_dyn)
+    # Convert r_s/v_s dynamical time to the amplitude-based time unit t_s.
+    state.t_dyn *= a * sigma_m_0
     
     # Luminosity
     # init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)

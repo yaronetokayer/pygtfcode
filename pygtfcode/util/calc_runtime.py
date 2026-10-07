@@ -6,6 +6,7 @@ import numpy as np
 import math
 from numba import njit, void, float64, types
 from pygtfcode.util.interpolate import interp_linear_to_interfaces, interp_pl_to_r
+from pygtfcode.util.calc_kp import factors, conductivity
 from pygtfcode.util.calc_core import calc_core_r, calc_mean_within_r
 
 @njit(float64(float64, float64, float64, float64), fastmath=True, cache=True)
@@ -45,18 +46,19 @@ def calc_ltemp(ltemp, v2, rmid):
 
     ltemp[n - 1] = v2[n - 1] * np.abs(rmid[n - 1] - rmid[n - 2]) / np.abs(v2[n - 1] - v2[n - 2])
 
-@njit(types.Tuple((float64[::1], float64[::1], float64[::1],))(float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64,), cache=True, fastmath=True,)
-def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph,):
+@njit(types.Tuple((float64[::1], float64[::1], float64[::1],))(float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64, float64, types.int64), cache=True)
+def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph, w_char, smfp_order,):
     """
     Compute the cell-centered LMFP, SMFP, and interpolated conductivities, shape (N,)
 
-        kappa_LMFP = (3/2) * v * r^2 * (c * rho * v^2)
+        kappa_LMFP = (3/2) * v * r^2 * (c * rho * v^2 * K_L)
 
-        kappa_SMFP = (3/2) * v * r^2 * b / (a * sigma_m^2)
+        kappa_SMFP = (3/2) * v * r^2 * b / (a * sigma_m^2 * K_S)
 
         kappa = ( kappa_LMFP^(-alpha) + kappa_SMFP^(-alpha) )^(-1/alpha).
 
-    The returned conductivity is positive.
+    Internal conductivities are positive; values include the 3/2 and r^2
+    factors used in the package luminosity convention.
 
     Parameters
     ----------
@@ -73,9 +75,14 @@ def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph,):
     c_param : float
         Coefficient c in the LMFP conductivity.
     sigma_m : float
-        Self-interaction cross section per unit mass.
+        Cross-section amplitude per unit mass in characteristic units.
     alph : float
         Positive interpolation parameter.
+    w_char : float
+        Velocity scale w / v_s. Positive infinity selects constant scattering.
+    smfp_order : int
+        SMFP moment approximation, 1 or 2; order 2 retains the normalized
+        convention of calc_kp.factors.
 
     Returns
     -------
@@ -97,8 +104,6 @@ def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph,):
         a_param * sigma_m * sigma_m
     )
     lmfp_fac = 1.5 * c_param
-    neg_alph = -alph
-    neg_inv_alph = -1.0 / alph
 
     for i in range(n):
         v2_i = v2[i]
@@ -107,32 +112,39 @@ def calc_kappa_cell(v2, rho, rmid, a_param, b_param, c_param, sigma_m, alph,):
         # common geometric/velocity factor: v * r^2
         vr2 = math.sqrt(v2_i) * r_i * r_i
 
-        k_l_i = lmfp_fac * vr2 * rho[i] * v2_i
-        k_s_i = smfp_fac * vr2
+        kl, ks, _, _ = factors(v2_i, w_char, smfp_order)
+        k_l_i = lmfp_fac * vr2 * rho[i] * v2_i * kl
+        k_s_i = smfp_fac * vr2 / ks
 
         k_l[i] = k_l_i
         k_s[i] = k_s_i
 
-        k[i] = (
-            k_l_i**neg_alph
-            + k_s_i**neg_alph
-        )**neg_inv_alph
+        coeff, _ = conductivity(
+            v2_i, rho[i], sigma_m, w_char, alph,
+            a_param, b_param, c_param, smfp_order,
+        )
+        k[i] = 1.5 * r_i * r_i * coeff
 
     return k_l, k_s, k
 
-@njit(types.Tuple((float64[::1], float64[::1], float64[::1],))(float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64,), cache=True, fastmath=True,)
-def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph,):
+@njit(types.Tuple((float64[::1], float64[::1], float64[::1],))(float64[::1], float64[::1], float64[::1], float64, float64, float64, float64, float64, float64, types.int64), cache=True)
+def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph, w_char, smfp_order,):
     """
-    Compute the edge LMFP, SMFP, and interpolated conductivities, shape (N,), but with
-    the boundary condition of zero at the edge.
+    Compute LMFP, SMFP, and interpolated conductivities at outer cell edges.
 
-        kappa_LMFP = (3/2) * v * r^2 * (c * rho * v^2)
+    Output index i corresponds to r[i+1]. Internal faces use the arithmetic
+    mean temperature and interpolated density of the active implicit solver.
+    The last entry is NaN: the imposed outer zero flux does not define a
+    boundary conductivity. The central edge is not included.
 
-        kappa_SMFP = (3/2) * v * r^2 * b / (a * sigma_m^2)
+        kappa_LMFP = (3/2) * v * r^2 * (c * rho * v^2 * K_L)
+
+        kappa_SMFP = (3/2) * v * r^2 * b / (a * sigma_m^2 * K_S)
 
         kappa = ( kappa_LMFP^(-alpha) + kappa_SMFP^(-alpha) )^(-1/alpha).
 
-    The returned conductivity is positive.
+    Internal conductivities are positive; values include the 3/2 and r^2
+    factors used in the package luminosity convention.
 
     Parameters
     ----------
@@ -149,9 +161,14 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph,):
     c_param : float
         Coefficient c in the LMFP conductivity.
     sigma_m : float
-        Self-interaction cross section per unit mass.
+        Cross-section amplitude per unit mass in characteristic units.
     alph : float
         Positive interpolation parameter.
+    w_char : float
+        Velocity scale w / v_s. Positive infinity selects constant scattering.
+    smfp_order : int
+        SMFP moment approximation, 1 or 2; order 2 retains the normalized
+        convention of calc_kp.factors.
 
     Returns
     -------
@@ -169,15 +186,13 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph,):
     k   = np.empty(n, dtype=np.float64)
 
     rho_int = interp_linear_to_interfaces(r, rho) # Shape (N-1,)
-    v2_int  = interp_linear_to_interfaces(r, v2)
+    v2_int  = 0.5 * (v2[:-1] + v2[1:]) # Match the active implicit flux.
 
     # Quantities that are constant across all cells.
     smfp_fac = 1.5 * b_param / (
         a_param * sigma_m * sigma_m
     )
     lmfp_fac = 1.5 * c_param
-    neg_alph = -alph
-    neg_inv_alph = -1.0 / alph
 
     for i in range(n-1):
         v2_i    = v2_int[i]
@@ -186,16 +201,18 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph,):
         # common geometric/velocity factor: v * r^2
         vr2 = math.sqrt(v2_i) * r_i * r_i
 
-        k_l_i = lmfp_fac * vr2 * rho_int[i] * v2_i
-        k_s_i = smfp_fac * vr2
+        kl, ks, _, _ = factors(v2_i, w_char, smfp_order)
+        k_l_i = lmfp_fac * vr2 * rho_int[i] * v2_i * kl
+        k_s_i = smfp_fac * vr2 / ks
 
         k_l[i] = k_l_i
         k_s[i] = k_s_i
 
-        k[i] = (
-            k_l_i**neg_alph
-            + k_s_i**neg_alph
-        )**neg_inv_alph
+        coeff, _ = conductivity(
+            v2_i, rho_int[i], sigma_m, w_char, alph,
+            a_param, b_param, c_param, smfp_order,
+        )
+        k[i] = 1.5 * r_i * r_i * coeff
 
     # Nan for last edge, boundary condition
     k_l[n-1] = np.nan; k_s[n-1] = np.nan; k[n-1] = np.nan

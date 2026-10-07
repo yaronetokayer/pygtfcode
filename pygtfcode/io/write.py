@@ -207,9 +207,9 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     mfpltemp = state.mfp / state.ltemp
     sim = state.config.sim
     a = float(sim.a); b = float(sim.b); c = float(sim.c); sigma_m_0 = float(state.char.sigma_m_0_char); alph = float(sim.alph);
-    k_lc, k_sc, k_totc = calc_kappa_cell(state.v2, state.rho, state.rmid, a, b, c, sigma_m_0, alph,)
+    k_lc, k_sc, k_totc = calc_kappa_cell(state.v2, state.rho, state.rmid, a, b, c, sigma_m_0, alph, float(state.char.w_char), sim.smfp_order,)
     krat_c = k_sc / k_lc
-    k_le, k_se, k_tote = calc_kappa_edge(state.v2, state.rho, state.r, a, b, c, sigma_m_0, alph,)
+    k_le, k_se, k_tote = calc_kappa_edge(state.v2, state.rho, state.r, a, b, c, sigma_m_0, alph, float(state.char.w_char), sim.smfp_order,)
     krat_e = k_se / k_le
 
     with open(filename, "w") as f:
