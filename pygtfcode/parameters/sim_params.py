@@ -12,7 +12,7 @@ class SimParams:
     smfp_order : int
         Which order polynomial approximation to use for SMFP conductivity, accounting for velocity dependence.
         See Outmezguine et al. (2023), Appendix B.
-        Options are 1 and 2.
+        Options are 1 and 2. Defaults to 2.
     alph : float
         Coefficient for interpolation scheme between lmfp and smfp regimes.
         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph). Must be positive.
@@ -34,7 +34,7 @@ class SimParams:
             self, 
             sigma_m_0             : float = 10.0,
             w                   : float = 10,
-            smfp_oder           : int = 2,
+            smfp_order           : int = 2,
             alph                : float = 1.0,
             t_halt              : float = 1e3,
             rho_c_halt          : float = 1500,
@@ -56,7 +56,7 @@ class SimParams:
 
         self.sigma_m_0 = sigma_m_0
         self.w = w
-        self.smfp_order = smfp_oder
+        self.smfp_order = smfp_order
         self.alph = alph
         self.t_halt = t_halt
         self.rho_c_halt = rho_c_halt
