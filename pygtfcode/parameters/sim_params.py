@@ -23,7 +23,7 @@ class SimParams:
         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph). Must be positive.
     t_halt : float
         Absolute simulation halt time in t_s units. Positive infinity disables it.
-    rho_c_halt : float
+    rho0_halt : float
         Innermost-cell density rho[0]/rho_s at which to halt after t > 50 t_s.
         Positive infinity disables this limit.
     implicit_conduct : bool
@@ -46,7 +46,7 @@ class SimParams:
             smfp_order           : int = 2,
             alph                : float = 1.0,
             t_halt              : float = 1e3,
-            rho_c_halt          : float = 1500,
+            rho0_halt          : float = 1500,
             implicit_conduct    : bool = True,
             a                   : float = 2.256758,
             b                   : float = 1.3847,
@@ -57,7 +57,7 @@ class SimParams:
         self._smfp_order = None
         self._alph = None
         self._t_halt = None
-        self._rho_c_halt = None
+        self._rho0_halt = None
         self._implicit_conduct = None
         self._a = None
         self._b = None
@@ -68,7 +68,7 @@ class SimParams:
         self.smfp_order = smfp_order
         self.alph = alph
         self.t_halt = t_halt
-        self.rho_c_halt = rho_c_halt
+        self.rho0_halt = rho0_halt
         self.implicit_conduct = implicit_conduct
         self.a = a
         self.b = b
@@ -127,14 +127,14 @@ class SimParams:
         self._t_halt = float(value)
 
     @property
-    def rho_c_halt(self):
-        return self._rho_c_halt
+    def rho0_halt(self):
+        return self._rho0_halt
 
-    @rho_c_halt.setter
-    def rho_c_halt(self, value):
+    @rho0_halt.setter
+    def rho0_halt(self, value):
         if isinstance(value, bool) or math.isnan(value) or value <= 0:
-            raise ValueError("rho_c_halt must be positive")
-        self._rho_c_halt = float(value)
+            raise ValueError("rho0_halt must be positive")
+        self._rho0_halt = float(value)
 
     @property
     def implicit_conduct(self):

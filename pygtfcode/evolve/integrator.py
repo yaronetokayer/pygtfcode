@@ -25,7 +25,7 @@ def run_until_stop(state, start_step, **kwargs):
     io = config.io; sim = config.sim; prec = config.prec; grid = config.grid
     
     t_evol = bool(io.t_evol); profiles = bool(io.profiles); chatter = bool(io.chatter)
-    t_halt = float(sim.t_halt); rho_c_halt = float(sim.rho_c_halt)
+    t_halt = float(sim.t_halt); rho0_halt = float(sim.rho0_halt)
     if t_evol:
         rho0_last_tevol = float(state.rho[0])
         drho_tevol = float(io.drho_tevol)
@@ -109,7 +109,7 @@ def run_until_stop(state, start_step, **kwargs):
         rho0 = state.rho[0]
 
         # Check halting criteria
-        if rho0 > rho_c_halt:
+        if rho0 > rho0_halt:
             if state.t > 50:
                 if chatter:
                     print("Simulation halted: central density exceeds halting value")
