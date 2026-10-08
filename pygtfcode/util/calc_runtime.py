@@ -9,9 +9,8 @@ from pygtfcode.util.interpolate import interp_linear_to_interfaces, interp_pl_to
 from pygtfcode.util.calc_kp import factors, conductivity
 from pygtfcode.util.calc_core import calc_core_r, calc_mean_within_r
 
-@njit(cache=True)
-def calc_transport_scales(v2, rho, sigma_m_0, w_char, smfp_order,
-                         kn, mfp, kn_cond, mfp_cond):
+@njit(void(float64[:], float64[:], float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True)
+def calc_transport_scales(v2, rho, sigma_m_0, w_char, smfp_order, kn, mfp, kn_cond, mfp_cond):
     """
     Fill amplitude-reference and conductivity-effective cell diagnostics.
 
@@ -50,7 +49,6 @@ def calc_transport_scales(v2, rho, sigma_m_0, w_char, smfp_order,
         factor = math.sqrt(kl) * math.sqrt(ks)
         kn_cond[i] = kn[i] / factor
         mfp_cond[i] = mfp[i] / factor
-
 
 @njit(float64(float64, float64, float64, float64), fastmath=True, cache=True)
 def low_kn_boost(kn_c, kn_threshold, boost, width):

@@ -623,15 +623,15 @@ class State:
     def resize_state_arrays(self):
         n = self.n
 
-        self.rmid   = np.empty(n,   dtype=np.float64)
-        self.kn     = np.empty(n,   dtype=np.float64)
-        self.kn_cond = np.empty(n, dtype=np.float64)
-        self.mfp_cond = np.empty(n, dtype=np.float64)
-        self.ltemp  = np.empty(n,   dtype=np.float64)
-        self.mfp    = np.empty(n,   dtype=np.float64)
-        self.t_dyn  = np.empty(n,   dtype=np.float64)
-        self.drfrac = np.empty(n,   dtype=np.float64)
-        self.t_cool = np.full(n, np.inf, dtype=np.float64)
+        self.rmid       = np.empty(n,   dtype=np.float64)
+        self.kn         = np.empty(n,   dtype=np.float64)
+        self.kn_cond    = np.empty(n, dtype=np.float64)
+        self.mfp_cond   = np.empty(n, dtype=np.float64)
+        self.ltemp      = np.empty(n,   dtype=np.float64)
+        self.mfp        = np.empty(n,   dtype=np.float64)
+        self.t_dyn      = np.empty(n,   dtype=np.float64)
+        self.drfrac     = np.empty(n,   dtype=np.float64)
+        self.t_cool     = np.full(n, np.inf, dtype=np.float64)
 
         self.rmid[:] = 0.5 * (self.r[1:] + self.r[:-1])
         self._update_transport_diagnostics()
