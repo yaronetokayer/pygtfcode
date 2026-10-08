@@ -290,9 +290,6 @@ def integrate_time_step(state, config,                                  # State 
     state.t         += float(dt_prop)
 
     ### Time scales ###
-
-
-
     np.sqrt(rho, out=state.t_dyn)
     np.reciprocal(state.t_dyn, out=state.t_dyn)
     # Convert r_s/v_s dynamical time to the amplitude-based time unit t_s.

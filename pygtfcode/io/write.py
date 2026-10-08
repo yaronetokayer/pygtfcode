@@ -1,7 +1,7 @@
 import numpy as np
 import os
 from pygtfcode.io.read import extract_time_evolution_data
-from pygtfcode.util.calc_slopes import calc_balberg_zeta, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_sc1, calc_sc2, calc_dlogrho_dlogp
+from pygtfcode.util.calc_slopes import calc_balberg_zeta, calc_dlnmc_dlnvc, calc_dlnrhoc_dlnvc, calc_s_dsdr, calc_dlogrho_dlogp
 from pygtfcode.util.calc_core import calc_core_r_rho_m_v2, calc_rmn_rho_m_v2
 from pygtfcode.util.calc_runtime import low_kn_boost, calc_kappa_cell, calc_kappa_edge
 from pygtfcode.util.calc_kp import factors
@@ -147,11 +147,11 @@ def write_log_entry(state, start_step):
         ('<n_iter_dr>', state.n_iter_dr / count if count else None),
         ('n_split', state.n_split), ('n_merge', state.n_merge),
     ]
-    header = '  '.join(f'{name:>14}' for name, _ in columns) + '\n'
+    header = '  '.join(f'{name:>13}' for name, _ in columns) + '\n'
     new_line = '  '.join(
-        f'{"N/A":>14}' if value is None else
-        f'{value:14d}' if isinstance(value, (int, np.integer)) else
-        f'{value:14.6e}' for _, value in columns
+        f'{"N/A":>13}' if value is None else
+        f'{value:13d}' if isinstance(value, (int, np.integer)) else
+        f'{value:13.6e}' for _, value in columns
     ) + '\n'
     _update_file(filepath, header, new_line, step)
 
@@ -207,7 +207,6 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
     # not a literal collision mean free path.
     # On the fly computations
     s, dsdr = calc_s_dsdr(state.v2, state.rho, state.rmid)
-    sc1 = calc_sc1(state.v2, state.rho, state.rmid); sc2 = calc_sc2(state.v2, state.rho, state.rmid)
     dlnrhodlnp = calc_dlogrho_dlogp(state.v2, state.rho)
     drltemp = np.empty_like(state.rho)
     drltemp[0] = np.nan
@@ -267,8 +266,6 @@ def write_profile_snapshot(state, initialize=False, ic_filename=None):
                 f"{_safe_div(state.t_dyn[i], state.t_cool[i]):12.6e}  "
                 f"{s[i]:12.6e}  "
                 f"{dsdr[i]:12.6e}  "
-                # f"{sc1[i]:12.6e}  "
-                # f"{sc2[i]:12.6e}  "
                 f"{dlnrhodlnp[i]:12.6e}  "
                 f"{state.kn_cond[i]:12.6e}  "
                 f"{state.mfp_cond[i]:12.6e}  "
