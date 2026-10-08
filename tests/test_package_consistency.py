@@ -11,7 +11,7 @@ import numpy as np
 
 from pygtfcode import Config, State
 from pygtfcode.io.read import extract_snapshot_data, extract_time_evolution_data, load_snapshot_bundle
-from pygtfcode.plot.snapshot import plot_snapshots, plot_profile, plot_plummer
+from pygtfcode.plot.snapshot import plot_snapshots, plot_profile
 
 
 class PackageConsistencyTests(unittest.TestCase):
@@ -57,6 +57,55 @@ class PackageConsistencyTests(unittest.TestCase):
                 row = dict(zip(keys, lines[-1].split()))
                 self.assertAlmostEqual(float(row['eps_du_eff'])/effective(state.kn_cond_c),
                                        1., places=6)
+
+    def test_per_column_log_widths(self):
+        from pygtfcode.io.write import write_log_entry
+        with self.tempdir() as folder:
+            cfg = self.config(folder)
+            state = State.from_config(cfg)
+            write_log_entry(state, 0)
+            path = Path(folder)/cfg.io.model_dir/'logfile.txt'
+            lines = path.read_text().splitlines()
+            self.assertEqual(lines[0][:10], 'step'.rjust(10))
+            self.assertEqual(lines[1][:10], '0'.rjust(10))
+            self.assertEqual(lines[0][12:25], 'time'.rjust(13))
+            self.assertEqual(lines[0][42:48], 'n'.rjust(6))
+            state.step_count = 1
+            write_log_entry(state, 0)
+            self.assertEqual(len(path.read_text().splitlines()), 3)
+
+    def test_movie_dispatch_and_no_insets_without_history(self):
+        from concurrent.futures import Future
+        from pygtfcode.plot import snapshot as movies
+        class ImmediateExecutor:
+            def __init__(self, **kwargs): pass
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def submit(self, fn, *args):
+                future = Future()
+                try: future.set_result(fn(*args))
+                except Exception as error: future.set_exception(error)
+                return future
+        with patch.object(movies, 'make_movie_deluxe_parallel') as renderer:
+            movies.make_movie('model', insets=False)
+            renderer.assert_called_once_with('model', insets=False)
+        with patch.object(movies, 'make_movie_deluxe_serial') as renderer:
+            movies.make_movie_deluxe('model', parallel=False, insets=False)
+            renderer.assert_called_once_with('model', insets=False)
+        with self.tempdir() as folder, contextlib.redirect_stdout(io.StringIO()):
+            cfg = self.config(folder)
+            State.from_config(cfg)
+            self.assertFalse((Path(folder)/cfg.io.model_dir/'time_evolution.txt').exists())
+            def check_frames(*args, **kwargs):
+                frames = list((Path(folder)/cfg.io.model_dir/'temp_images').glob('*.png'))
+                self.assertEqual(len(frames), 1)
+                self.assertGreater(frames[0].stat().st_size, 1000)
+            with patch.object(movies, 'ProcessPoolExecutor', ImmediateExecutor), patch.object(movies.subprocess, 'run', side_effect=check_frames):
+                for parallel in (False, True):
+                    for insets in (False, [None, None]):
+                        movies.make_movie(cfg, parallel=parallel, insets=insets)
+            with self.assertRaises(ValueError):
+                movies.make_movie(cfg, parallel=False, insets=True)
 
     def test_parameter_validation(self):
         from pygtfcode.parameters import SimParams, GridParams, PrecisionParams, IOParams
@@ -160,7 +209,7 @@ class PackageConsistencyTests(unittest.TestCase):
                 if n == 2:
                     self.assertEqual(result[-1], 0.)
 
-    def test_plot_api_and_plummer_normalization(self):
+    def test_plot_api(self):
         with self.tempdir() as folder:
             state = State.from_config(self.config(folder))
             snapshots = [-1]
@@ -175,13 +224,6 @@ class PackageConsistencyTests(unittest.TestCase):
                 fig, ax = plt.subplots()
                 plot_profile(ax, key, [data])
                 fig.canvas.draw(); plt.close(fig)
-            fig, ax = plt.subplots()
-            r = np.geomspace(.1, 10., 101)
-            rho = (1+r*r)**-2.5
-            data = dict(log_rmid=np.log10(r), rho=rho)
-            plot_plummer(ax, 'v2', data, 1.)
-            np.testing.assert_allclose(ax.lines[0].get_ydata(), 1/(18*np.sqrt(1+r*r)), rtol=1e-12)
-            plt.close(fig)
 
     def test_nonfinite_implicit_solution_is_rejected(self):
         from pygtfcode.evolve import transport as tr

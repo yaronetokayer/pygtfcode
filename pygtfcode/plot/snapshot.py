@@ -15,13 +15,12 @@ VALID_PROFILES = [
     's', 'dsdr', 'dlnrhodlnp', 'tsctcool', 'mfpltemp', 'dlnrhodlnr', 'dlnvdlnr', 
     'k_sc', 'k_lc', 'k_totc', 'k_se', 'k_le', 'k_tote', 'krat_c', 'krat_e'
     ]
-PLUMMER_PROFILES = ['rho', 'v2']
 EDGE_QUANTITIES = ['m', 'k_se', 'k_le', 'k_tote', 'krat_e']
 LINEAR_Y_PROFILES = ['s', 'dlnrhodlnr', 'dlnvdlnr', 'x']
 SYMLOG_Y_PROFILES = ['dsdr', 'dlnrhodlnp']
 # Conductivity equality occurs at krat=1, not generally at Kn=1.
 LINE_AT_1_PROFILES = ['dttcool', 'tdyntcool', 'mfpltemp', 'mfp_cond_ltemp', 'drltemp', 'krat_c', 'krat_e']
-VALID_RADII = ['r_c', 'r_m2', 'r_smfp', 'r_minTh', 'r_m25']
+VALID_RADII = ['r_c', 'r_m2', 'r_minTh', 'r_m25']
 
 def get_profile_axis_limits(profile, data_list, xaxis='r'):
     if xaxis not in ('r', 'm'):
@@ -206,72 +205,6 @@ def plot_profile(ax, profile, data_list, xaxis='r', axislims=None, legend=True, 
     if grid:
         ax.grid(True, which="both", ls="--")
 
-def plot_plummer(ax, profile, data, r0_plummer, xaxis='r'):
-    """
-    Plot Plummer profile on passed axis object
-
-    Arguments
-    ---------
-    ax : Axis
-        Axis object on which to plot
-    profile : str
-        Profile to plot.  Options are 'rho', 'v2'
-    data : dict
-        Dictionary returned by extract_snapshot_data()
-    r0_plummer : float
-        Scale radius for plummer sphere
-        Should be the point where the rho profile hits a log slope of -2.5.
-    xaxis : str, optional
-        X-axis to plot.  Default is 'r'.  Other option is 'm'.
-    """
-    def plummer_rho(x, x0=1, a=1):
-        """
-        Density profile for Plummer sphere
-        x - radial axis
-        x0 - Plummer scale radius
-        a - value at r0
-        """
-        return a * (2 /  (1 + (x/x0)**2) )**(5/2)
-
-    def plummer_v(x, x0=1.0, rho_at_x0=1.0):
-        """
-        Self-consistent 1D velocity-dispersion profile for a Plummer sphere.
-
-        x0 is the Plummer scale radius and rho_at_x0 is rho(x0).
-        Uses the package convention m_s = 4*pi*rho_s*r_s^3 and
-        v_s^2 = G*m_s/r_s.
-        """
-        v_at_x0 = np.sqrt((2.0 / 9.0) * rho_at_x0 * x0**2)
-        return v_at_x0 * (2.0 / (1.0 + (x / x0)**2))**(1.0 / 4.0)
-    
-    if profile not in PLUMMER_PROFILES:
-        raise ValueError(f"'plot_plummer' was passed for invalid profile. Valid options are: {PLUMMER_PROFILES}")
-
-    if xaxis not in ('r', 'm'):
-        raise ValueError("xaxis must be 'r' or 'm'")
-    if xaxis == 'r':
-        xkey = 'log_r' if profile in EDGE_QUANTITIES else 'log_rmid'
-    elif xaxis == 'm':
-        xkey = 'm'
-
-    # Plot Plummer profile
-    rmid = 10**data['log_rmid']
-    if xaxis == 'r':
-        x = 10**data[xkey] if profile in EDGE_QUANTITIES else rmid
-    elif xaxis == 'm':
-        m_edges = data[xkey]
-        x = np.empty_like(m_edges)
-        x[0] = 0.5 * m_edges[0]
-        x[1:] = 0.5 * (m_edges[:-1] + m_edges[1:])
-
-    norm = np.interp(r0_plummer, rmid, data['rho'])
-    if profile == 'rho':
-        plummer = plummer_rho(rmid, x0=r0_plummer, a=norm)
-    elif profile == 'v2':
-        plummer = (plummer_v(rmid, x0=r0_plummer, rho_at_x0=norm))**2
-
-    ax.plot(x, plummer, lw=1.5, color='blue', ls='--', label='Plummer fit')
-
 def plot_snapshots(model, snapshots=None, profiles='rho', xaxis=None, base_dir=None, filepath=None, show=False, grid=False, for_movie=False):
     """
     Plot up to three profiles at specified points in time for one simulation
@@ -360,109 +293,6 @@ def plot_snapshots(model, snapshots=None, profiles='rho', xaxis=None, base_dir=N
         plt.show()
     return fig, axs
 
-def make_movie(model, filepath=None, base_dir=None, profiles='rho', grid=False, fps=20):
-    """
-    Animate up to three profiles for one simulation
-
-    Arguments
-    ---------
-    model : State object, Config object, or model_no
-        Each model can be a State, Config, or integer model number.
-    filepath : str, optional
-        Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_{profiles}.mp4'
-    base_dir : str, optional
-        Required if any model is passed as an integer.  The directory in which all ModelXXXXX subdirectories reside.
-    profiles : str or list of str, optional
-        Profiles from VALID_PROFILES that are present in the supplied files.
-    grid : bool, optional
-        If True, shows grid on axes
-    fps : int, optional
-        Frames per second for the output movie. Default is 20
-
-    Returns
-    -------
-    None
-        Saves the movie as an MP4 file in the model directory.
-    """
-
-    n = 1 if type(profiles) != list else len(profiles) # number of panels
-
-    # Get the model directory
-    if hasattr(model, 'config'):        # Passed state object
-        model_dir = os.path.join(model.config.io.base_dir, model.config.io.model_dir)
-    elif hasattr(model, 'io'):          # Passed config object
-        model_dir = os.path.join(model.io.base_dir, model.io.model_dir)
-    elif isinstance(model, int):        # Passed model number
-        if base_dir is None:
-            raise ValueError("'base_dir' (base directory) must be specified if using model numbers.")
-        model_dir = f"Model{model:05d}"
-        model_dir = os.path.join(base_dir, model_dir)
-    else:
-        raise TypeError(f"Unrecognized model type: {type(model)}. Must be a State object, Config object, or integer.")
-    
-    # Load snapshot indices
-    snapshot_indices_data = extract_snapshot_indices(model_dir)
-    indices = snapshot_indices_data['index']
-
-    # Create a temporary directory for storing images
-    temp_dir = os.path.join(model_dir, "temp_images")
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)         # Delete the directory and all its contents
-    os.makedirs(temp_dir)
-
-    image_paths = []                    # List to store paths of generated images
-
-    print(f"Generating {len(indices)} frames...")
-    for ind in tqdm(indices, desc="Frames", unit="frame"):
-        snapshot_path = os.path.join(model_dir, f"profile_{ind}.dat")
-        if not os.path.isfile(snapshot_path):
-            continue                    # Skip if the snapshot file does not exist
-
-        # Define the output image path for the current frame
-        image_path = os.path.join(temp_dir, f"frame_{ind:04d}.png")
-
-        # Plot the profile, including the initial profile for comparison
-        if ind == 0:
-            plot_snapshots(model, profiles=profiles, base_dir=base_dir, filepath=image_path, grid=grid, for_movie=True)
-        else:
-            plot_snapshots(model, snapshots=[0,ind], profiles=profiles, base_dir=base_dir, filepath=image_path, grid=grid, for_movie=True)
-
-        image_paths.append(image_path)  # Add the image path to the list
-
-    print("Compiling into a movie using ffmpeg...")
-    # Define the output movie path
-    if isinstance(profiles, (list, tuple)):
-        profiles_str = "_".join(map(str, profiles))
-    else:
-        profiles_str = str(profiles)
-
-    output_movie_path = (
-        filepath if filepath is not None 
-        else os.path.join(model_dir, f"movie_{profiles_str}.mp4")
-    )
-
-    # Construct the ffmpeg command to create the movie
-    movie_command = [
-        "ffmpeg",
-        "-y",                                           # Overwrite output file if it exists
-        "-framerate", str(fps),                         # Set frames per second
-        "-i", os.path.join(temp_dir, "frame_%04d.png"), # Input image sequence
-        "-c:v", "libx264",                              # Use H.264 codec
-        "-pix_fmt", "yuv420p",                          # Set pixel format for compatibility
-        "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",     # Ensure even dimensions
-        output_movie_path
-    ]
-
-    # Run the ffmpeg command
-    subprocess.run(movie_command, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, check=True)
-
-    print("Deleting frames...")
-    # Clean up temporary images
-    shutil.rmtree(temp_dir, ignore_errors=True)
-
-    # Print the location of the saved movie
-    print(f"Movie saved to {output_movie_path}")
-
 def _deluxe_frame(args):
     """
     Worker function for rendering one movie frame.
@@ -471,7 +301,7 @@ def _deluxe_frame(args):
     """
     (
         ind, model_dir, temp_dir, n, profiles, insets, xaxis, add_radii,
-        axislims, grid, index_t, tevo_t, time_data, plummer, vertical,
+        axislims, grid, index_t, tevo_t, time_data, vertical,
     ) = args
 
     import os
@@ -515,11 +345,6 @@ def _deluxe_frame(args):
         xax = xaxis[i]
 
         legend = True if i == 0 else False
-
-        # Add Plummer
-        if plummer and (profile in PLUMMER_PROFILES):
-            r0_plummer = np.interp(index_t[ind], tevo_t, time_data["r_m25"])
-            plot_plummer(ax, profile, data_list[-1], r0_plummer, xaxis=xax)
 
         plot_profile(
             ax,
@@ -623,13 +448,14 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         Each model can be a State, Config, or integer model number.
     profiles : list of str, optional
         Profiles from VALID_PROFILES that are present in the supplied files.
-    insets : list of str or None, optional
+    insets : False, str, list of str or None, optional
+        False disables all insets; None uses rho0 in the first panel.
         Inset plots to include.  Options are any quantity in time_evolution.txt
     xaxis : list of str, optional
         X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     add_radii : list, optional
         List of radii to add to profiles from time_evolution.txt
-        Options: 'r_c', 'r_m2', 'r_smfp', 'r_minTh'
+        Options: 'r_c', 'r_m2', 'r_minTh'
     filepath : str, optional
         Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_deluxe.mp4'
     base_dir : str, optional
@@ -649,7 +475,11 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
         profiles = ['rho', 'v2']
     elif isinstance(profiles, str):
         profiles = [profiles]
-    if insets is None:
+    if insets is False:
+        insets = [None] * len(profiles)
+    elif insets is True:
+        raise ValueError('Use insets=None for defaults or False to disable all insets.')
+    elif insets is None:
         insets = ['rho0'] + [None] * (len(profiles) - 1)
     elif isinstance(insets, str) or insets is None:
         insets = [insets]
@@ -696,8 +526,9 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     # Load rhoc time evolution data
     print(f"Getting time evolution data...")
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
-    time_data = extract_time_evolution_data(time_evolution_path)
-    tevo_t = time_data['time']
+    needs_history = any(inset is not None for inset in insets) or bool(add_radii)
+    time_data = extract_time_evolution_data(time_evolution_path) if needs_history else {}
+    tevo_t = time_data.get('time', np.array([]))
     if add_radii is not None:
         missing = [radius for radius in add_radii if radius not in time_data]
         if missing:
@@ -845,7 +676,7 @@ def make_movie_deluxe_serial(model, profiles=None, insets=None, xaxis=None, add_
     # Print the location of the saved movie
     print(f"Movie saved to {output_movie_path}")
 
-def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, add_radii=None, plummer=False, vertical=False, filepath=None, base_dir=None, grid=False, fps=20):
+def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, add_radii=None, vertical=False, filepath=None, base_dir=None, grid=False, fps=20):
     """
     Animate profiles wit constant scale and with inset for time evolution.
     Scale stays constant throughout.
@@ -856,15 +687,14 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         Each model can be a State, Config, or integer model number.
     profiles : list of str, optional
         Profiles from VALID_PROFILES that are present in the supplied files.
-    insets : list of str or None, optional
+    insets : False, str, list of str or None, optional
+        False disables all insets; None uses rho0 in the first panel.
         Inset plots to include.  Options are any quantity in time_evolution.txt
     xaxis : list of str, optional
         X-axis for profiles to plot.  Default is 'r'.  Other option is 'm'.
     add_radii : list, optional
         List of radii to add to profiles from time_evolution.txt
-        Options: 'r_c', 'r_m2', 'r_smfp', 'r_minTh'
-    plummer : bool, optional
-        Add plummer fits for the density and temperature profiles (NOTE: we know this doesn't really work)
+        Options: 'r_c', 'r_m2', 'r_minTh'
     vertical : bool, optional
         Whether to stack panels vertically.
     filepath : str, optional
@@ -886,7 +716,11 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
         profiles = ['rho', 'v2']
     elif isinstance(profiles, str):
         profiles = [profiles]
-    if insets is None:
+    if insets is False:
+        insets = [None] * len(profiles)
+    elif insets is True:
+        raise ValueError('Use insets=None for defaults or False to disable all insets.')
+    elif insets is None:
         insets = ['rho0'] + [None] * (len(profiles) - 1)
     elif isinstance(insets, str) or insets is None:
         insets = [insets]
@@ -933,10 +767,9 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     # Load time evolution data
     print(f"Getting time evolution data...")
     time_evolution_path = os.path.join(model_dir, f"time_evolution.txt")
-    time_data = extract_time_evolution_data(time_evolution_path)
-    if plummer and 'r_m25' not in time_data:
-        raise ValueError('Plummer overlay requires a time history containing r_m25.')
-    tevo_t = time_data['time']
+    needs_history = any(inset is not None for inset in insets) or bool(add_radii)
+    time_data = extract_time_evolution_data(time_evolution_path) if needs_history else {}
+    tevo_t = time_data.get('time', np.array([]))
     if add_radii is not None:
         missing = [radius for radius in add_radii if radius not in time_data]
         if missing:
@@ -1001,7 +834,6 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
             index_t,
             tevo_t,
             time_data,
-            plummer,
             vertical,
         )
         for ind in indices
@@ -1047,14 +879,26 @@ def make_movie_deluxe_parallel(model, profiles=None, insets=None, xaxis=None, ad
     # Print the location of the saved movie
     print(f"Movie saved to {output_movie_path}")
 
+def make_movie(model, parallel=True, **kwargs):
+    """Animate profiles using the deluxe renderer with fixed axis limits.
+
+    parallel=True uses separate rendering processes; False renders serially.
+    profiles defaults to ['rho', 'v2']. insets=None adds rho0 to the first
+    panel; insets=False disables all insets. A per-panel list of column names
+    and None entries is also accepted. time_evolution.txt is required only
+    for insets or marked radii.
+
+    Other options: xaxis, add_radii, filepath, base_dir, grid, and fps.
+    The parallel renderer additionally accepts vertical.
+    Requires ffmpeg. See make_movie_deluxe_serial/parallel for details.
+    """
+    renderer = make_movie_deluxe_parallel if parallel else make_movie_deluxe_serial
+    return renderer(model, **kwargs)
+
+
 def make_movie_deluxe(model, parallel=True, **kwargs):
-    """
-    Top level function for calling make_movie_deluxe, either serial or parallel
-    """
-    if parallel:
-        make_movie_deluxe_parallel(model, **kwargs)
-    else:
-        make_movie_deluxe_serial(model, **kwargs)
+    """Compatibility alias for make_movie, which now uses the deluxe renderer."""
+    return make_movie(model, parallel=parallel, **kwargs)
 
 def make_movie_balberg(model, filepath=None, base_dir=None, grid=False, fps=20):
     """

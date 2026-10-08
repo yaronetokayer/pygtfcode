@@ -135,24 +135,32 @@ def write_log_entry(state, start_step):
     # dr is the final HE correction, not total shell displacement. Iteration
     # counters count retries/additional solves; split/merge count operations.
     count = state.log_steps
+    # Each entry is (header, value, minimum width). Edit widths here to
+    # customize the logfile and console layout; text is never truncated.
     columns = [
-        ('step', step), ('time', state.t),
-        ('<dt>', state.dt_cum / count if count else None),
-        ('n', state.n), ('rho0', state.rho[0]), ('v_max', maxvel),
-        ('kn_c', state.kn_c), ('kn_cond_c', state.kn_cond_c),
-        ('eps_du_eff', eps_du_eff),
-        ('<du lim>', state.du_limit_cum / count if count else None),
-        ('<dr lim>', state.dr_max_cum / prec.eps_dr / count if count else None),
-        ('<n_retry_du>', state.n_iter_du / count if count else None),
-        ('<n_iter_dr>', state.n_iter_dr / count if count else None),
-        ('n_split', state.n_split), ('n_merge', state.n_merge),
+        ('step', step, 10),
+        ('time', state.t, 13),
+        ('<dt>', state.dt_cum / count if count else None, 13),
+        ('n', state.n, 6),
+        ('rho0', state.rho[0], 13),
+        ('v_max', maxvel, 13),
+        ('kn_c', state.kn_c, 13),
+        ('kn_cond_c', state.kn_cond_c, 13),
+        ('eps_du_eff', eps_du_eff, 13),
+        ('<du lim>', state.du_limit_cum / count if count else None, 13),
+        ('<dr lim>', state.dr_max_cum / prec.eps_dr / count if count else None, 13),
+        ('<n_retry_du>', state.n_iter_du / count if count else None, 13),
+        ('<n_iter_dr>', state.n_iter_dr / count if count else None, 13),
+        ('n_split', state.n_split, 8),
+        ('n_merge', state.n_merge, 8),
     ]
-    header = '  '.join(f'{name:>13}' for name, _ in columns) + '\n'
-    new_line = '  '.join(
-        f'{"N/A":>13}' if value is None else
-        f'{value:13d}' if isinstance(value, (int, np.integer)) else
-        f'{value:13.6e}' for _, value in columns
-    ) + '\n'
+    values = [('N/A' if value is None else str(value)
+               if isinstance(value, (int, np.integer)) else f'{value:.6e}')
+              for _, value, _ in columns]
+    widths = [max(width, len(name), len(value))
+              for (name, _, width), value in zip(columns, values)]
+    header = '  '.join(f'{name:>{width}}' for (name, _, _), width in zip(columns, widths)) + '\n'
+    new_line = '  '.join(f'{value:>{width}}' for value, width in zip(values, widths)) + '\n'
     _update_file(filepath, header, new_line, step)
 
     state.n_iter_du = state.n_iter_dr = 0

@@ -596,11 +596,16 @@ class State:
         
     def make_movie(self, **kwargs):
         """
-        Method to animate up to three profiles for the simulation represented by
+        Animate profiles with the deluxe renderer for the simulation represented by
         the State object
 
         Arguments
         ---------
+        parallel : bool, optional
+            Render in parallel by default; False uses serial rendering.
+        insets : False, str, list, or None, optional
+            False disables all insets; None uses rho0 in the first panel.
+            Lists specify a history column or None for each panel.
         filepath : str, optional
             Save the plot to this file.  Defaults to '/base_dir/ModelXXXXX/movie_{profiles}.mp4'
         profiles : str or list of str, optional

@@ -285,3 +285,34 @@ pygtfcode/
 ## License
 
 MIT License. See [LICENSE](./LICENSE) for details.
+
+
+### Movie options and logfile widths
+
+`make_movie()` now uses the deluxe renderer; `make_movie_deluxe()` remains
+an alias. The default profiles are `['rho', 'v2']`, with an `rho0` inset
+in the first panel. Set `parallel=False` for serial rendering.
+
+```python
+state.make_movie(profiles=['rho', 'v2'], insets=False, parallel=False)
+state.make_movie(profiles=['rho', 'v2'], insets=['rho0', None])
+```
+
+`insets=False` disables every inset; `insets=None` preserves the default,
+matching pygtf2. Lists allow individual panels to omit insets. A movie with
+no insets or radius annotations needs only profile files
+and `snapshot_conversion.txt`, not `time_evolution.txt`.
+
+Logfile widths are set directly in the `columns` list inside
+`pygtfcode/io/write.py` → `write_log_entry()`. Each entry contains
+`(header, value, minimum_width)`, for example:
+
+```python
+('step', step, 10),
+('time', state.t, 13),
+('n', state.n, 6),
+```
+
+Edit the third value to adjust a column. Headers and values expand as needed
+and are never truncated; floating-point precision remains six decimal
+places in scientific notation. This controls both the file and console output.
