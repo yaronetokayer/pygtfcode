@@ -360,7 +360,6 @@ def calc_rmn_rho_m_v2(r, rmid, rho, v2, m, n):
 
     return r_mn, rho_mn, m_mn, v2_mn
 
-
 @njit(types.Tuple((float64, float64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
 def calc_mintheta_r_rho_m_v2(r, rmid, rho, v2, m, Theta):
     """

@@ -362,13 +362,14 @@ class State:
 
         # Iteratively revirialize to achieve necessary precision
         # Preallocate arrays
-        Np1 = r_new.shape[0]
-        n_int = Np1 - 2
-        a  = np.empty(n_int, dtype=np.float64)
-        b  = np.empty(n_int, dtype=np.float64)
-        c  = np.empty(n_int, dtype=np.float64)
-        y  = np.empty(n_int, dtype=np.float64)
-        x  = np.empty(n_int, dtype=np.float64)
+        Np1     = r_new.shape[0]
+        n_int   = Np1 - 2
+        a       = np.empty(n_int, dtype=np.float64)
+        b       = np.empty(n_int, dtype=np.float64)
+        c       = np.empty(n_int, dtype=np.float64)
+        y       = np.empty(n_int, dtype=np.float64)
+        x       = np.empty(n_int, dtype=np.float64)
+        gam     = np.empty(n_int, dtype=np.float64)
         vol_old = np.empty(Np1 - 1, dtype=np.float64)
 
         eps_dr = float(self.config.prec.eps_dr)
@@ -377,7 +378,7 @@ class State:
         while True:
             i += 1
             status, dr_max_new, he_res = revirialize_w_he_resid(r_new, rho_new, p_new, m,
-                                                                 a, b, c, y, x, vol_old)
+                                                                 a, b, c, y, x, gam, vol_old)
             
             if status == STATUS_SHELL_CROSSING:
                 raise RuntimeError(f"Initial revir iter {i}: Shell crossing!")

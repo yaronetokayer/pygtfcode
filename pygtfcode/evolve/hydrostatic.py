@@ -491,8 +491,8 @@ def compute_he_resid_norm(r, rho, p, m):
 
     return np.linalg.norm(res_vec)
 
-@njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
-def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float]:
+@njit(types.Tuple((int64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
+def revirialize(r, rho, p, m_tot, a, b, c, y, x, gam, vol_old)  -> tuple[int, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -529,7 +529,7 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float]:
 
     # Solve for corrections to r
     build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)
-    solve_tridiagonal_thomas(a, b, c, y, x)
+    solve_tridiagonal_thomas(a, b, c, y, x, gam)
     dr_max = float(np.max(np.abs(x)))
 
     # Update arrays accordingly
@@ -542,8 +542,8 @@ def revirialize(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float]:
     
     return STATUS_OK, dr_max
 
-@njit(types.Tuple((int64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
-def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[int, float, float]:
+@njit(types.Tuple((int64, float64, float64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True,)
+def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, gam, vol_old)  -> tuple[int, float, float]:
     """
     Re-virializes the system state by solving for radius adjustments and updating physical quantities.
 
@@ -583,7 +583,7 @@ def revirialize_w_he_resid(r, rho, p, m_tot, a, b, c, y, x, vol_old)  -> tuple[i
 
     # Solve for corrections to r
     build_tridiag_system_log(r, rho, p, m_tot, a, b, c, y)
-    solve_tridiagonal_thomas(a, b, c, y, x)
+    solve_tridiagonal_thomas(a, b, c, y, x, gam)
     dr_max = float(np.max(np.abs(x)))
 
     # Update arrays accordingly

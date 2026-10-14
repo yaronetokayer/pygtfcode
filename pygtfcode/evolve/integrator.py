@@ -1,6 +1,6 @@
 import numpy as np
 from pygtfcode.io.write import write_profile_snapshot, write_log_entry, write_time_evolution
-from pygtfcode.evolve.transport import compute_luminosities, conduct_heat, conduct_implicit_tcool_dulim
+from pygtfcode.evolve.transport import conduct_implicit_tcool_dulim
 from pygtfcode.evolve.hydrostatic import revirialize, STATUS_SHELL_CROSSING #, compute_mass
 from pygtfcode.evolve.split import check_drfrac_split, check_drfrac_merge, split_grid, merge_grid, STATUS_SPLITS, STATUS_MERGES
 from pygtfcode.util.calc_runtime import low_kn_boost, calc_ltemp
@@ -43,7 +43,7 @@ def run_until_stop(state, start_step, **kwargs):
 
     # Preallocate working arrays for main loop
     # Found that preallocating for conduction tridiagonal solve does not save time
-    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
+    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
     #################
     ### Main loop ###
@@ -82,7 +82,7 @@ def run_until_stop(state, start_step, **kwargs):
                 state.n_split += 1  # Split operations since the last log entry.
                 split_grid(state, work_nint)
                 state.resize_state_arrays()
-                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
+                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
             # Check for merging
             status = check_drfrac_merge(state.r, work_nint, drfrac_min, drfrac_max)
@@ -90,7 +90,7 @@ def run_until_stop(state, start_step, **kwargs):
                 state.n_merge += 1  # Merge operations, not net cell-count changes.
                 merge_grid(state, work_nint)
                 state.resize_state_arrays()
-                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
+                a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1, work_n2, work_nint = allocate_work_arrays(state.n)
 
         ####################
         ### 3. Integrate ###
@@ -98,7 +98,7 @@ def run_until_stop(state, start_step, **kwargs):
 
         #--- Integrate time step
         integrate_time_step(state, config, dt_prop, eps_du_eff, step_count,
-                            a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2)
+                            a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1, work_n2)
 
         if chatter and step_count % nupdate == 0:
             print(f"Completed step {step_count}", end='\r', flush=True)
@@ -160,10 +160,10 @@ def run_until_stop(state, start_step, **kwargs):
         if chatter:
             print("Simulation halted: max time exceeded")
 
-def integrate_time_step(state, config,                                  # State arrays
-                        dt_prop, eps_du_eff, step_count,                # Instantaneous variables
-                        a_alloc, b_alloc, c_alloc, y_alloc, x_alloc,    # Memory allocations (N-1,)
-                        work_n1, work_n2                                # Memory allocations (N,)
+def integrate_time_step(state, config,                                          # State arrays
+                        dt_prop, eps_du_eff, step_count,                        # Instantaneous variables
+                        a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, # Memory allocations (N-1,)
+                        work_n1, work_n2                                        # Memory allocations (N,)
                         ):
     """
     Advance state by one time step.
@@ -181,7 +181,7 @@ def integrate_time_step(state, config,                                  # State 
         Proposed dt from the previous accepted conduction error.
     step_count : int
         Step count
-    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc : ndarray (N-1,)
+    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc : ndarray (N-1,)
         Memory allocation for working arrays
     work_n1, work_n2 : ndarray (N,)
         Memory allocation for working arrays
@@ -193,7 +193,7 @@ def integrate_time_step(state, config,                                  # State 
     a = float(sim.a); b = float(sim.b); c = float(sim.c)
     smfp_order = sim.smfp_order
     sigma_m_0 = float(char.sigma_m_0_char); w_char = float(char.w_char)
-    alph = float(sim.alph); implicit_conduct = bool(sim.implicit_conduct)
+    alph = float(sim.alph)
     eps_dr = float(prec.eps_dr)
     max_iter_du = prec.max_iter_du; max_iter_dr = prec.max_iter_dr
 
@@ -210,15 +210,8 @@ def integrate_time_step(state, config,                                  # State 
     # m_tot = compute_mass(m)
 
     ### Step 1: Energy transport ###
-    if implicit_conduct:
-        # implicit: work_n1 used to store dv2
-        du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, dt_prop, a, b, c, sigma_m_0, w_char, smfp_order, alph, eps_du_eff, max_iter_du)
-    else:
-        # explicit: work_n1 used to store dv2dt; work_n2 used to store luminosity
-        # This branch is currently deprecated
-        init = config.init; cored = (init.profile == 'abg') and (float(init.gamma) < 1.0)
-        compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, work_n2, cored)
-        du_max, dt_prop, iter_du = conduct_heat(v2, m, work_n2, work_n1, dt_prop, eps_du_eff)
+    # implicit: work_n1 used to store dv2, x_alloc used for rho_int
+    du_max, dt_prop, iter_du = conduct_implicit_tcool_dulim(v2, rho, r, m, work_n1, t_cool, x_alloc, dt_prop, a, b, c, sigma_m_0, w_char, smfp_order, alph, eps_du_eff, max_iter_du)
     
     if iter_du == -1:
         raise RuntimeError(f"Step {step_count}: Max iterations exceeded in implicit conduction step.")
@@ -230,7 +223,7 @@ def integrate_time_step(state, config,                                  # State 
     while True:
         # work_n1 used to store old shell volumes; work_n2 is p
         status, dr_max = revirialize(r, rho, work_n2, m, 
-                                    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1) # Modifies r, rho, p in place
+                                    a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1) # Modifies r, rho, p in place
 
         # Shell crossing is reported by a status code.
         if status == STATUS_SHELL_CROSSING:
@@ -305,9 +298,10 @@ def allocate_work_arrays(n):
     c_alloc   = np.empty(n_int, dtype=np.float64)
     y_alloc   = np.empty(n_int, dtype=np.float64)
     x_alloc   = np.empty(n_int, dtype=np.float64)
+    gam_alloc = np.empty(n_int, dtype=np.float64)
 
     work_n1   = np.empty(n, dtype=np.float64)
     work_n2   = np.empty(n, dtype=np.float64)
     work_nint = np.zeros(n, dtype=np.int64)
 
-    return a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, work_n1, work_n2, work_nint
+    return a_alloc, b_alloc, c_alloc, y_alloc, x_alloc, gam_alloc, work_n1, work_n2, work_nint

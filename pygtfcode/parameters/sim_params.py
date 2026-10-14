@@ -26,9 +26,6 @@ class SimParams:
     rho0_halt : float
         Innermost-cell density rho[0]/rho_s at which to halt after t > 50 t_s.
         Positive infinity disables this limit.
-    implicit_conduct : bool
-        Use implicit conduction. False selects the deprecated constant-scattering
-        explicit path, which has not been migrated to velocity dependence.
     a : float
         Model parameter 'a'. Must be positive.
     b : float
@@ -47,7 +44,6 @@ class SimParams:
             alph                : float = 1.0,
             t_halt              : float = 1e3,
             rho0_halt          : float = 1500,
-            implicit_conduct    : bool = True,
             a                   : float = 2.256758,
             b                   : float = 1.3847,
             c                   : float = 0.75
@@ -58,7 +54,6 @@ class SimParams:
         self._alph = None
         self._t_halt = None
         self._rho0_halt = None
-        self._implicit_conduct = None
         self._a = None
         self._b = None
         self._c = None
@@ -69,7 +64,6 @@ class SimParams:
         self.alph = alph
         self.t_halt = t_halt
         self.rho0_halt = rho0_halt
-        self.implicit_conduct = implicit_conduct
         self.a = a
         self.b = b
         self.c = c
@@ -135,16 +129,6 @@ class SimParams:
         if isinstance(value, bool) or math.isnan(value) or value <= 0:
             raise ValueError("rho0_halt must be positive")
         self._rho0_halt = float(value)
-
-    @property
-    def implicit_conduct(self):
-        return self._implicit_conduct
-    
-    @implicit_conduct.setter
-    def implicit_conduct(self, value):
-        if not isinstance(value, bool):
-            raise ValueError("implicit_conduct must be a boolean")
-        self._implicit_conduct = value
 
     @property
     def a(self):

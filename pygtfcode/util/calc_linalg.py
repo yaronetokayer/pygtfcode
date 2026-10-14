@@ -5,8 +5,8 @@ Helpers for linear algebraic operations
 import numpy as np
 from numba import njit, void, float64
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
-def solve_tridiagonal_thomas(a, b, c, y, x):
+@njit(void(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:]), fastmath=True, cache=True)
+def solve_tridiagonal_thomas(a, b, c, y, x, gam):
     """
     Solve a tridiagonal system Ax = y using the Thomas algorithm.
     This follows the Numerical Recipes convention:
@@ -27,9 +27,10 @@ def solve_tridiagonal_thomas(a, b, c, y, x):
         Right-hand side vector.
     x : ndarray
         Output solution vector, updated in place.
+    gam : ndarray
+        Working array.
     """
     n = b.size
-    gam = np.empty(n, dtype=np.float64)
     gam[0] = 0.0
 
     bet = b[0]

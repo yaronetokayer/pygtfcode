@@ -1,191 +1,11 @@
 import numpy as np
 import math
-from numba import njit, float64, boolean, types, void
+from numba import njit, float64, types, void
 from pygtfcode.util.interpolate import interp_linear_to_interfaces
 from pygtfcode.util.calc_linalg import solve_tridiagonal_thomas
 from pygtfcode.util.calc_kp import conductivity
 
 _TINY64 = np.finfo(np.float64).tiny
-
-# cored = (init.profile == 'abg') and (float(init.gamma) < 1.0) # Leftover from integration loop when we used this function
-
-@njit(void(float64, float64, float64, float64, float64, float64[:], float64[:], float64[:], float64[:], boolean), cache=True, fastmath=True)
-def compute_luminosities(a, b, c, sigma_m_0, alph, r, v2, rho, lum, cored): 
-    """ 
-    Compute luminosity of each shell interface based on temperature gradient and conductivity.
-    e.g, Eq. (2) in Nishikawa et al. 2020.
-
-    Arguments
-    ----------
-    a : float
-        Constant 'a' in the conductivity formula.
-    b : float
-        Constant 'b' in the conductivity formula.
-    c : float
-        Constant 'c' in the conductivity formula.
-    sigma_m_0 : float
-        Interaction cross section in dimensionless units.
-    alph : float
-        Coefficient for interpolation scheme between lmfp and smfp regimes.
-        kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph)
-    r : ndarray (N+1,)
-        Radial grid points, including cell edges.
-    v2 : ndarray (N,)
-        Velocity dispersion squared for each cell.
-    rho : ndarray (N,)
-        Density for each cell.
-    lum : ndarray (N+1,)
-        Luminosities at each shell boundary. Updated in-place.
-    cored : bool
-        Whether the system has a central core (i.e., ABG with gamma < 1.0).
-    """
-    Np1 = r.shape[0]
-    N = Np1 - 1
-
-    # Boundary conditions
-    lum[0] = 0.0
-    lum[N] = 0.0
-
-    # Compute rho and v2 at interfaces (N-1,)
-    v2int  = interp_linear_to_interfaces(r, v2)
-    rhoint = interp_linear_to_interfaces(r, rho)
-
-    smfp_term = (a / b) * sigma_m_0**2
-
-    for i in range(N-1):
-        # One sided difference for cored profiles (i.e., ABG with gamma < 1)
-        if i == 0 and cored:
-                dTdr = 0.5 * ( v2[1] - v2[0] ) / ( r[2] - r[1] ) # Need 0.5 to account for fact that this is not two-sided central difference in denom
-        else:
-            dTdr = ( v2[i+1] - v2[i] ) / ( r[i+2] - r[i] )
-
-        coeff = -3.0 * np.sqrt(v2int[i]) * r[i+1]**2
-        lmfp_term = 1.0 / ( c * rhoint[i] * v2int[i] )
-
-        lum[i + 1] = coeff * dTdr / ( smfp_term**alph + lmfp_term**alph )**(1.0 / alph)
-
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True,)
-def conduct_heat(v2, m, lum, dv2dt, dt_prop, eps_du) -> tuple[float, float, int]:
-    """
-    Explicit heat conduction step without Theta update.
-    Updates v2 in place.
-    """
-    Np1 = m.shape[0]
-    N = Np1 - 1
-
-    for i in range(N):
-        dm = m[i + 1] - m[i]
-        dv2dt[i] = -(2.0 / 3.0) * (lum[i + 1] - lum[i]) / dm
-
-    tiny = _TINY64
-    dv2max = 0.0
-
-    for i in range(N):
-        dv2 = dv2dt[i] * dt_prop
-
-        v2i = v2[i]
-        denom = v2i if v2i > tiny else tiny
-
-        rat = abs(dv2) / denom
-        if rat > dv2max:
-            dv2max = rat
-
-    if dv2max > eps_du:
-        scale = 0.95 * (eps_du / dv2max)
-        dv2max *= scale
-        dt_eff = dt_prop * scale
-        iter_du = 1
-    else:
-        dt_eff = dt_prop
-        iter_du = 0
-
-    for i in range(N):
-        v2[i] += dv2dt[i] * dt_eff
-
-    return float(dv2max), float(dt_eff), int(iter_du)
-
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64), cache=True, fastmath=True)
-def conduct_heat_Theta(v2, m, lum, dv2dt, r, Th, dt_prop, eps_du) -> tuple[float, float, int]:
-    """
-    Conduct heat and adjust internal energies accordingly.
-    Ignores PdV work and assumes fixed density.
-    Updates internal energy and recomputes pressure.
-    Updates dt_prop if necessary based on max relative change in u.
-
-    Arguments
-    ---------
-    v2 : np.ndarray (N,)
-        Square of 1D velocity dispersion. u = 1.5*v2.
-    m : np.ndarray (N+1,)
-        Enclosed mass array
-    lum : np.ndarray (N+1,)
-        Array of luminosities from compute_luminosities (length = len(state.r))
-    dv2dt : np.ndarray (N,)
-        Preallocated working array for storage of dv2dt
-    r : np.ndarray (N+1,)
-        Cell edges
-    Th : np.ndarray (N,)
-        Theta = (v2 / |dv2dt|)/(dr / sqrt(v2)), local cooling-to-sound-crossing time ratio
-    dt_prop : float
-        Current timestep duration
-    eps_du : float
-        Maximum allowed relative change in u for convergence
-
-    Returns
-    -------
-    dumax : float
-        Max relative change in u.
-    dt_prop : float
-        Modified timestep.
-    """
-    Np1 = m.shape[0]
-    N = Np1 - 1
-
-    for i in range(N):
-        dm = m[i+1] - m[i]
-        dv2dt[i] = -(2.0 / 3.0) * (lum[i+1] - lum[i]) / dm
-
-    # Find maximum relative proposed change
-    tiny = _TINY64
-    dv2max = 0.0
-    rR = r[0]
-    for i in range(N):
-        dv2 = dv2dt[i] * dt_prop
-
-        v2i = v2[i]
-        denom = v2i if v2i > tiny else tiny
-
-        rat = abs(dv2) / denom
-        if rat > dv2max:
-            dv2max = rat
-
-        rL = rR
-        rR = r[i + 1]
-        dr = rR - rL
-
-        absdv2dt = abs(dv2dt[i])
-        if absdv2dt > tiny and dr > tiny and v2i > tiny:
-            Th[i] = v2i * math.sqrt(v2i) / (dr * absdv2dt)
-        else:
-            Th[i] = np.inf
-
-    # Adaptive limiter
-    if dv2max > eps_du:
-        scale = 0.95 * (eps_du / dv2max)
-        dv2max *= scale
-        dt_eff = dt_prop * scale
-        iter_du = 1
-    else:
-        dt_eff = dt_prop
-        iter_du = 0
-
-    # Apply update in place
-    for i in range(N):
-        v2[i] += dv2dt[i] * dt_eff
-
-    return float(dv2max), float(dt_eff), int(iter_du)
-
-### IMPLICIT SCHEME
 
 @njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True)
 def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0_char, w_char, smfp_order, a, b, c, d,):
@@ -349,216 +169,8 @@ def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph,
     c[n - 1] = 0.0
     d[n - 1] = fluxR
 
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def build_tridiag_system_ALPH1(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
-    """
-    Build tridiagonal system for implicit conduction update in v2:
-
-        a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
-
-    Legacy constant-scattering reference for alph=1; not used by the driver.
-
-    Parameters
-    ----------
-    r : ndarray, shape (N+1,)
-        Edge radii.
-    m : ndarray, shape (N+1,)
-        Enclosed mass at edges.
-    rho_int : ndarray, shape (N-1,)
-        Interface density values.
-    v2 : ndarray, shape (N,)
-        Cell-centered one-dimensional velocity dispersion squared.
-    Csmfp, Clmfp : float
-        Conductivity coefficients.
-    dt : float
-        Timestep.
-    a, b, c, d : ndarray, shape (N,)
-        Output tridiagonal coefficients and RHS, filled in place.
-    """
-    n = v2.shape[0] # Number of cells with unknown dv2 values
-    sqrt2 = math.sqrt(2.0)
-    two_Clmfp = 2.0 * Clmfp
-
-    ### First cell ###
-    rL          = r[0]
-    rR          = r[1]
-    rRR         = r[2]
-
-    drcR        = 0.5 * ( rRR - rL )
-    rR2         = rR * rR
-    coefR       = rR2 / drcR
-
-    v2C         = v2[0]
-    v2R         = v2[1]
-
-    dvR         = v2R - v2C
-    svR         = v2C + v2R
-    sqrt_svR    = math.sqrt(svR)
-    svR32       = sqrt_svR * svR
-
-    inv_rhoR    = 1.0 / rho_int[0]
-    denomR      = Csmfp * svR + two_Clmfp * inv_rhoR
-    inv_denomR  = 1.0 / denomR
-    inv_denomR2 = inv_denomR * inv_denomR
-
-    tmpR        = sqrt_svR * dvR
-    commonR     = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
-    termR       = svR32 * inv_denomR
-    fluxR       = coefR * svR32 * dvR * inv_denomR
-
-    a[0] = 0.0
-    b[0] = coefR * (commonR - termR) - sqrt2 * m[1] / dt
-    c[0] = coefR * (commonR + termR)
-    d[0] = -fluxR
-
-    ### INTERIOR CELLS ###
-    # Initialize sliding window
-    rL      = rR
-    rR      = rRR
-    rRR     = r[3]
-
-    drcR    = 0.5 * ( rRR - rL )
-    rR2     = rR * rR
-    coefL   = coefR
-    coefR   = rR2 / drcR
-
-    v2C     = v2R
-    v2R     = v2[2]
-
-    dvR = v2R - v2C
-    svR = v2C + v2R
-    sqrt_svR = math.sqrt(svR)
-    svR32 = sqrt_svR * svR
-
-    inv_rhoR = 1.0 / rho_int[1]
-    denomR = Csmfp * svR + two_Clmfp * inv_rhoR
-    inv_denomR = 1.0 / denomR
-    inv_denomR2 = inv_denomR * inv_denomR
-    
-    commonL = commonR
-    tmpR = sqrt_svR * dvR
-    commonR = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
-    termL = termR
-    termR = svR32 * inv_denomR
-    fluxL = fluxR
-    fluxR = coefR * svR32 * dvR * inv_denomR
-
-    for j in range(1, n - 1):
-        a[j] = -coefL * (commonL - termL)
-        b[j] = (
-            coefR * (commonR - termR)
-            - coefL * (commonL + termL)
-            - sqrt2 * (m[j + 1] - m[j]) / dt
-        )
-        c[j] = coefR * (commonR + termR)
-        d[j] = fluxL - fluxR
-
-        # Advance sliding window
-        if j < n - 2:
-            rL      = rR
-            rR      = rRR
-            rRR     = r[j + 3]
-
-            drcR    = 0.5 * ( rRR - rL )
-            rR2     = rR * rR
-            coefL   = coefR
-            coefR   = rR2 / drcR
-
-            v2C     = v2R
-            v2R     = v2[j + 2]
-
-            dvR         = v2R - v2C
-            svR         = v2C + v2R
-            sqrt_svR    = math.sqrt(svR)
-            svR32       = sqrt_svR * svR
-
-            inv_rhoR    = 1.0 / rho_int[j + 1]
-            denomR      = Csmfp * svR + two_Clmfp * inv_rhoR
-            inv_denomR  = 1.0 / denomR
-            inv_denomR2 = inv_denomR * inv_denomR
-
-            commonL     = commonR
-            tmpR        = sqrt_svR * dvR
-            commonR     = tmpR * (0.5 * inv_denomR + two_Clmfp * inv_denomR2 * inv_rhoR)
-            termL       = termR
-            termR       = svR32 * inv_denomR
-            fluxL       = fluxR
-            fluxR       = coefR * svR32 * dvR * inv_denomR
-
-    ### Last cell ###
-    a[n - 1] = - coefR * ( commonR - termR)
-    b[n - 1] = - coefR * ( commonR + termR ) - sqrt2 * ( m[n] - m[n - 1] ) / dt
-    c[n - 1] = 0.0
-    d[n - 1] = fluxR
-
-@njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
-def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
-    """
-    Build tridiagonal system for implicit conduction update in v2:
-
-        a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
-
-    Legacy vectorized constant-scattering reference for alph=1.
-    Not used by the velocity-dependent driver.
-
-    Parameters
-    ----------
-    r : ndarray, shape (N+1,)
-        Edge radii.
-    m : ndarray, shape (N+1,)
-        Enclosed mass at edges.
-    rho_int : ndarray, shape (N-1,)
-        Interface density values.
-    v2 : ndarray, shape (N,)
-        Cell-centered one-dimensional velocity dispersion squared.
-    Csmfp, Clmfp : float
-        Conductivity coefficients.
-    dt : float
-        Timestep.
-    a, b, c, d : ndarray, shape (N,)
-        Output tridiagonal coefficients and RHS, filled in place.
-    """
-    N = v2.shape[0]
-
-    drc = 0.5 * (r[2:] - r[:-2])     # (N-1,)
-    dv  = v2[1:] - v2[:-1]           # (N-1,)
-    sv  = v2[1:] + v2[:-1]           # (N-1,)
-    r2  = r[1:-1] ** 2               # (N-1,)
-    dm  = m[1:] - m[:-1]             # (N,)
-
-    denom = Csmfp * sv + 2.0 * Clmfp / rho_int
-    sqrt_sv = np.sqrt(sv)
-    base  = (r2 / drc) * (sv * sqrt_sv)
-    flux0 = base * dv / denom
-
-    common = (r2 / drc) * (
-        0.5 * sqrt_sv * dv / denom
-        + 2.0 * Clmfp * sqrt_sv * dv / (denom * denom * rho_int)
-    )
-
-    left_coef  = common - base / denom
-    right_coef = common + base / denom
-
-    # interior rows
-    a[1:-1] = -left_coef[:-1]
-    b[1:-1] = left_coef[1:] - right_coef[:-1] - math.sqrt(2.0) * dm[1:-1] / dt
-    c[1:-1] = right_coef[1:]
-    d[1:-1] = flux0[:-1] - flux0[1:]
-
-    # inner boundary
-    a[0] = 0.0
-    b[0] = left_coef[0] - math.sqrt(2.0) * dm[0] / dt
-    c[0] = right_coef[0]
-    d[0] = -flux0[0]
-
-    # outer boundary
-    a[-1] = -left_coef[-1]
-    b[-1] = -right_coef[-1] - math.sqrt(2.0) * dm[-1] / dt
-    c[-1] = 0.0
-    d[-1] = flux0[-1]
-
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
-def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_nolim(v2, rho, r, m, dv2, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
 
@@ -576,15 +188,16 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     N = v2.shape[0]
     du_max = 0.0
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-    solve_tridiagonal_thomas(a, b, c, d, dv2)
+    solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
     tiny = _TINY64
     for i in range(N):
@@ -599,8 +212,8 @@ def conduct_implicit_nolim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
-def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
 
@@ -618,15 +231,16 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     N = v2.shape[0]
     du_max = 0.0
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-    solve_tridiagonal_thomas(a, b, c, d, dv2)
+    solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
     tiny = _TINY64
     for i in range(N):
@@ -648,8 +262,8 @@ def conduct_implicit_tcool_nolim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
-def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64), cache=True)
+def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph,):
     """
     Implicit conduction step on v2.
 
@@ -670,15 +284,16 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     N = v2.shape[0]
     du_max = 0.0
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-    solve_tridiagonal_thomas(a, b, c, d, dv2)
+    solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
     tiny = _TINY64
     rR = r[0]
@@ -705,8 +320,8 @@ def conduct_implicit_Theta_nolim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
 
     return du_max, dt, 0
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
-def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
+def conduct_implicit_dulim(v2, rho, r, m, dv2, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
 
@@ -728,12 +343,13 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     """
     N = v2.shape[0]
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     tiny = _TINY64
     safety = 0.95
@@ -744,7 +360,7 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
     for j in range(max_iter):
 
         build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-        solve_tridiagonal_thomas(a, b, c, d, dv2)
+        solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
         du_max = 0.0
         for i in range(N):
@@ -770,8 +386,8 @@ def conduct_implicit_dulim(v2, rho, r, m, dv2, dt, a_param, b_param, c_param, si
 
     return du_max, dt_trial, -1
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
-def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
+def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
 
@@ -793,12 +409,13 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     """
     N = v2.shape[0]
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     tiny = _TINY64
     safety = 0.95
@@ -809,7 +426,7 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
     for j in range(max_iter):
 
         build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-        solve_tridiagonal_thomas(a, b, c, d, dv2)
+        solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
         du_max = 0.0
         for i in range(N):
@@ -844,8 +461,8 @@ def conduct_implicit_tcool_dulim(v2, rho, r, m, dv2, t_cool, dt, a_param, b_para
 
     return du_max, dt_trial, -1
 
-@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
-def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
+@njit(types.Tuple((float64, float64, types.int64))(float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, types.int64, float64, float64, types.int64), cache=True)
+def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, rho_int, dt, a_param, b_param, c_param, sigma_m_0, w_char, smfp_order, alph, eps_du, max_iter,):
     """
     Implicit conduction step on v2.
 
@@ -872,12 +489,13 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     """
     N = v2.shape[0]
 
-    a = np.empty(N, dtype=np.float64)
-    b = np.empty(N, dtype=np.float64)
-    c = np.empty(N, dtype=np.float64)
-    d = np.empty(N, dtype=np.float64)
+    a   = np.empty(N, dtype=np.float64)
+    b   = np.empty(N, dtype=np.float64)
+    c   = np.empty(N, dtype=np.float64)
+    d   = np.empty(N, dtype=np.float64)
+    gam = np.empty(N, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho)
+    interp_linear_to_interfaces(r, rho, rho_int)
 
     tiny = _TINY64
     safety = 0.95
@@ -888,7 +506,7 @@ def conduct_implicit_Theta_dulim(v2, rho, r, m, dv2, Th, dt, a_param, b_param, c
     for j in range(max_iter):
 
         build_tridiag_system(r, m, rho_int, v2, dt_trial, a_param, b_param, c_param, alph, sigma_m_0, w_char, smfp_order, a, b, c, d,)
-        solve_tridiagonal_thomas(a, b, c, d, dv2)
+        solve_tridiagonal_thomas(a, b, c, d, dv2, gam)
 
         du_max = 0.0
         for i in range(N):
