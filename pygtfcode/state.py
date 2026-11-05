@@ -320,6 +320,8 @@ class State:
 
         self.rmid   = 0.5 * (self.r[1:] + self.r[:-1]).astype(np.float64)
         self.m      = np.insert(data['m'].astype(np.float64), 0, 0.0)
+        if self.config.init.profile == "truncated_nfw":
+            self.char.mtot_m200 = float(self.m[-1] / self.char.fc)
         self.rho    = data['rho'].astype(np.float64)
         self.v2     = data['v2'].astype(np.float64)
 

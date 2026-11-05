@@ -234,7 +234,8 @@ def calc_kappa_edge(v2, rho, r, a_param, b_param, c_param, sigma_m, alph, w_char
     k_s = np.empty(n, dtype=np.float64)
     k   = np.empty(n, dtype=np.float64)
 
-    rho_int = interp_linear_to_interfaces(r, rho) # Shape (N-1,)
+    rho_int = np.empty(n - 1, dtype=np.float64)
+    interp_linear_to_interfaces(r, rho, rho_int) # Shape (N-1,)
     v2_int  = 0.5 * (v2[:-1] + v2[1:]) # Match the active implicit flux.
 
     # Quantities that are constant across all cells.
