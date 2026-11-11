@@ -180,6 +180,169 @@
 
 ### OLD VERSIONS OF BUILDING TRANSPORT TRIDIAG SYSTEM
 
+# This one for velocity-dependent cross sections took a little longer than current version.
+# @njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64, float64, float64, float64, types.int64, float64[:], float64[:], float64[:], float64[:]), cache=True)
+# def build_tridiag_system(r, m, rho_int, v2, dt, a_param, b_param, c_param, alph, sigma_m_0_char, w_char, smfp_order, a, b, c, d,):
+#     """
+#     Build tridiagonal system for implicit conduction update in v2:
+
+#         a_i dv2_{i-1} + b_i dv2_i + c_i dv2_{i+1} = d_i
+
+#     Requires at least three cells. Supports positive alph and finite or
+#     infinite w_char. Linearizes the temperature-dependent flux once at
+#     the current state; timestep retries are not nonlinear Newton iterations.
+
+#     Parameters
+#     ----------
+#     r : ndarray, shape (N+1,)
+#         Edge radii.
+#     m : ndarray, shape (N+1,)
+#         Enclosed mass at edges.
+#     rho_int : ndarray, shape (N-1,)
+#         Interface density values.
+#     v2 : ndarray, shape (N,)
+#         Cell-centered one-dimensional velocity dispersion squared.
+#     dt : float
+#         Timestep.
+#     a_param, b_param, c_param : float
+#         Conductivity parameters.
+#     alph : float
+#         Coefficient for interpolation scheme between lmfp and smfp regimes.
+#         kappa = ( kappa_smfp^-alph + kappa_lmfp^-alph )^(-1/alph)
+#     sigma_m_0_char : float
+#         cross section normalization per unit mass in characteristic cross section units.
+#     w_char : float
+#         velocity scale w in characteristic velocity units.
+#     smfp_order : int
+#         Chapman-Enskog order for the normalized SMFP factor.
+#         See Outmezguine et al. (2023), Appendix B. Options are 1 and 2.
+#     a, b, c, d : ndarray, shape (N,)
+#         Output tridiagonal coefficients and RHS, filled in place.
+#     """
+#     n           = v2.shape[0] # Number of cells with unknown dv2 values
+#     sqrt2       = math.sqrt(2.0)
+
+#     ### First cell ###
+#     rL          = r[0]
+#     rR          = r[1]
+#     rRR         = r[2]
+
+#     drcR        = 0.5 * ( rRR - rL )
+#     rR2         = rR * rR
+#     coefR       = rR2 / drcR
+
+#     v2C         = v2[0]
+#     v2R         = v2[1]
+#     dvR         = v2R - v2C
+#     T_face      = 0.5 * ( v2C + v2R )
+
+#     k_face, slope_face = conductivity(
+#         T_face,
+#         rho_int[0],
+#         sigma_m_0_char,
+#         w_char,
+#         alph,
+#         a_param,
+#         b_param,
+#         c_param,
+#         smfp_order,
+#     )
+
+#     termR = sqrt2 * k_face
+#     commonR = termR * dvR * slope_face / (2.0 * T_face)
+#     fluxR = coefR * termR * dvR
+
+#     a[0] = 0.0
+#     b[0] = coefR * (commonR - termR) - sqrt2 * m[1] / dt
+#     c[0] = coefR * (commonR + termR)
+#     d[0] = -fluxR
+
+#     ### INTERIOR CELLS ###
+#     # Initialize sliding window
+#     rL      = rR
+#     rR      = rRR
+#     rRR     = r[3]
+
+#     drcR    = 0.5 * ( rRR - rL )
+#     rR2     = rR * rR
+#     coefL   = coefR
+#     coefR   = rR2 / drcR
+
+#     v2C     = v2R
+#     v2R     = v2[2]
+#     dvR     = v2R - v2C
+#     T_face  = 0.5 * ( v2C + v2R )
+
+#     k_face, slope_face = conductivity(
+#         T_face,
+#         rho_int[1],
+#         sigma_m_0_char,
+#         w_char,
+#         alph,
+#         a_param,
+#         b_param,
+#         c_param,
+#         smfp_order,
+#     )
+
+#     termL   = termR
+#     termR = sqrt2 * k_face
+#     commonL = commonR
+#     commonR = termR * dvR * slope_face / (2.0 * T_face)
+#     fluxL   = fluxR
+#     fluxR = coefR * termR * dvR
+
+#     for j in range(1, n - 1):
+#         a[j] = -coefL * (commonL - termL)
+#         b[j] = (
+#             coefR * (commonR - termR)
+#             - coefL * (commonL + termL)
+#             - sqrt2 * (m[j + 1] - m[j]) / dt
+#         )
+#         c[j] = coefR * (commonR + termR)
+#         d[j] = fluxL - fluxR
+
+#         # Advance sliding window
+#         if j < n - 2:
+#             rL      = rR
+#             rR      = rRR
+#             rRR     = r[j + 3]
+
+#             drcR    = 0.5 * ( rRR - rL )
+#             rR2     = rR * rR
+#             coefL   = coefR
+#             coefR   = rR2 / drcR
+
+#             v2C     = v2R
+#             v2R     = v2[j + 2]
+#             dvR     = v2R - v2C
+#             T_face  = 0.5 * ( v2C + v2R )
+
+#             k_face, slope_face = conductivity(
+#                 T_face,
+#                 rho_int[j + 1],
+#                 sigma_m_0_char,
+#                 w_char,
+#                 alph,
+#                 a_param,
+#                 b_param,
+#                 c_param,
+#                 smfp_order,
+#             )
+
+#             termL   = termR
+#             termR = sqrt2 * k_face
+#             commonL = commonR
+#             commonR = termR * dvR * slope_face / (2.0 * T_face)
+#             fluxL   = fluxR
+#             fluxR = coefR * termR * dvR
+
+#     ### Last cell ###
+#     a[n - 1] = - coefR * ( commonR - termR)
+#     b[n - 1] = - coefR * ( commonR + termR ) - sqrt2 * ( m[n] - m[n - 1] ) / dt
+#     c[n - 1] = 0.0
+#     d[n - 1] = fluxR
+
 # @njit(void(float64[:], float64[:], float64[:], float64[:], float64, float64, float64, float64[:], float64[:], float64[:], float64[:]), cache=True, fastmath=True)
 # def build_tridiag_system_VEC(r, m, rho_int, v2, Csmfp, Clmfp, dt, a, b, c, d,):
 #     """

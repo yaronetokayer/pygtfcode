@@ -19,7 +19,7 @@ COEFF = np.array([
     [80.0, 1.32953,   0.43, 0.76],
 ])
 
-@njit(cache=True)
+@njit(fastmath=True, cache=True)
 def softplus(z):
     """
     Compute ln(1 + exp(z)) without overflow for finite z.
@@ -36,7 +36,7 @@ def softplus(z):
     """
     return max(z, 0.0) + math.log1p(math.exp(-abs(z)))
 
-@njit(cache=True)
+@njit(fastmath=True, cache=True)
 def kp_log_slope(x, p):
     """
     Compute the logarithm of Kp and its logarithmic velocity slope.
@@ -88,7 +88,7 @@ def kp_log_slope(x, p):
 
     return log_kp, slope
 
-@njit(cache=True)
+@njit(fastmath=True, cache=True)
 def factors(T, what, order=2):
     """
     Compute LMFP and SMFP transport factors and their temperature slopes.
@@ -162,7 +162,7 @@ def factors(T, what, order=2):
 
     return k5, k_smfp, slope_k5, slope_smfp
 
-@njit(cache=True)
+@njit(fastmath=True, cache=True)
 def conductivity(T, rho, sigmahat, what, alph, a, b, c, order=2):
     """
     Compute the temperature-flux coefficient and its logarithmic slope.
